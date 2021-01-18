@@ -1,0 +1,47 @@
+# C++11 syntax used throughout
+CXX_STD = CXX11
+
+## Add these to your global Makevars.win if you want to build with OpenMP
+## The global Makevars.win is located inside the home directory at `.R/Makevars.win`
+# PKG_CXXFLAGS += $(SHLIB_OPENMP_CXXFLAGS)
+# PKG_CFLAGS += $(SHLIB_OPENMP_CFLAGS)
+# PKG_LIBS += $(SHLIB_OPENMP_CFLAGS)
+
+
+
+# Access to pgc RNG and Rhtslib header files
+RHTSLIB_CPPFLAGS=$(shell echo 'Rhtslib::pkgconfig("PKG_CPPFLAGS")'|\
+    "${R_HOME}/bin/R" --vanilla --slave)
+PKG_CPPFLAGS = -I../inst/include/ $(RHTSLIB_CPPFLAGS)
+
+## From "Writing R Extensions":
+## > Since the only viable make for Windows is GNU make, it is permissible to
+## > use GNU extensions in files Makevars.win or Makefile.win.
+
+# For htslib:
+RHTSLIB_LIBS = $(shell echo 'Rhtslib::pkgconfig("PKG_LIBS")'|\
+	"${R_HOME}/bin/R" --vanilla --slave)
+
+
+## The following is for necessary external libraries for Rhtslib
+RHTSLIB_LIBS += -L${LOCAL_SOFT}/lib${R_ARCH}
+RHTSLIB_LIBS += -L$(LIB_CURL)/lib${R_ARCH}
+
+
+# For portable zlib:
+ZLIBIOC_CFLAGS = $(shell echo 'zlibbioc::pkgconfig("PKG_CFLAGS")'|\
+	"${R_HOME}/bin/R" --vanilla --slave)
+ZLIBIOC_LIBS = $(shell echo 'zlibbioc::pkgconfig("PKG_LIBS_shared")' |\
+	"${R_HOME}/bin/R" --vanilla --slave)
+
+
+# Compression library and others
+PKG_LIBS = -lws2_32 $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS) $(RHTSLIB_LIBS) $(ZLIBIOC_LIBS)
+# zlib
+ZLIB_CFLAGS += $(ZLIBIOC_CFLAGS)
+
+%.o: %.c
+	$(CC) $(ZLIB_CFLAGS) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -c $< -o $@
+%.o: %.cpp
+	$(CXX) $(ZLIB_CFLAGS) $(ALL_CPPFLAGS) $(ALL_CXXFLAGS) -c $< -o $@
+

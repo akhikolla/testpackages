@@ -1,0 +1,99 @@
+---
+title: "Penalized Variance Components"
+author: "JP Sinnwell, DJ Schaid"
+output:
+  rmarkdown::html_vignette:
+    toc: yes
+    toc_depth: 3
+vignette: |
+  %\VignetteIndexEntry{Penalized Variance Components}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, tidy.opts=list(width.cutoff=80), tidy=TRUE, comment=NA)
+```
+
+# Overview of the *vcpen* package for Penalized Variance Components
+
+A penalized likelihood model is used to estimate variance components with an elastic-net penalty function that applies both L1 and L2 penalties to the variance components, using the function `vcpen()`.  Each variance component multiplies a kernel matrix, and we provide the function `kernel_linear()` to compute linear kernel matrices, but users are welcome to use their own functions to compute kernel matrices. 
+
+The function `vcpen()` allows the user to provide intitial starting values for the variance components. If no initial values are provided, the default is to use our funcion `minque()` to calculate initial values. For linear mixed models, MINQUE is the first iteration of restricted maximum likeihood estimation (REML), and iterative updates of MINQUE converge to  REML estimation.
+
+```{r message = FALSE}
+require(vcpen)
+```
+
+# Preparing to run *vcpen*
+
+## Sample dataset
+
+Below provides snapshots of an example dataset. The response is the outcome variable, covmat is a matrix of adjusting covariates, and dose is a matrix of the dose of a minor allele for SNPs (dose values of 0, 1, 2). The doseinfo illustrates how the SNPs (columns of dose) map into groups, for creating kernel matrices for each group. A kernel matrix for n subjects is an nxn matrix that measures similarity of the dose values for each pair of subjects.
+
+```{r, loaddat}
+
+data(vcexample)
+ls()
+head(dose)
+head(doseinfo)
+response[1:10]
+```
+
+## Make kernel matrices
+The  example below illustrates how to loop over groups (indicated by doseinfo) to create linear kernel matrices for each group. Note that the  number of variance components is the number of groups plus 1, because the last group is for the residual variance component, which will have a kernel matrix that is the identity matrix. 
+
+```{r, kerns}
+nvc <- 1+length(unique(doseinfo[,2]))
+id <- 1:nrow(dose)
+
+## vcs for genetic kernel matrices
+Kerns <- vector("list", length=nvc)
+for(i in 1:(nvc-1)){
+  ## below uses kernel_linear, but users can replace this with their choice of function to 
+  ## create other types of kernel matrices.
+  Kerns[[i]] <- kernel_linear(dose[,grep(i, doseinfo[,2])])
+  rownames(Kerns[[i]]) <- id
+  colnames(Kerns[[i]]) <- id  
+}
+## vc for residual variance requires identity matrix
+Kerns[[nvc]] <- diag(nrow(dose))
+rownames(Kerns[[nvc]]) <- id
+colnames(Kerns[[nvc]]) <- id
+
+```
+
+# Penalized estimation of VCs
+
+## Default settings.
+
+Run with default settings, which uses `minque()` to estimate initial values for variance components and default `frac1=0.8`.
+```{r, runvcpen6}
+fit  <- vcpen(response, covmat, Kerns)
+summary(fit)
+```
+
+## Changing penalty fraction:
+
+Perform the same run as above, but with lower penalty fraction.
+
+```{r, runvcpen1}
+fit.frac1  <- vcpen(response, covmat, Kerns, frac1 = .1)
+summary(fit.frac1)
+```
+
+# Demo of using `minque()` outside of `vcpen()`
+
+This demonstrates how users can use `minque()` as a general approach to approximate REML variance components. Increasing `n.iter` will cause the resulting variance components to be closer to the fully interative REML estimates.
+
+```{r, vcinit}
+vcinit <- minque(response, covmat, Kerns, n.iter=2)
+names(vcinit)
+vcinit$beta
+vcinit$vc
+```
+
+References
+=============
+
+Schaid DJ, Sinnwell JP, Larson NB, Chen J (2020). Penalized Variance Components for Association of Multiple Genes with Traits. Genet Epidemiol, To Appear.

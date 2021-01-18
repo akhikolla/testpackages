@@ -1,0 +1,117 @@
+---
+title: "Using NPM packages in V8"
+date: "`r Sys.Date()`"
+vignette: >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteIndexEntry{Using NPM packages in V8}
+  \usepackage[utf8]{inputenc} 
+output:
+  html_document:
+    fig_caption: false
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 3
+---
+
+```{r, echo = FALSE, message = FALSE}
+knitr::opts_chunk$set(comment = "")
+library(V8)
+```
+
+## What is V8 (not)
+
+The R package V8 provides a direct interface to Google's high performance JavaScript engine. The V8 engine is also used in Chrome, NodeJS, MongoDB, and many other software. 
+
+However each of these programs actually implements most JavaScript functionality on top of V8. The naked V8 engine only provides pure ECMAscript, which does not include a lot of things that you might be used to. There is no I/O (network/disk) and no DOM (window). 
+
+Recent versions of V8 do have an event loop (required for async in ES6) and WASM support.
+
+|            | JS Engine | Evented  | Network | Disk | DOM | WASM
+|------------|--------|-----------|------|---------|-----|------
+| Browser    | ✔      | ✔        | ✔    | -       | ✔   |✔   |
+| Node       | ✔      | ✔        | ✔    | ✔       | -   |✔   |
+| V8 (6+)    | ✔      | ✔        | -    | -        | -   |✔   |
+| Legacy V8 (3.14)  | ✔      | -        | -    | -        | -   |-
+
+As of 2019, we support modern V8 (ES6+) on all important systems. See the [installation instructions](https://github.com/jeroen/V8#installation) for more details.
+
+
+## Using JavaScript libraries
+
+You can load JavaScript libraries in V8, but beware that not all packages will work out of the box. Most libraries in [npm](https://www.npmjs.com) are primarily written for Node or the browser. Functionality that requires internet connectivity, a browser window, or file access won't work, but there is a lot of stuff that does work.
+
+
+```{r}
+ct <- v8()
+ct$source(system.file("js/underscore.js", package = "V8"))
+ct$call("_.filter", mtcars, JS("function(x){return x.mpg < 15}"))
+```
+
+JS libraries that don't do anything online or graphical generally work out of the box.
+
+## NPM and browserify
+
+Most NPM packages have many dependencies, but to load it in V8 we need a single `.js` file. The same holds for browsers, so most libraries provide a bundled version for each release. Also CDN services like [cdnjs](https://cdnjs.com) or [jsdelivr](https://www.jsdelivr.com) provide a large archive of bundled versions of most JavaScript libraries. If the library you need can be found here, this is a good place to start.
+
+If no bundle is available for your library, you might be able to create one from the NPM package. However NPM assumes disk access to load dependencies in `require()` statements. How is that going to work?
+
+![browserify logo](http://jeroen.github.io/V8/browserify.png)
+
+[Browserify](http://browserify.org/) is a tool to bundle an npm package with all of its dependencies into a single js file that does not require disk access. It is mainly designed to make npm packages suitable for use on a webpage but it is useful with embedded V8 as well. 
+
+## Browserify example: js-beautify
+
+First we need to install browserify itself:
+
+```bash
+npm install -g browserify
+```
+
+Now let's find an example library to browserify. [Beautify-js](https://www.npmjs.com/package/js-beautify) is a simple npm package to fix linebreaks and indentation in JavaScript, HTML or CSS code. To bundle it up, run these three lines in a shell:
+
+```bash
+npm install js-beautify
+echo "global.beautify = require('js-beautify');" > in.js
+browserify in.js -o bundle.js
+```
+
+The first line will install js-beautify in a the current dir under `node_modules`.
+The second line creates the input file for browserify. In this case it consists of only
+one line that imports the js-beautify library and exports it to the global environment.
+The third line runs browserify and saves the output to a new file `bundle.js`.
+
+We now have a file that we can load in V8. Assuming you ran the above commands in your Desktop directory:
+
+```{r eval=FALSE}
+ct <- v8()
+ct$source("~/Desktop/bundle.js")
+```
+
+```{r echo=FALSE, results='hide'}
+ct <- v8()
+ct$source("beautify.js")
+```
+
+Let's see whats in our global environment now:
+
+```{r}
+ct$get(JS('Object.keys(global)'))
+```
+
+The `beautify` library is available now. To beautify JavaScript we need to use the `js_beautify` function. See the [package homepage](https://www.npmjs.com/package/js-beautify) for a full list of options.
+
+```{r}
+test <- "(function(x,y){x = x || 1; y = y || 1; return y * x;})(4, 9)"
+pretty_test <- ct$call("beautify.js_beautify", test, list(indent_size = 2))
+cat(pretty_test)
+```
+
+The package also includes functions to beautify css and html:
+
+```{r}
+html <- "<ul><li>one</li><li>two</li><li>three</li></ul>"
+cat(ct$call("beautify.html_beautify", html))
+```
+

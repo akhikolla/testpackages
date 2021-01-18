@@ -1,0 +1,294 @@
+---
+title: "NetworkInference Tutorial: Persistent Policy Diffusion Ties"
+author: "Fridolin Linder and Bruce Desmarais"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{NetworkInference Tutorial: Persistent Policy Diffusion Ties}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+
+---
+
+# Introduction
+
+---
+
+In this tutorial we go through some of the functionality of the `NetworkInference` package using the example application from Desmarais et al. (2015) and extending it with the recently released [State Policy Innovation and Diffusion](https://doi.org/10.7910/DVN/CVYSR7) (SPID) database. In this paper Desmarais et al. infer a latent network for policy diffusion based on adoption of policies in the US states.
+
+`netinf` infers the optimal diffusion network from a set of *nodes* (in this case US-states) and a number of so called *cascades* (here a cascade corresponds to a policy that is adopted by at least two states). A cascade is a series of events occurring at 
+a specified time. 
+
+## Installing the package
+
+Installing `NetworkInference`:
+```{r, eval=FALSE}
+install.packages('NetworkInference')
+```
+
+
+Some other packages required for this tutorial:
+```{r, eval=FALSE}
+install.packages(c('dplyr', 'igraph'))
+```
+
+## Exploring SPID Data
+
+The policy adoption data is available in the package:
+
+```{r, message=FALSE}
+library(NetworkInference)
+# Load the `policies` dataset (?policies for details).
+data('policies')
+```
+
+This loads two `data.frame`-objects. `policies` contains the adoption events and `policies_metadata` contains additional information on each policy.
+
+```{r, eval=FALSE}
+head(policies)
+```
+
+```{r, results="asis", echo=FALSE}
+pander::pandoc.table(head(policies))
+```
+
+The first column (`statenam`) gives the state that adopted the `policy` in year `adopt_year`. Let's take a closer look at the data.
+
+Number of policies:
+```{r}
+length(unique(policies$policy))
+```
+Number of adoption events:
+```{r}
+nrow(policies)
+```
+Some example policies:
+```{r}
+unique(policies$policy)[1:5]
+```
+
+Not all the policy abbreviations are understandable. So let's check the metadata for more information:
+```{r, eval=FALSE}
+library(dplyr)
+filter(policies_metadata, policy %in% unique(policy)[100:104]) %>%
+    select(-source)
+```
+```{r, results="asis", echo=FALSE, message=FALSE}
+library(dplyr)
+pander::pandoc.table(filter(policies_metadata, policy %in% unique(policy)[100:104]) %>%
+                         select(-source))
+```
+
+
+## Preparing the Data for NetworkInference
+
+Most functionality of the `NetworkInference` package is based on the `cascades` 
+data format. So before starting with the analysis we have to transform our data
+to such an object.
+
+```{r}
+policy_cascades <- as_cascade_long(policies, cascade_node_name = 'statenam',
+                                   event_time = 'adopt_year', 
+                                   cascade_id = 'policy')
+```
+
+In this case we used the function `as_cascade_long`. If your data is in wide format you can convert it using the function `as_cascade_wide`.
+
+The `cascade` class contains the same data as the `policies` `data.frame`, just in a different format. You don't need to understand how the object is constructed but let's take a look for clarity:
+
+```{r}
+class(policy_cascades)
+length(policy_cascades)
+names(policy_cascades)
+```
+
+The `cascade` class is basically a list containing three elements: 
+
+```{r}
+policy_cascades$cascade_nodes[2:3]
+```
+
+```{r}
+policy_cascades$cascade_times[2:3]
+```
+
+There are a few convenience functions to manipulate the cascades (but you can also manipulate the data before converting it to the `cascade` format).
+
+### Subsetting by Cascade
+```{r}
+selected_policies <- subset_cascade(cascade = policy_cascades, 
+                                    selection = c('clinic_access', 'cogrowman'))
+selected_policies[1:2]
+```
+
+## Subsetting in Time
+
+```{r}
+time_constrained <- subset_cascade_time(cascade = selected_policies, 
+                                        start_time = 1990, end_time = 2000)
+time_constrained[1:2]
+```
+
+## Removing Nodes (States)
+
+```{r}
+less_nodes <- drop_nodes(cascades = time_constrained, 
+                         nodes = c('Maryland', 'Washington'))
+less_nodes[1:2]
+```
+
+### Visually Inspecting Cascades
+
+It's always good practice to visually inspect the data before working with it. 
+The `NetworkInference` package provides functionality to visualize the cascade 
+data. 
+
+The function `summary.cascades()` provides quick summary statistics on the 
+cascade data:
+
+```{r}
+summary(policy_cascades)
+```
+
+The first four lines provide the number of cascades, the number of nodes in the 
+system, the number of nodes involved in cascades (there might be states that we 
+don't have diffusion data on, but we still want them represented in the dataset)
+and the possible number of edges in a potential diffusion network (a diffusion edge 
+between nodes `u` and `v` only makes sense if there is at least one cascade in 
+which `u` experiences an event before `v`). In this example there are 187 
+policies and 50 states. Each state is involved in at least one policy cascade 
+and a fully connected diffusion network would have 2450 edges. 
+
+It also provides summary statistics on the distribution of the cascade lengths 
+(number of nodes involved in each cascade) and the number of ties in the 
+cascades (two nodes experiencing the same event at the same time). For our 
+example, we can see that the 'smallest' policy was adopted by 10 states and the
+'largest' by all 50 states. From the tie summaries we see that there is at least
+one policy that was adopted by 45 states in the same year. 
+
+The `plot()` method allows to plot cascades with varying degrees of detail. The 
+argument `label_nodes` (`TRUE/FALSE`) provides node labels which require more space
+but provide more detail. The argument `selection` allows to pick a subset of 
+cascades to visualize in case there are too many to plot. If `label_nodes` is set 
+to `FALSE` each event is depicted by a dot, which allows to visualize more cascades
+simultaneously. 
+
+Let's first look at the visualization with labels. Here we plot two cascades, 
+selected by their name:
+```{r, fig.align='center', fig.width=7, fig.height=4}
+selection <- c('guncontrol_assaultweapon_ba', 'guncontrol_licenses_dealer')
+plot(policy_cascades, label_nodes = TRUE, selection = selection)
+```
+
+We can also plot more cascades with less detail:
+```{r, fig.align='center', fig.width=7, fig.height=4}
+selection <- c('waiting', 'threestrikes', 'unionlimits', 'smokeban', 
+               'paperterror', 'miglab', 'methpre', 'lott', 'lemon', 'idtheft',
+               'harass', 'hatecrime', 'equalpay')
+plot(policy_cascades, label_nodes = FALSE, selection = selection)
+```
+
+This produces a ['violin plot'](https://en.wikipedia.org/wiki/Violin_plot) for each cascade with the single diffusion events overplotted as dots. As we already saw in the previous visualization, the policy data has a lot of ties (i.e. many states adopted a policy in the same year) which is indicated by the areas of higher density in the violin plot.
+
+
+## Inferring the Latent Diffusion Network
+
+The `netinf` algorithm is implemented in the `netinf()` function. The `netinf` inferrs edges based on a diffusion model. That is we assume a parametric model for the diffusion times between edges. Currently three different diffusion models are implemented: The exponential distribution, the rayleigh distribution and the log-normal distribution. The model can be chosen with the `trans_mod` argument (default is the exponential distribution). 
+
+### Classic Netinf
+
+In the original implementation the number of edges to infer had to be fixed and chosen by the researcher. If you want to run `netinf` in this classic way you can do so by specifiying all parameters and the number of edges:
+
+```{r}
+results <- netinf(policy_cascades, trans_mod = "exponential", n_edges = 100, 
+                  params = 0.5, quiet = TRUE)
+```
+
+The exponential model has only one parameter (lambda or the rate). If there are more parameters the details section in the documentation of the `netinf` function (`?netinf`) has more detail on how to specify parameters and on the specific parametrization used by the implementation. 
+
+`n_edges` specifies how many edges should be inferred. See @gomez2010inferring and @desmarais2015persistent for guidance on choosing this parameter if running netinf in classic mode. If the number of edges is specified manually, it has to be lower than the maximum number of possible edges. An edge `u->v` is only possible if in at least one cascade `u` experiences an event *before* `v`. This means, that the maximum number of edges depends on the data. The function `count_possible_edges()` allows us to compute the maximum number of edges in advance:
+ 
+```{r}
+npe <- count_possible_edges(policy_cascades)
+npe
+```
+
+
+### Automatic Parameter Selection
+
+With version 1.2.0 `netinf` can be run without manually specifying the number of edges or the parameters of the diffusion model. 
+
+#### Selecting the number of edges automatically
+
+After each iteration of the netinf algorithm, we check if the edge added significant improvement to the network. This is done via a vuong style test. Given the likelihood score for each cascade conditional on the network inferred so far, we penalize the network with one addional edge and test if the increase in likelihood accross all cascades is significant. The user still has to specify a p-value cut-off. If the p-value of an edge is larger than the specified cut-off the algorithm stops inferring more edges. The cut-off is set via the `p_value_cutoff` argument.
+
+```{r}
+results <- netinf(policy_cascades, trans_mod = "exponential", 
+                  p_value_cutoff = 0.1, params = 0.5, quiet = TRUE)
+nrow(results)
+```
+
+We see that with a fixed lambda of 0.5 and a p-value cut-off of 0.1 the algorithm inferred 872 edges.
+
+#### Selecting the parameters of the diffusion model
+
+The diffusion model parameters can be selected automatically. Setting the `params` argument to `NULL` (default value) makes the `netinf` function initialize the parameters automatically. The parameters are initialized at the midpoint between the MLE of the minimum diffusion times and the MLE of the maximum diffusion times, across all cascades. Edges are then inferred until either the p-value cut-off or a manually specified number of edges (`n_edges`) is reached. 
+
+```{r}
+results <- netinf(policy_cascades, trans_mod = "exponential", 
+                  p_value_cutoff = 0.1, quiet = TRUE)
+nrow(results)
+```
+
+### Netinf output
+
+Let's take a look at the output of the algorithm. The output is a dataframe containing the inferred latent network in the form of an edgelist:
+
+```{r, eval=FALSE, echo=TRUE}
+head(results)
+```
+```{r, results = "asis", echo=FALSE}
+pander::pandoc.table(head(results))
+```
+
+Each row corresponds to a directed edge. The first column indicates the origin node, the second the destination node. The third column displays the gain in model fit from each added edge. The last column displays the p-value from the Vuong test of each edge. There is a generic plot method to inspect the results. If more tweaking is required, the results are a dataframe so it should be easy for the more experienced users to make your own plot. With `type = "improvement"` the improvement from each edge can be plotted:
+
+```{r, fig.align='center', fig.width=7, fig.height=4}
+plot(results, type = "improvement")
+```
+
+We can also quickly check the p-value from the Vuong test associated with each edge addition:
+
+```{r, fig.align='center', fig.width=7, fig.height=4}
+plot(results, type = 'p-value')
+```
+
+In order to produce a quick visualization of the resulting diffusion network we can use the plot method again, this time with `type = "network"`. Note that in order to use this functionality the igraph package has to be installed.
+
+```{r, fig.width=7, fig.height=5.5}
+#install.packages('igraph')
+# For this functionality the igraph package has to be installed
+# This code is only executed if the package is found:
+if(requireNamespace("igraph", quietly = TRUE)) {
+    plot(results, type = "network")
+}
+```
+
+If additional tweaking of the plot is desired, the network can be visualized using `igraph` explicitly. We refer you you to the [igraph documentation](https://CRAN.R-project.org/package=igraph) for details on how to customize the plot.
+
+```{r, message=FALSE, eval=FALSE}
+if(requireNamespace("igraph", quietly = TRUE)) {
+    library(igraph) 
+    g <- graph_from_data_frame(d = results[, 1:2])
+    plot(g, edge.arrow.size=.3, vertex.color = "grey70")
+}
+```

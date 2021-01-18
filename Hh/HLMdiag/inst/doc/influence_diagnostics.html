@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<meta name="author" content="Jaylin Lowe, Jack Moran, Adam Loy" />
+
+<meta name="date" content="2020-12-14" />
+
+<title>Influence Diagnostics</title>
+
+
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css" data-origin="pandoc">
+code.sourceCode > span { display: inline-block; line-height: 1.25; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode { white-space: pre; position: relative; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+code.sourceCode { white-space: pre-wrap; }
+code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    for (var j = 0; j < rules.length; j++) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") continue;
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') continue;
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Influence Diagnostics</h1>
+<h4 class="author">Jaylin Lowe, Jack Moran, Adam Loy</h4>
+<h4 class="date">2020-12-14</h4>
+
+
+
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">library</span>(HLMdiag)</span></code></pre></div>
+<div id="overview" class="section level1">
+<h1>Overview</h1>
+<p>The <code>HLMdiag</code> package provides functionality to examine diagnostics for hierarchical linear models, including residuals values and influence diagnostics. This vignette aims to:</p>
+<ul>
+<li>inform users how to use the new function <code>hlm_influence()</code>, which provides any easy way to obtain multiple influence diagnostics in one tibble</li>
+<li>inform users how to use the new function <code>hlm_augment()</code>, which combines <code>hlm_influence()</code> and <code>hlm_resid()</code> to return influence diagnostics and residuals</li>
+<li>introduce new functionality for <code>lme</code> created from the <code>nlme</code> package</li>
+<li>compare the differences between Cook’s distances values returned by <code>HLMdiag</code> and those returned by the <code>lme4</code> and <code>car</code> packages</li>
+</ul>
+<div id="hlm_influence-function" class="section level2">
+<h2><code>hlm_influence()</code> function</h2>
+<div id="introduction" class="section level3">
+<h3>Introduction</h3>
+<p>The <code>hlm_influence()</code> function provides a wrapper that returns influence diagnostics appended to the original model frame. It is useful for assessing the influence of individual observations, or groups of observations, and can also be used with <code>dotplot_diag()</code> to visually explore the influence diagnostics. The diagnostics returned by <code>hlm_influence()</code> include Cook’s distance, MDFFITS, covariance trace (covtrace), covariance ratio (covratio), leverage, and relative variance change (RVC).</p>
+<p>Cook’s distance and MDFFITS both measure the distance between fixed effects estimated from the full data set and those obtained from the reduced data set. For Cook’s distance, the change in parameter estimates is scaled by the estimated covariance matrix of the original parameter estimates, while MDFFITS scales this change by the estimated covariance matrix of the deletion estimates. The covariance trace and covariance ratio both measure how precision is affected by the deletion of a particular observation or group of observations <em>i</em>. Covariance trace is a measure of the ratio between the covariance matrices with and without unit <em>i</em> to the identity matrix, while covariance ratio is a comparison of the two covariance matrices with and without unit <em>i</em> using their determinants. Relative variance change (RVC) is a measurement of the ratio of estimates of the <em>l</em> th variance component with and without unit <em>i</em>. The final influence diagnostic returned by <code>hlm_influence()</code>, leverage, is the rate of change in the predicted response with respect to the observed response. For a full explanation of these influence diagnostics, including formulas, please refer to Loy and Hofmann (2014).</p>
+<p>To explore the functionality of <code>hlm_influence()</code>, we will use the data set <code>classroom</code> (<strong>West et. al, 2014</strong>). The data set consists of 1,190 observations of students. Students are grouped within classes, which are nested within schools. There are 312 distinct classes nested within 107 schools.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1"></a><span class="kw">data</span>(<span class="st">&quot;classroom&quot;</span>, <span class="dt">package =</span> <span class="st">&quot;WWGbook&quot;</span>)</span></code></pre></div>
+<pre><code>#&gt; # A tibble: 1,190 x 12
+#&gt;      sex minority mathkind mathgain   ses yearstea mathknow housepov mathprep
+#&gt;    &lt;int&gt;    &lt;int&gt;    &lt;int&gt;    &lt;int&gt; &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;
+#&gt;  1     1        1      448       32  0.46        1    NA       0.082     2   
+#&gt;  2     0        1      460      109 -0.27        1    NA       0.082     2   
+#&gt;  3     1        1      511       56 -0.03        1    NA       0.082     2   
+#&gt;  4     0        1      449       83 -0.38        2    -0.11    0.082     3.25
+#&gt;  5     0        1      425       53 -0.03        2    -0.11    0.082     3.25
+#&gt;  6     1        1      450       65  0.76        2    -0.11    0.082     3.25
+#&gt;  7     0        1      452       51 -0.03        2    -0.11    0.082     3.25
+#&gt;  8     0        1      443       66  0.2         2    -0.11    0.082     3.25
+#&gt;  9     1        1      422       88  0.64        2    -0.11    0.082     3.25
+#&gt; 10     0        1      480       -7  0.13        2    -0.11    0.082     3.25
+#&gt;    classid schoolid childid
+#&gt;      &lt;int&gt;    &lt;int&gt;   &lt;int&gt;
+#&gt;  1     160        1       1
+#&gt;  2     160        1       2
+#&gt;  3     160        1       3
+#&gt;  4     217        1       4
+#&gt;  5     217        1       5
+#&gt;  6     217        1       6
+#&gt;  7     217        1       7
+#&gt;  8     217        1       8
+#&gt;  9     217        1       9
+#&gt; 10     217        1      10
+#&gt; # … with 1,180 more rows</code></pre>
+<p>We will fit a simple three-level hierarchical linear model using the <code>lme4</code> package:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1"></a>class.lmer &lt;-<span class="st"> </span>lme4<span class="op">::</span><span class="kw">lmer</span>(mathgain <span class="op">~</span><span class="st"> </span>mathkind <span class="op">+</span><span class="st"> </span>sex <span class="op">+</span><span class="st"> </span>minority <span class="op">+</span><span class="st"> </span>ses <span class="op">+</span><span class="st"> </span>housepov <span class="op">+</span><span class="st"> </span>(<span class="dv">1</span><span class="op">|</span>schoolid<span class="op">/</span>classid), <span class="dt">data =</span> classroom)</span></code></pre></div>
+</div>
+<div id="obtain-influence-diagnostics-at-different-levels-with-level" class="section level3">
+<h3>Obtain influence diagnostics at different levels with <code>level</code></h3>
+<p><code>hlm_influence()</code> calculates influence diagnostics for individual cases, or larger groups. For example, to obtain a tibble with influence diagnostics for all 1,190 students we use the following:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1"></a>infl &lt;-<span class="st"> </span><span class="kw">hlm_influence</span>(class.lmer, <span class="dt">level =</span> <span class="dv">1</span>)</span></code></pre></div>
+<pre><code>#&gt; # A tibble: 1,190 x 14
+#&gt;       id mathgain mathkind   sex minority   ses housepov schoolid classid
+#&gt;    &lt;int&gt;    &lt;int&gt;    &lt;int&gt; &lt;int&gt;    &lt;int&gt; &lt;dbl&gt;    &lt;dbl&gt;    &lt;int&gt;   &lt;int&gt;
+#&gt;  1     1       32      448     1        1  0.46    0.082        1     160
+#&gt;  2     2      109      460     0        1 -0.27    0.082        1     160
+#&gt;  3     3       56      511     1        1 -0.03    0.082        1     160
+#&gt;  4     4       83      449     0        1 -0.38    0.082        1     217
+#&gt;  5     5       53      425     0        1 -0.03    0.082        1     217
+#&gt;  6     6       65      450     1        1  0.76    0.082        1     217
+#&gt;  7     7       51      452     0        1 -0.03    0.082        1     217
+#&gt;  8     8       66      443     0        1  0.2     0.082        1     217
+#&gt;  9     9       88      422     1        1  0.64    0.082        1     217
+#&gt; 10    10       -7      480     0        1  0.13    0.082        1     217
+#&gt;          cooksd      mdffits covtrace covratio leverage.overall
+#&gt;           &lt;dbl&gt;        &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;            &lt;dbl&gt;
+#&gt;  1 0.00106      0.00106       0.00289     1.00           0.121 
+#&gt;  2 0.00143      0.00143       0.00246     1.00           0.121 
+#&gt;  3 0.000336     0.000335      0.00378     1.00           0.122 
+#&gt;  4 0.000225     0.000225      0.00169     1.00           0.0780
+#&gt;  5 0.000173     0.000172      0.00178     1.00           0.0780
+#&gt;  6 0.000000807  0.000000804   0.00321     1.00           0.0794
+#&gt;  7 0.0000233    0.0000233     0.00113     1.00           0.0775
+#&gt;  8 0.0000000504 0.0000000504  0.00120     1.00           0.0775
+#&gt;  9 0.000130     0.000129      0.00401     1.00           0.0801
+#&gt; 10 0.00108      0.00108       0.00147     1.00           0.0778
+#&gt; # … with 1,180 more rows</code></pre>
+<p>Note that the parameter used to select individual observations is now called <code>level</code>, not <code>group</code>. Previous versions of <code>HLMdiag</code> used the group parameter for influence diagnostics, where <code>group = NULL</code> was the default, and users could choose to delete groups instead by setting <code>group</code> equal to level names. As of <code>HLMdiag</code> version 0.4.0, <code>group</code> has been replaced by <code>level</code>. <code>level</code> defaults to <code>level = 1</code> which deletes individual observations, exactly how <code>group = NULL</code> used to work.</p>
+<p>The resulting tibble can be used along with <code>dotplot_diag()</code> to identify potentially influential observations using either an internal cutoff of 3*IQR or a user-specified cutoff. For example, the plot shown below reveals and labels all observations above the internally calculated cutoff for Cook’s distance.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1"></a><span class="kw">dotplot_diag</span>(infl<span class="op">$</span>cooksd, <span class="dt">name =</span> <span class="st">&quot;cooks.distance&quot;</span>, <span class="dt">cutoff =</span> <span class="st">&quot;internal&quot;</span>)</span></code></pre></div>
+<p>The plot illustrates that there are many observations with a Cook’s distance value above the internally calculated cutoff. <code>dotplot_diag()</code> labels the top 5, which is difficult to see in this case. Rather than investigate all observations above the cutoff, we may be interested in the observations with the highest Cook’s distance values. The tibble returned by <code>hlm_influence()</code> provides an easy way to do this when used with the <code>arrange()</code> function from <code>dplyr</code>.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1"></a>tb1 &lt;-<span class="st"> </span>infl <span class="op">%&gt;%</span></span>
+<span id="cb8-2"><a href="#cb8-2"></a><span class="st">  </span><span class="kw">arrange</span>(<span class="kw">desc</span>(cooksd))</span></code></pre></div>
+<pre><code>#&gt; # A tibble: 1,190 x 14
+#&gt;       id mathgain mathkind   sex minority   ses housepov schoolid classid cooksd
+#&gt;    &lt;int&gt;    &lt;int&gt;    &lt;int&gt; &lt;int&gt;    &lt;int&gt; &lt;dbl&gt;    &lt;dbl&gt;    &lt;int&gt;   &lt;int&gt;  &lt;dbl&gt;
+#&gt;  1   539      253      290     0        1 -0.4     0.257       47      82 0.0536
+#&gt;  2    41     -110      434     0        1 -0.37    0.365        4     179 0.0265
+#&gt;  3  1078      203      290     1        1 -0.32    0.067       95     144 0.0256
+#&gt;  4   664      -84      629     1        0  2.33    0.17        62      22 0.0245
+#&gt;  5   312      138      542     1        0  2.27    0.05        27     104 0.0221
+#&gt;  6   754      218      368     0        1 -1.14    0.43        70     152 0.0202
+#&gt;  7   337      197      290     1        1 -0.46    0.214       28     203 0.0194
+#&gt;  8   723      214      290     1        1 -0.67    0.209       68     244 0.0187
+#&gt;  9   812      147      510     0        0 -0.47    0.367       75      42 0.0148
+#&gt; 10  1146       11      376     0        1  0.62    0.126      102      44 0.0132
+#&gt;    mdffits covtrace covratio leverage.overall
+#&gt;      &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;            &lt;dbl&gt;
+#&gt;  1  0.0527  0.0172      1.02           0.112 
+#&gt;  2  0.0264  0.00406     1.00           0.143 
+#&gt;  3  0.0250  0.0250      1.03           0.147 
+#&gt;  4  0.0242  0.0125      1.01           0.0869
+#&gt;  5  0.0219  0.00988     1.01           0.0919
+#&gt;  6  0.0200  0.00702     1.01           0.0896
+#&gt;  7  0.0190  0.0198      1.02           0.147 
+#&gt;  8  0.0183  0.0195      1.02           0.155 
+#&gt;  9  0.0147  0.00797     1.01           0.0722
+#&gt; 10  0.0131  0.00825     1.01           0.0962
+#&gt; # … with 1,180 more rows</code></pre>
+<p>There does not appear to be a clear pattern among students who have relatively higher Cook’s distance values; they do not tend to be from a particular school or class. In order to investigate these observations further, one could look to summary statistics for the different explanatory variables. Additionally, a similar analysis could be done with the other influence diagnostics provided in the tibble from <code>hlm_influence()</code>.</p>
+<p>In addition to identifying influential observations, it may also be useful to identify influential groups. The <code>level</code> parameter in <code>hlm_influence()</code> can be used for this purpose. For example, we can obtain influence diagnostics for each class:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1"></a>infl.classes &lt;-<span class="st"> </span><span class="kw">hlm_influence</span>(class.lmer, <span class="dt">level =</span> <span class="st">&quot;classid:schoolid&quot;</span>)</span></code></pre></div>
+<pre><code>#&gt; # A tibble: 312 x 6
+#&gt;    `classid:schoolid`   cooksd  mdffits covtrace covratio leverage.overall
+#&gt;    &lt;fct&gt;                 &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;            &lt;dbl&gt;
+#&gt;  1 160:1              0.00224  0.00224   0.00990     1.01           0.0980
+#&gt;  2 217:1              0.00133  0.00131   0.0238      1.02           0.128 
+#&gt;  3 197:2              0.00323  0.00320   0.0106      1.01           0.123 
+#&gt;  4 211:2              0.00724  0.00719   0.0202      1.02           0.0891
+#&gt;  5 307:2              0.00346  0.00343   0.0197      1.02           0.152 
+#&gt;  6 11:3               0.00116  0.00115   0.0141      1.01           0.0960
+#&gt;  7 137:3              0.000873 0.000868  0.0131      1.01           0.150 
+#&gt;  8 145:3              0.00517  0.00515   0.0248      1.02           0.0983
+#&gt;  9 228:3              0.000479 0.000478  0.00797     1.01           0.126 
+#&gt; 10 48:4               0.00371  0.00367   0.0212      1.02           0.134 
+#&gt; # … with 302 more rows</code></pre>
+<p>Note that the <code>level</code> parameter is set as <code>classid:schoolid</code>, not <code>classid</code>. The level parameter should be specified as found in <code>model@flist</code> for lmerMod objects. For three level models, this usually takes the form of “level2:level3”, where level2 is the name of the second level variable, and level3 is the name of the third level variable.</p>
+<p>Using <code>dotplot_diag()</code> again with one of the columns from the resulting tibble of <code>hlm_influence</code> reveals that class 218 has a relatively high Cook’s distance value.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1"></a><span class="kw">dotplot_diag</span>(infl.classes<span class="op">$</span>cooksd, <span class="dt">name =</span> <span class="st">&quot;cooks.distance&quot;</span>, <span class="dt">cutoff =</span> <span class="st">&quot;internal&quot;</span>)</span></code></pre></div>
+<p>We can repeat a similar analysis to flag influential schools.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1"></a>infl.schools &lt;-<span class="st"> </span><span class="kw">hlm_influence</span>(class.lmer, <span class="dt">level =</span> <span class="st">&quot;schoolid&quot;</span>)</span></code></pre></div>
+<pre><code>#&gt; # A tibble: 107 x 6
+#&gt;    schoolid   cooksd  mdffits covtrace covratio leverage.overall
+#&gt;    &lt;fct&gt;       &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;            &lt;dbl&gt;
+#&gt;  1 1        0.000561 0.000557   0.0381     1.04           0.0901
+#&gt;  2 2        0.00681  0.00672    0.0554     1.06           0.115 
+#&gt;  3 3        0.0343   0.0333     0.0723     1.07           0.108 
+#&gt;  4 4        0.0248   0.0246     0.0360     1.04           0.125 
+#&gt;  5 5        0.00224  0.00223    0.0583     1.06           0.0998
+#&gt;  6 6        0.0109   0.0107     0.0690     1.07           0.104 
+#&gt;  7 7        0.00576  0.00560    0.0785     1.08           0.108 
+#&gt;  8 8        0.0121   0.0118     0.0785     1.08           0.0926
+#&gt;  9 9        0.00624  0.00590    0.0793     1.08           0.141 
+#&gt; 10 10       0.00848  0.00826    0.0723     1.07           0.0928
+#&gt; # … with 97 more rows</code></pre>
+<p>Similarly, we use <code>dotplot_diag</code> to visually represent the differences. In this case, there are only four observations above the cutoff, so we set <code>modify = &quot;dotplot&quot;</code> in order to better visualize the influential observations. <code>modify = &quot;dotplot&quot;</code> works well when there are a relatively small number of observations above the cutoff.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1"></a><span class="kw">dotplot_diag</span>(infl.schools<span class="op">$</span>cooksd, <span class="dt">name =</span> <span class="st">&quot;cooks.distance&quot;</span>, <span class="dt">cutoff =</span> <span class="st">&quot;internal&quot;</span>, <span class="dt">modify =</span> <span class="st">&quot;dotplot&quot;</span>)</span></code></pre></div>
+<p>The plot reveals that schools 68, 75, 70, and 27 have relatively high Cook’s distance values.</p>
+</div>
+<div id="investigate-deletion-of-specific-observations-or-groups-with-delete" class="section level3">
+<h3>Investigate deletion of specific observations or groups with <code>delete</code></h3>
+<p>The <code>delete</code> parameter allows the user to calculate influence diagnostics for a specified group of observations, or group factor level. For example, influence diagnostics for the influential schools flagged above (68, 75, 70, and 27) can be calculated as shown below, deleting all four schools at once:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1"></a><span class="kw">hlm_influence</span>(class.lmer, <span class="dt">level =</span> <span class="st">&quot;schoolid&quot;</span>, <span class="dt">delete =</span> <span class="kw">c</span>(<span class="st">&quot;27&quot;</span>, <span class="st">&quot;70&quot;</span>, <span class="st">&quot;75&quot;</span>, <span class="st">&quot;68&quot;</span>))</span>
+<span id="cb16-2"><a href="#cb16-2"></a><span class="co">#&gt; # A tibble: 1 x 4</span></span>
+<span id="cb16-3"><a href="#cb16-3"></a><span class="co">#&gt;   cooksd mdffits covtrace covratio</span></span>
+<span id="cb16-4"><a href="#cb16-4"></a><span class="co">#&gt;    &lt;dbl&gt;   &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;</span></span>
+<span id="cb16-5"><a href="#cb16-5"></a><span class="co">#&gt; 1  0.238   0.222    0.370     1.43</span></span></code></pre></div>
+<p>Note that in this case, <code>delete</code> is specified as a character vector consisting of the school ID’s of interest. <code>delete</code> can also be set as a numeric vector of indices; in this case, setting <code>delete</code> to the row numbers of all students in the data frame who attend schools 68, 75, 70, or 27 would be equivalent to the line above.</p>
+</div>
+<div id="select-different-types-of-leverage-with-leverage-argument" class="section level3">
+<h3>Select different types of leverage with <code>leverage</code> argument</h3>
+<p>In the previous examples, <code>hlm_influence()</code> only returned overall leverage. However, <code>hlm_influence()</code> also allows for other types of leverage, including the leverage corresponding to the fixed effects, the leverage corresponding to the random effects as proposed by Demidenko and Stukel (2005), and the unconfounded leverage corresponding to the random effects proposed by Nobre and Singer (2011). These types of leverage are referred to as <code>fixef</code>, <code>ranef</code>, and <code>ranef.uc</code>, respectively.</p>
+<p>None of our observations are flagged for high leverage when looking only at overall leverage:</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1"></a><span class="kw">dotplot_diag</span>(infl<span class="op">$</span>leverage.overall, <span class="dt">name =</span> <span class="st">&quot;leverage&quot;</span>, <span class="dt">cutoff =</span> <span class="st">&quot;internal&quot;</span>)</span></code></pre></div>
+<p>However, we can obtain the other types of leverage as follows:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1"></a>infl2 &lt;-<span class="st"> </span><span class="kw">hlm_influence</span>(class.lmer, <span class="dt">level =</span> <span class="dv">1</span>, <span class="dt">leverage =</span> <span class="kw">c</span>(<span class="st">&quot;overall&quot;</span>, <span class="st">&quot;fixef&quot;</span>, <span class="st">&quot;ranef&quot;</span>, <span class="st">&quot;ranef.uc&quot;</span>))</span></code></pre></div>
+<p>This example illustrates how to select all four types of leverage, but any one or more may also be selected.</p>
+<p>We can then use <code>dotplot_diag()</code> with one of the new leverage columns to investigate outlier for that type of leverage.</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1"></a><span class="kw">dotplot_diag</span>(infl2<span class="op">$</span>leverage.fixef, <span class="dt">name =</span> <span class="st">&quot;leverage&quot;</span>, <span class="dt">cutoff =</span> <span class="st">&quot;internal&quot;</span>, <span class="dt">modify =</span> <span class="st">&quot;dotplot&quot;</span>)</span></code></pre></div>
+<p>However, further analysis reveals that several observations have high leverage when considering only the leverage corresponding to the fixed effects.</p>
+</div>
+<div id="choose-between-approximations-or-full-refits-with-approx" class="section level3">
+<h3>Choose between approximations or full refits with <code>approx</code></h3>
+<p><code>hlm_influence()</code> defaults to calculating influence diagnostics based off a one step approximation (<strong>Christensen et.al 1992</strong>; <strong>Shi and Chen 2008</strong>; <strong>Zewotir 2008</strong>). However, the <code>approx</code> parameter allows the user to calculate influence diagnostics based off a full refit of the data using <code>hlm_influence()</code>. For example, if we wished to calculate influence diagnostics for each school by fully refitting the model each time, we could use:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1"></a>infl3 &lt;-<span class="st"> </span><span class="kw">hlm_influence</span>(class.lmer, <span class="dt">level =</span> <span class="st">&quot;schoolid&quot;</span>, <span class="dt">approx =</span> <span class="ot">FALSE</span>)</span></code></pre></div>
+<pre><code>#&gt; # A tibble: 107 x 9
+#&gt;    schoolid   cooksd  mdffits covtrace covratio rvc.sigma2   rvc.D11  rvc.D22
+#&gt;    &lt;fct&gt;       &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;      &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;
+#&gt;  1 1        0.000642 0.000639   0.0565    1.06    -0.00262  0.0154    0.0183 
+#&gt;  2 2        0.00684  0.00676    0.0423    1.04    -0.00409  0.0161   -0.00403
+#&gt;  3 3        0.0389   0.0386     0.0256    0.973    0.00299  0.000124 -0.0952 
+#&gt;  4 4        0.0249   0.0253     0.0971    0.906   -0.0315  -0.0293    0.0174 
+#&gt;  5 5        0.00222  0.00221    0.0691    1.07    -0.00229  0.0160    0.00997
+#&gt;  6 6        0.0111   0.0109     0.0671    1.07     0.00443  0.00323  -0.0198 
+#&gt;  7 7        0.00564  0.00546    0.0970    1.10     0.00436  0.0230   -0.0119 
+#&gt;  8 8        0.0117   0.0115     0.0653    1.07    -0.00744 -0.0804    0.0574 
+#&gt;  9 9        0.00634  0.00598    0.0922    1.09     0.00313  0.00326  -0.00216
+#&gt; 10 10       0.00816  0.00790    0.109     1.11     0.00796  0.0220   -0.00935
+#&gt;    leverage.overall
+#&gt;               &lt;dbl&gt;
+#&gt;  1           0.0901
+#&gt;  2           0.115 
+#&gt;  3           0.108 
+#&gt;  4           0.125 
+#&gt;  5           0.0998
+#&gt;  6           0.104 
+#&gt;  7           0.108 
+#&gt;  8           0.0926
+#&gt;  9           0.141 
+#&gt; 10           0.0928
+#&gt; # … with 97 more rows</code></pre>
+<p>In most cases, using the default of <code>approx = TRUE</code> is sufficient for influence analysis. Setting <code>approx = FALSE</code> also takes much longer than the default setting since the model must be refit each time with each group or observation deleted. However, the full refit method also allows for relative variance change (RVC) to be returned. If this is desired, <code>approx = FALSE</code> should be used.</p>
+</div>
+<div id="na.action-and-the-data-argument" class="section level3">
+<h3><code>na.action</code> and the <code>data</code> argument</h3>
+<p><code>hlm_influence()</code> was written to respect the <code>na.action</code> parameter from the <code>lme4</code> package. This argument defaults to <code>na.omit</code>, which means all rows in the data sets with <code>NA</code>s present are simply deleted from the model. However, there is also an <code>na.exclude</code> option, which pads the resulting tibbles with <code>NA</code>s in the the rows that contained <code>NA</code>s in the original data set in place of deleting them altogether. In order for <code>hlm_influence()</code> to do this, the original data set must be passed into <code>hlm_influence()</code> via the <code>data</code> argument whenever the <code>na.action</code> was set to <code>na.exclude</code> in the model fitting process.</p>
+<p>For example, while the <code>class</code> data set does not have any <code>NA</code>s in the data set, we can introduce a couple for the purposes of an example.</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1"></a>classNA &lt;-<span class="st"> </span>classroom</span>
+<span id="cb22-2"><a href="#cb22-2"></a>classNA[<span class="dv">2</span>,<span class="dv">3</span>] &lt;-<span class="st"> </span><span class="ot">NA</span></span>
+<span id="cb22-3"><a href="#cb22-3"></a>classNA[<span class="dv">3</span>,<span class="dv">4</span>] &lt;-<span class="st"> </span><span class="ot">NA</span></span></code></pre></div>
+<p>We can then fit the same model using the <code>lme4</code> package as before. Below, we fit two models, one with <code>na.action = &quot;na.exclude&quot;</code> and one with the default <code>na.action = &quot;na.omit&quot;</code>.</p>
+<div class="sourceCode" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1"></a>class.lmer.exclude &lt;-<span class="st"> </span>lme4<span class="op">::</span><span class="kw">lmer</span>(mathgain <span class="op">~</span><span class="st"> </span>mathkind <span class="op">+</span><span class="st"> </span>sex <span class="op">+</span><span class="st"> </span>minority <span class="op">+</span><span class="st"> </span>ses <span class="op">+</span><span class="st"> </span>housepov <span class="op">+</span><span class="st"> </span>(<span class="dv">1</span><span class="op">|</span>schoolid<span class="op">/</span>classid), <span class="dt">data =</span> classNA, <span class="dt">na.action =</span> <span class="st">&quot;na.exclude&quot;</span>)</span>
+<span id="cb23-2"><a href="#cb23-2"></a>class.lmer.omit &lt;-<span class="st"> </span>lme4<span class="op">::</span><span class="kw">lmer</span>(mathgain <span class="op">~</span><span class="st"> </span>mathkind <span class="op">+</span><span class="st"> </span>sex <span class="op">+</span><span class="st"> </span>minority <span class="op">+</span><span class="st"> </span>ses <span class="op">+</span><span class="st"> </span>housepov <span class="op">+</span><span class="st"> </span>(<span class="dv">1</span><span class="op">|</span>schoolid<span class="op">/</span>classid), <span class="dt">data =</span> classNA, <span class="dt">na.action =</span> <span class="st">&quot;na.omit&quot;</span>)</span></code></pre></div>
+<p>We then run <code>hlm_influence()</code> on the model where <code>na.action = &quot;na.omit&quot;</code>.</p>
+<div class="sourceCode" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1"></a>infl4 &lt;-<span class="st"> </span><span class="kw">hlm_influence</span>(class.lmer.omit, <span class="dt">level =</span> <span class="dv">1</span>)</span></code></pre></div>
+<pre><code>#&gt; # A tibble: 1,188 x 14
+#&gt;       id mathgain mathkind   sex minority   ses housepov schoolid classid
+#&gt;    &lt;int&gt;    &lt;int&gt;    &lt;int&gt; &lt;int&gt;    &lt;int&gt; &lt;dbl&gt;    &lt;dbl&gt;    &lt;int&gt;   &lt;int&gt;
+#&gt;  1     1       32      448     1        1  0.46    0.082        1     160
+#&gt;  2     2       83      449     0        1 -0.38    0.082        1     217
+#&gt;  3     3       53      425     0        1 -0.03    0.082        1     217
+#&gt;  4     4       65      450     1        1  0.76    0.082        1     217
+#&gt;  5     5       51      452     0        1 -0.03    0.082        1     217
+#&gt;  6     6       66      443     0        1  0.2     0.082        1     217
+#&gt;  7     7       88      422     1        1  0.64    0.082        1     217
+#&gt;  8     8       -7      480     0        1  0.13    0.082        1     217
+#&gt;  9     9       60      502     0        1  0.83    0.082        1     217
+#&gt; 10    10       -2      502     1        1  0.06    0.082        2     197
+#&gt;        cooksd    mdffits covtrace covratio leverage.overall
+#&gt;         &lt;dbl&gt;      &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;            &lt;dbl&gt;
+#&gt;  1 0.000710   0.000708    0.00351     1.00           0.160 
+#&gt;  2 0.000295   0.000294    0.00182     1.00           0.0801
+#&gt;  3 0.000140   0.000140    0.00183     1.00           0.0801
+#&gt;  4 0.00000818 0.00000815  0.00325     1.00           0.0814
+#&gt;  5 0.0000145  0.0000144   0.00124     1.00           0.0795
+#&gt;  6 0.00000224 0.00000224  0.00127     1.00           0.0796
+#&gt;  7 0.000184   0.000183    0.00400     1.00           0.0821
+#&gt;  8 0.00111    0.00111     0.00163     1.00           0.0799
+#&gt;  9 0.000375   0.000374    0.00338     1.00           0.0815
+#&gt; 10 0.00250    0.00248     0.00508     1.01           0.136 
+#&gt; # … with 1,178 more rows</code></pre>
+<p>Note than there are only 1,188 rows in the returned tibble, although there were 1,190 observations in the original data set. The two rows with NAs were deleted from the returned tibble.</p>
+<p>We repeat this with the model where <code>na.action = &quot;na.exclude&quot;</code>.</p>
+<div class="sourceCode" id="cb26"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1"></a> infl5 &lt;-<span class="kw">hlm_influence</span>(class.lmer.exclude, <span class="dt">level =</span> <span class="dv">1</span>, <span class="dt">data =</span> classNA)</span></code></pre></div>
+<pre><code>#&gt; # A tibble: 1,190 x 14
+#&gt;       id mathgain mathkind   sex minority   ses housepov schoolid classid
+#&gt;    &lt;int&gt;    &lt;int&gt;    &lt;int&gt; &lt;int&gt;    &lt;int&gt; &lt;dbl&gt;    &lt;dbl&gt;    &lt;int&gt;   &lt;int&gt;
+#&gt;  1     1       32      448     1        1  0.46    0.082        1     160
+#&gt;  2     2      109       NA     0        1 -0.27    0.082        1     160
+#&gt;  3     3       NA      511     1        1 -0.03    0.082        1     160
+#&gt;  4     4       83      449     0        1 -0.38    0.082        1     217
+#&gt;  5     5       53      425     0        1 -0.03    0.082        1     217
+#&gt;  6     6       65      450     1        1  0.76    0.082        1     217
+#&gt;  7     7       51      452     0        1 -0.03    0.082        1     217
+#&gt;  8     8       66      443     0        1  0.2     0.082        1     217
+#&gt;  9     9       88      422     1        1  0.64    0.082        1     217
+#&gt; 10    10       -7      480     0        1  0.13    0.082        1     217
+#&gt;         cooksd     mdffits covtrace covratio leverage.overall
+#&gt;          &lt;dbl&gt;       &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;            &lt;dbl&gt;
+#&gt;  1  0.000710    0.000708    0.00351     1.00           0.160 
+#&gt;  2 NA          NA          NA          NA             NA     
+#&gt;  3 NA          NA          NA          NA             NA     
+#&gt;  4  0.000295    0.000294    0.00182     1.00           0.0801
+#&gt;  5  0.000140    0.000140    0.00183     1.00           0.0801
+#&gt;  6  0.00000818  0.00000815  0.00325     1.00           0.0814
+#&gt;  7  0.0000145   0.0000144   0.00124     1.00           0.0795
+#&gt;  8  0.00000224  0.00000224  0.00127     1.00           0.0796
+#&gt;  9  0.000184    0.000183    0.00400     1.00           0.0821
+#&gt; 10  0.00111     0.00111     0.00163     1.00           0.0799
+#&gt; # … with 1,180 more rows</code></pre>
+<p>In this tibble, there are 1,190 rows. Furthermore, the two rows with NAs display NAs for the influence diagnostics, instead of being entirely absent as in the above example. It is important to note that the <code>data</code> argument is necessary. Failing to provide the data set through the <code>data</code> argument in this situation will result in an error.</p>
+</div>
+</div>
+<div id="hlm_augment-function" class="section level2">
+<h2>hlm_augment function</h2>
+<p>The <code>hlm_augment()</code> function combines the <code>hlm_resid()</code> and <code>hlm_influence()</code> functions to return a tibble containing information about the residuals and the influence diagnostics appended to the data. For example, we can obtain residuals and influence diagnostics at once for all students in the <code>class</code> data set with the following:</p>
+<div class="sourceCode" id="cb28"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1"></a>aug &lt;-<span class="st"> </span><span class="kw">hlm_augment</span>(class.lmer, <span class="dt">level =</span> <span class="dv">1</span>)</span></code></pre></div>
+<pre><code>#&gt; # A tibble: 1,190 x 20
+#&gt;       id mathgain mathkind   sex minority   ses housepov schoolid classid
+#&gt;    &lt;dbl&gt;    &lt;int&gt;    &lt;int&gt; &lt;int&gt;    &lt;int&gt; &lt;dbl&gt;    &lt;dbl&gt;    &lt;int&gt;   &lt;int&gt;
+#&gt;  1     1       32      448     1        1  0.46    0.082        1     160
+#&gt;  2     2      109      460     0        1 -0.27    0.082        1     160
+#&gt;  3     3       56      511     1        1 -0.03    0.082        1     160
+#&gt;  4     4       83      449     0        1 -0.38    0.082        1     217
+#&gt;  5     5       53      425     0        1 -0.03    0.082        1     217
+#&gt;  6     6       65      450     1        1  0.76    0.082        1     217
+#&gt;  7     7       51      452     0        1 -0.03    0.082        1     217
+#&gt;  8     8       66      443     0        1  0.2     0.082        1     217
+#&gt;  9     9       88      422     1        1  0.64    0.082        1     217
+#&gt; 10    10       -7      480     0        1  0.13    0.082        1     217
+#&gt;     .resid .fitted .ls.resid .ls.fitted .mar.resid .mar.fitted       cooksd
+#&gt;      &lt;dbl&gt;   &lt;dbl&gt;     &lt;dbl&gt;      &lt;dbl&gt;      &lt;dbl&gt;       &lt;dbl&gt;        &lt;dbl&gt;
+#&gt;  1 -37.7      69.7      0          32       -34.6         66.6 0.00106     
+#&gt;  2  47.5      61.5      0         109        50.6         58.4 0.00143     
+#&gt;  3  18.5      37.5      0          56        21.6         34.4 0.000336    
+#&gt;  4  23.3      59.7     35.4        47.6      20.0         63.0 0.000225    
+#&gt;  5 -19.9      72.9    -15.4        68.4     -23.1         76.1 0.000173    
+#&gt;  6   1.01     64.0     -4.18       69.2      -2.22        67.2 0.000000807 
+#&gt;  7  -9.14     60.1     -1.19       52.2     -12.4         63.4 0.0000233   
+#&gt;  8   0.413    65.6      4.24       61.8      -2.82        68.8 0.0000000504
+#&gt;  9  11.5      76.5      4.18       83.8       8.22        79.8 0.000130    
+#&gt; 10 -54.8      47.8    -45.3        38.3     -58.0         51.0 0.00108     
+#&gt;         mdffits covtrace covratio leverage.overall
+#&gt;           &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;            &lt;dbl&gt;
+#&gt;  1 0.00106       0.00289     1.00           0.121 
+#&gt;  2 0.00143       0.00246     1.00           0.121 
+#&gt;  3 0.000335      0.00378     1.00           0.122 
+#&gt;  4 0.000225      0.00169     1.00           0.0780
+#&gt;  5 0.000172      0.00178     1.00           0.0780
+#&gt;  6 0.000000804   0.00321     1.00           0.0794
+#&gt;  7 0.0000233     0.00113     1.00           0.0775
+#&gt;  8 0.0000000504  0.00120     1.00           0.0775
+#&gt;  9 0.000129      0.00401     1.00           0.0801
+#&gt; 10 0.00108       0.00147     1.00           0.0778
+#&gt; # … with 1,180 more rows</code></pre>
+<p>This is useful for inspecting residuals values and influence diagnostics values at the same time. However, <code>hlm_augment()</code> lacks some of the functionality that <code>hlm_influence()</code> and <code>hlm_resid()</code> have. The <code>delete</code> and <code>approx</code> parameters available for <code>hlm_influence()</code> are not available in <code>hlm_augment()</code>, so the function will always use a one step approximation and delete all observations or groups instead of a selected few. The <code>standardize</code> parameter from <code>hlm_resid()</code> is also not included, so <code>hlm_influence()</code> or <code>hlm_resid()</code> should be used instead if this functionality is desired. For more information about available functionality in <code>hlm_resid()</code>, see the <code>hlm_resid</code> vignette.</p>
+<p><code>hlm_augment()</code> is especially useful for inspecting residual values of observations with relatively high influence diagnostics values, or vice versa.</p>
+<div class="sourceCode" id="cb30"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1"></a>aug2 &lt;-<span class="st"> </span>aug <span class="op">%&gt;%</span></span>
+<span id="cb30-2"><a href="#cb30-2"></a><span class="st">  </span><span class="kw">arrange</span>(<span class="kw">desc</span>(cooksd))</span></code></pre></div>
+<pre><code>#&gt; # A tibble: 1,190 x 20
+#&gt;       id mathgain mathkind   sex minority   ses housepov schoolid classid .resid
+#&gt;    &lt;dbl&gt;    &lt;int&gt;    &lt;int&gt; &lt;int&gt;    &lt;int&gt; &lt;dbl&gt;    &lt;dbl&gt;    &lt;int&gt;   &lt;int&gt;  &lt;dbl&gt;
+#&gt;  1   539      253      290     0        1 -0.4     0.257       47      82  110. 
+#&gt;  2    41     -110      434     0        1 -0.37    0.365        4     179 -157. 
+#&gt;  3  1078      203      290     1        1 -0.32    0.067       95     144   62.0
+#&gt;  4   664      -84      629     1        0  2.33    0.17        62      22  -88.7
+#&gt;  5   312      138      542     1        0  2.27    0.05        27     104   94.6
+#&gt;  6   754      218      368     0        1 -1.14    0.43        70     152  107. 
+#&gt;  7   337      197      290     1        1 -0.46    0.214       28     203   60.7
+#&gt;  8   723      214      290     1        1 -0.67    0.209       68     244   59.8
+#&gt;  9   812      147      510     0        0 -0.47    0.367       75      42   87.2
+#&gt; 10  1146       11      376     0        1  0.62    0.126      102      44  -79.8
+#&gt;    .fitted .ls.resid .ls.fitted .mar.resid .mar.fitted cooksd mdffits covtrace
+#&gt;      &lt;dbl&gt;     &lt;dbl&gt;      &lt;dbl&gt;      &lt;dbl&gt;       &lt;dbl&gt;  &lt;dbl&gt;   &lt;dbl&gt;    &lt;dbl&gt;
+#&gt;  1  143.    4.04e+ 1      213.       117.       136.   0.0536  0.0527  0.0172 
+#&gt;  2   47.0   0.           -110       -177.        66.8  0.0265  0.0264  0.00406
+#&gt;  3  141.    0.            203         65.9      137.   0.0256  0.0250  0.0250 
+#&gt;  4    4.67 -2.79e+ 1      -56.1      -81.9       -2.08 0.0245  0.0242  0.0125 
+#&gt;  5   43.4  -2.66e-15      138         98.1       39.9  0.0221  0.0219  0.00988
+#&gt;  6  111.   -6.66e-15      218        125.        93.1  0.0202  0.0200  0.00702
+#&gt;  7  136.    0.            197         62.3      135.   0.0194  0.0190  0.0198 
+#&gt;  8  154.    0.            214         80.4      134.   0.0187  0.0183  0.0195 
+#&gt;  9   59.8   2.78e+ 1      119.       109.        38.3  0.0148  0.0147  0.00797
+#&gt; 10   90.8  -2.60e+ 1       37.0      -91.1      102.   0.0132  0.0131  0.00825
+#&gt;    covratio leverage.overall
+#&gt;       &lt;dbl&gt;            &lt;dbl&gt;
+#&gt;  1     1.02           0.112 
+#&gt;  2     1.00           0.143 
+#&gt;  3     1.03           0.147 
+#&gt;  4     1.01           0.0869
+#&gt;  5     1.01           0.0919
+#&gt;  6     1.01           0.0896
+#&gt;  7     1.02           0.147 
+#&gt;  8     1.02           0.155 
+#&gt;  9     1.01           0.0722
+#&gt; 10     1.01           0.0962
+#&gt; # … with 1,180 more rows</code></pre>
+<p>We can sort by a particular column in order to inspect the values of other influence diagnostics and the residuals of influential observations.</p>
+</div>
+<div id="lme-objects-from-nlme-package" class="section level2">
+<h2>lme objects from nlme package</h2>
+<p>Previously, only the individual one step approximation influence functions worked on <code>lme</code> models fit using the <code>nlme</code> package. However, <code>hlm_influence()</code> can also be used on <code>lme</code> objects, as can <code>hlm_augment()</code>. This allows the user to calculate influence diagnostics for <code>lme</code> models by fulling refitting the model using the <code>approx = FALSE</code> argument.</p>
+<div id="important-differences-for-lme-objects" class="section level3">
+<h3>Important differences for lme objects</h3>
+<p>In most cases, using a <code>lme</code> object for <code>hlm_influence()</code> or <code>hlm_augment()</code> is identical to their usage with <code>lmerMod</code> objects from <code>lme4</code>. However, there are a few notable exceptions.</p>
+<p>For both <code>hlm_influence()</code> and <code>hlm_augment()</code>, levels should be specified by names that appear in <code>model@flist</code>. For the second level of a three level <code>lmerMod</code> model, this usually looks like “level2:level3” where level2 and level3 are the names of the second and third level variables, respectively. However, for a <code>lme</code> model, levels should be specified by names that appear in <code>model$groups</code>. For example, we can obtain influence diagnostics for each classroom from the <code>class</code> data set in the following way:</p>
+<div class="sourceCode" id="cb32"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1"></a>class.lme &lt;-<span class="st"> </span>nlme<span class="op">::</span><span class="kw">lme</span>(mathgain <span class="op">~</span><span class="st"> </span>mathkind <span class="op">+</span><span class="st"> </span>sex <span class="op">+</span><span class="st"> </span>minority <span class="op">+</span><span class="st"> </span>ses <span class="op">+</span><span class="st"> </span>housepov, <span class="dt">random =</span> <span class="op">~</span><span class="st"> </span><span class="dv">1</span><span class="op">|</span>schoolid<span class="op">/</span>classid, <span class="dt">data =</span> classroom)</span>
+<span id="cb32-2"><a href="#cb32-2"></a><span class="kw">hlm_influence</span>(class.lme, <span class="dt">level =</span> <span class="st">&quot;classid&quot;</span>)</span>
+<span id="cb32-3"><a href="#cb32-3"></a><span class="co">#&gt; # A tibble: 312 x 6</span></span>
+<span id="cb32-4"><a href="#cb32-4"></a><span class="co">#&gt;    classid   cooksd  mdffits covtrace covratio leverage.overall</span></span>
+<span id="cb32-5"><a href="#cb32-5"></a><span class="co">#&gt;    &lt;fct&gt;      &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;            &lt;dbl&gt;</span></span>
+<span id="cb32-6"><a href="#cb32-6"></a><span class="co">#&gt;  1 1/160   0.00224  0.00224   0.00990     1.01           0.121 </span></span>
+<span id="cb32-7"><a href="#cb32-7"></a><span class="co">#&gt;  2 1/217   0.00133  0.00131   0.0238      1.02           0.0784</span></span>
+<span id="cb32-8"><a href="#cb32-8"></a><span class="co">#&gt;  3 2/197   0.00323  0.00320   0.0106      1.01           0.126 </span></span>
+<span id="cb32-9"><a href="#cb32-9"></a><span class="co">#&gt;  4 2/211   0.00724  0.00719   0.0202      1.02           0.102 </span></span>
+<span id="cb32-10"><a href="#cb32-10"></a><span class="co">#&gt;  5 2/307   0.00346  0.00343   0.0197      1.02           0.0752</span></span>
+<span id="cb32-11"><a href="#cb32-11"></a><span class="co">#&gt;  6 3/11    0.00116  0.00115   0.0141      1.01           0.102 </span></span>
+<span id="cb32-12"><a href="#cb32-12"></a><span class="co">#&gt;  7 3/137   0.000873 0.000868  0.0131      1.01           0.0819</span></span>
+<span id="cb32-13"><a href="#cb32-13"></a><span class="co">#&gt;  8 3/145   0.00517  0.00515   0.0248      1.02           0.107 </span></span>
+<span id="cb32-14"><a href="#cb32-14"></a><span class="co">#&gt;  9 3/228   0.000479 0.000478  0.00797     1.01           0.148 </span></span>
+<span id="cb32-15"><a href="#cb32-15"></a><span class="co">#&gt; 10 4/48    0.00371  0.00367   0.0212      1.02           0.149 </span></span>
+<span id="cb32-16"><a href="#cb32-16"></a><span class="co">#&gt; # … with 302 more rows</span></span></code></pre></div>
+<p>For the <code>lmerMod</code> model, we specified <code>level = classid:schoolid</code>. However, for <code>lme</code> models, the name of the second level alone is sufficient. However, specifying names of specific groups to delete for <code>lme</code> models is also slightly different. For example, we can obtain influence diagnostics for a model created when classes 160 and 217 are deleted for a <code>lmerMod</code> model in the following way:</p>
+<div class="sourceCode" id="cb33"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1"></a><span class="kw">hlm_influence</span>(class.lmer, <span class="dt">level =</span> <span class="st">&quot;classid:schoolid&quot;</span>, <span class="dt">delete =</span> <span class="kw">c</span>(<span class="st">&quot;160:1&quot;</span>, <span class="st">&quot;217:1&quot;</span>))</span>
+<span id="cb33-2"><a href="#cb33-2"></a><span class="co">#&gt; # A tibble: 1 x 4</span></span>
+<span id="cb33-3"><a href="#cb33-3"></a><span class="co">#&gt;     cooksd  mdffits covtrace covratio</span></span>
+<span id="cb33-4"><a href="#cb33-4"></a><span class="co">#&gt;      &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;</span></span>
+<span id="cb33-5"><a href="#cb33-5"></a><span class="co">#&gt; 1 0.000561 0.000557   0.0381     1.04</span></span></code></pre></div>
+<p>Obtaining influence diagnostics for a model created with the deletion of classes 160 and 217 from a <code>lme</code> model is a bit different:</p>
+<div class="sourceCode" id="cb34"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1"></a><span class="kw">hlm_influence</span>(class.lme, <span class="dt">level =</span> <span class="st">&quot;classid&quot;</span>, <span class="dt">delete =</span> <span class="kw">c</span>(<span class="st">&quot;1/160&quot;</span>, <span class="st">&quot;1/217&quot;</span>))</span>
+<span id="cb34-2"><a href="#cb34-2"></a><span class="co">#&gt; # A tibble: 1 x 4</span></span>
+<span id="cb34-3"><a href="#cb34-3"></a><span class="co">#&gt;     cooksd  mdffits covtrace covratio</span></span>
+<span id="cb34-4"><a href="#cb34-4"></a><span class="co">#&gt;      &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;</span></span>
+<span id="cb34-5"><a href="#cb34-5"></a><span class="co">#&gt; 1 0.000561 0.000557   0.0381     1.04</span></span></code></pre></div>
+<p>Note that both examples specify units for deletion in the same way they are specified in <code>model@flist</code> (<code>lmerMod</code> models) or <code>model$groups</code> (<code>lme</code> models).</p>
+<p>Additionally, <code>lmerMod</code> models require that the <code>data</code> argument is passed into <code>hlm_influence()</code> and <code>hlm_augment()</code> when <code>na.action = &quot;na.exclude&quot;</code> during the model fitting process. However, this is unnecessary for <code>lme</code> models.</p>
+</div>
+</div>
+<div id="cooks-distance-values-comparison-to-other-packages" class="section level2">
+<h2>Cook’s distance values comparison to other packages</h2>
+<p>The <code>HLMdiag</code> package has two different ways to calculate Cook’s distance. One of them, which is more exact, refits the model with each observation or group deleted from the model and calculates Cook’s distance from the resulting coefficient estimates and variance components estimates. The second is a one-step approximation. For more information about how the one step approximation works, we refer the reader to <strong>Christensen et.al (1992)</strong>; <strong>Shi and Chen (2008)</strong>; and <strong>Zewotir (2008)</strong>. Other R packages also have functions that can calculate Cook’s distance. In this section, we highlight the differences between the ways of calculating Cook’s distance in <code>HLMdiag</code> versus other methods in the <code>car</code> and <code>lme4</code> packages.</p>
+<div id="the-car-package" class="section level3">
+<h3>The <code>car</code> package</h3>
+<p>The <code>cooks_distance()</code> function from <code>HLMdiag</code> calculates Cook’s distance through a full refit of the model using the following formula:</p>
+<p><span class="math inline">\(C_i(\hat{\beta}) = \frac{1}{p}{(\hat{\beta} - \hat{\beta}_{(i)})}^\top\widehat{\mathrm{VAR}(\hat{\beta})}^{-1}(\hat{\beta} - \hat{\beta}_{(i)})\)</span></p>
+<p>Notice that the difference in the change in the parameter estimates is scaled by the estimated covariance matrix of the original parameter estimates. We can calculate the Cook’s distance values in the <code>HLMdiag</code> package by first using the <code>case_delete()</code> function, followed by the <code>cooks.distance()</code> function.</p>
+<div class="sourceCode" id="cb35"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1"></a>hlm_case &lt;-<span class="st"> </span>HLMdiag<span class="op">:::</span><span class="kw">case_delete.lmerMod</span>(class.lmer)</span>
+<span id="cb35-2"><a href="#cb35-2"></a>hlm_cd_full &lt;-<span class="st"> </span>HLMdiag<span class="op">:::</span><span class="kw">cooks.distance.case_delete</span>(hlm_case)</span>
+<span id="cb35-3"><a href="#cb35-3"></a><span class="kw">head</span>(hlm_cd_full)</span>
+<span id="cb35-4"><a href="#cb35-4"></a><span class="co">#&gt; [1] 9.327238e-04 1.415243e-03 3.316859e-04 2.282399e-04 1.797497e-04</span></span>
+<span id="cb35-5"><a href="#cb35-5"></a><span class="co">#&gt; [6] 6.968432e-07</span></span></code></pre></div>
+<p>Conversely, the <code>mdffits()</code> function from <code>HLMdiag</code> calculates MDFFITS, which is a multivariate version of the DFFITS statistic. This is calculated as follows:</p>
+<p><span class="math inline">\(MDFFITS_i(\hat{\beta}) = \frac{1}{p}{(\hat{\beta} - \hat{\beta}_{(i)})}^\top\widehat{\mathrm{VAR}(\hat{\beta}_{(i)})}^{-1}(\hat{\beta} - \hat{\beta}_{(i)})\)</span></p>
+<p>Instead of scaling by the estimated covariance matrix of the original parameter estimates, calculations for MDFFITS are scaled by the estimated covariance matrix of the deletion estimates. For each deleted observation or group, the model is refit and the covariance structure re-estimated without unit <em>i</em>. We can calculate this similarly to how we calculated Cook’s distance, using the same <code>case_delete</code> object.</p>
+<div class="sourceCode" id="cb36"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1"></a>hlm_mdffits &lt;-<span class="st"> </span><span class="kw">mdffits</span>(hlm_case)</span>
+<span id="cb36-2"><a href="#cb36-2"></a><span class="kw">head</span>(hlm_mdffits)</span>
+<span id="cb36-3"><a href="#cb36-3"></a><span class="co">#&gt; [1] 9.304263e-04 1.412796e-03 3.302360e-04 2.278198e-04 1.793468e-04</span></span>
+<span id="cb36-4"><a href="#cb36-4"></a><span class="co">#&gt; [6] 6.942264e-07</span></span></code></pre></div>
+<p>These estimates are pretty similar to those produced by <code>cooks_distance()</code>; the difference is due to the use of the covariance matrix of the deletion estimates, rather than the original estimates.</p>
+<p>The <code>car</code> package calculates Cook’s distance similarly to how the <code>HLMdiag</code> package calculates MDFFITS. Instead of using the covariance matrix of the original parameter estimates like <code>HLMdiag</code>’s <code>cooks_distance()</code> function, the <code>cooks.distance()</code> function from <code>car</code> uses the estimated covariance matrix of the deletion estimates. However, the <code>cooks_distance()</code> function from car is not identical to the <code>mdffits</code> function from <code>HLMdiag</code>; the <code>car::cooks.distance()</code> function also scaled each observation, <em>i</em>, by dividing it by the estimated variance of the model calculated without observation <em>i</em>. Therefore, the formula used to calculate Cook’s distance in the <code>car</code> package is as follows:</p>
+<p><span class="math inline">\(C_i(\hat{\beta}) = \frac{1}{p\hat{\sigma_{i}}^2}{(\hat{\beta} - \hat{\beta}_{(i)})}^\top\widehat{\mathrm{VAR}(\hat{\beta}_{(i)})}^{-1}(\hat{\beta} - \hat{\beta}_{(i)})\)</span></p>
+<p>We can calculate this by first using the <code>influence()</code> function followed by the <code>cooks.distance()</code> function.</p>
+<div class="sourceCode" id="cb37"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1"></a><span class="kw">library</span>(car)</span>
+<span id="cb37-2"><a href="#cb37-2"></a>car_case &lt;-<span class="st"> </span><span class="kw">influence</span>(class.lmer) </span>
+<span id="cb37-3"><a href="#cb37-3"></a>car_cd &lt;-<span class="st"> </span><span class="kw">cooks.distance</span>(car_case)</span>
+<span id="cb37-4"><a href="#cb37-4"></a><span class="kw">head</span>(car_cd)</span>
+<span id="cb37-5"><a href="#cb37-5"></a><span class="co">#&gt; [1] 1.270970e-06 1.928339e-06 4.493427e-07 3.102931e-07 2.441009e-07</span></span>
+<span id="cb37-6"><a href="#cb37-6"></a><span class="co">#&gt; [6] 9.411194e-10</span></span></code></pre></div>
+<p>These values initially seem fairly different from the MDFFITS and Cook’s distance values produced by <code>HLMdiag</code>, due to the additional scaling by the inverse of the variance of each refitted model. We can adjust for this by multiplying the vector of Cook’s distance values from <code>car</code> by the estimated variance from each refitted model.</p>
+<div class="sourceCode" id="cb38"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1"></a>sig.sq &lt;-<span class="st"> </span>car_case[[<span class="dv">4</span>]][,<span class="dv">1</span>]</span>
+<span id="cb38-2"><a href="#cb38-2"></a>car_cd_adjusted &lt;-<span class="st"> </span>car_cd <span class="op">*</span><span class="st"> </span>sig.sq</span>
+<span id="cb38-3"><a href="#cb38-3"></a><span class="kw">head</span>(car_cd_adjusted)</span>
+<span id="cb38-4"><a href="#cb38-4"></a><span class="co">#&gt;            1            2            3            4            5            6 </span></span>
+<span id="cb38-5"><a href="#cb38-5"></a><span class="co">#&gt; 9.304279e-04 1.412774e-03 3.302267e-04 2.278159e-04 1.793900e-04 6.918772e-07</span></span></code></pre></div>
+<p>Once the values from <code>car</code> have been adjusted by sigma squared, they now appear very similar to the MDFFITS values from <code>HLMdiag</code>. The plot below shows the difference between the MDFFITS estimates from <code>HLMdiag</code> and the variance-adjusted Cook’s distance estimates from <code>car</code> for all 1,190 observations in the <code>classroom</code> data set.</p>
+<p>While the difference between the estimates varies slightly due to differences in how the fixed effects and variance components are calculated for refit models in both packages, the difference in values tends to be very small.</p>
+</div>
+<div id="the-lme4-package" class="section level3">
+<h3>The <code>lme4</code> package</h3>
+<p>Similar to <code>HLMdiag</code>, the <code>lme4</code> package has two methods that calculate Cook’s distance. One of them, similar to the <code>case_delete</code> method, conducts a full refit of models without each observation or group. The second is a quicker approximation.</p>
+<div id="lme4-approximation" class="section level4">
+<h4><code>lme4</code> approximation</h4>
+<p>In order to calculate the approximation of Cook’s distance values from <code>lme4</code>, we use the <code>cooks.distance()</code> function.</p>
+<div class="sourceCode" id="cb39"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1"></a>lme_cd_approx &lt;-<span class="st"> </span>lme4<span class="op">:::</span><span class="kw">cooks.distance.merMod</span>(class.lmer)</span>
+<span id="cb39-2"><a href="#cb39-2"></a><span class="kw">head</span>(lme_cd_approx)</span>
+<span id="cb39-3"><a href="#cb39-3"></a><span class="co">#&gt;           1           2           3           4           5           6 </span></span>
+<span id="cb39-4"><a href="#cb39-4"></a><span class="co">#&gt; 0.050602009 0.080124360 0.012322170 0.011276222 0.008216468 0.000021657</span></span></code></pre></div>
+<p>However, this approximation is fairly different from the one produced from <code>HLMdiag</code>.</p>
+<div class="sourceCode" id="cb40"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb40-1"><a href="#cb40-1"></a>hlm_cd_approx &lt;-<span class="st"> </span>HLMdiag<span class="op">:::</span><span class="kw">cooks.distance.lmerMod</span>(class.lmer)</span>
+<span id="cb40-2"><a href="#cb40-2"></a><span class="kw">head</span>(hlm_cd_approx)</span>
+<span id="cb40-3"><a href="#cb40-3"></a><span class="co">#&gt; [1] 1.060728e-03 1.433652e-03 3.358071e-04 2.249644e-04 1.726769e-04</span></span>
+<span id="cb40-4"><a href="#cb40-4"></a><span class="co">#&gt; [6] 8.069538e-07</span></span></code></pre></div>
+<p>The approximation from <code>HLMdiag</code> is also closer to the full refit calculated by <code>HLMdiag</code> than the <code>lme4</code> approximation is. The plots below show the difference between the full refit from <code>HLMdiag</code> and the <code>HLMdiag</code> approximation (left) and the <code>lme4</code> approximation (right).</p>
+<p>The estimates produced by the <code>lme4</code> approximation are never smaller than the values from the <code>HLMdiag</code> full refit, but they tend to be further off the <code>HLMdiag</code> full refit values than the <code>HLMdiag</code> approximation values are. The difference between the full refit and the approximation from <code>HLMdiag</code> tends to be very small (&lt; 0.0005), while the difference between the full refit and the <code>lme4</code> approximation values tends to be much larger.</p>
+</div>
+<div id="lme4-full-refit" class="section level4">
+<h4><code>lme4</code> full refit</h4>
+<p><code>lme4</code> also has a function that performs a full refit of the models without each observation or group and calculates Cook’s distance values based off those refits. We can calculate this by using the <code>influence</code> function from <code>lme4</code>.</p>
+<div class="sourceCode" id="cb41"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1"></a>lme_case &lt;-<span class="st"> </span>lme4<span class="op">:::</span><span class="kw">influence.merMod</span>(class.lmer, <span class="dt">data =</span> classroom) </span>
+<span id="cb41-2"><a href="#cb41-2"></a>cd_lme_full &lt;-<span class="st"> </span><span class="kw">cooks.distance</span>(lme_case) </span></code></pre></div>
+<p><code>lme4</code>’s cook’s distance function for objects created from the <code>influence</code> function has a bug that prevents us from obtaining Cook’s distance values from the <code>influence</code> object using <code>lme4</code>; however, we can use the <code>cooks.distance</code> function from the <code>stats</code> package on the <code>influence</code> object from <code>lme4</code>.</p>
+<p>The values obtained from <code>lme4</code> match those from <code>car</code>, meaning that <code>lme4</code> is also scaling the estimates by dividing by the estimated variance of each refit model, in addition to using the estimated covariance matrix from the deletion estimates, rather than the original estimates. Therefore, the <code>lme4</code> package is also using this formula to calculate Cook’s distance:</p>
+<p><span class="math inline">\(C_i(\hat{\beta}) = \frac{1}{p\hat{\sigma_{i}}^2}{(\hat{\beta} - \hat{\beta}_{(i)})}^\top\widehat{\mathrm{VAR}(\hat{\beta}_{(i)})}^{-1}(\hat{\beta} - \hat{\beta}_{(i)})\)</span></p>
+<p>The full refits from the <code>lme4</code> and <code>car</code> packages both choose to calculate what is MDFFITS in the <code>HLMdiag</code> package, and additionally choose to scale by dividing by the variance from each refit model. Those choices explain almost all of the differences between Cook’s distance values from the three different packages; additional variation is due to differences in how the new models are fit and coefficients estimated.</p>
+<p>##References Bates D, Maechler M, Bolker B, Walker S (2015). Fitting Linear Mixed-Effects Models Using lme4. Journal of Statistical Software, 67(1), 1-48. URL <a href="http://dx.doi.org/10.18637/jss.v056.i05" class="uri">http://dx.doi.org/10.18637/jss.v056.i05</a></p>
+<p>Christensen R, Pearson L, Johnson W (1992). “Case-Deletion Diagnostics for Mixed Models.” <em>Technometrics</em>, 34(1), 38–45.</p>
+<p>Fox J, Weisburg S (2019). A {R} Companion to Applied Regression, Third Addition. Thousand Oaks CA: Sage. URL: <a href="https://socialsciences.mcmaster.ca/jfox/Books/Companion/" class="uri">https://socialsciences.mcmaster.ca/jfox/Books/Companion/</a></p>
+<p>Loy A, Hofmann H (2014). HLMdiag: A Suite of Diagnostics for Hierarchical Linear Models in R. <em>Journal of Statistical Software</em>, 56(5), 1-28.</p>
+<p>Pinheiro J, Bates D, DebRoy S, Sarkar D, R Core Team (2020). <em>nlme: Linear and Nonlinear Mixed Effects Models</em>. R package version 3.1-148, &lt;URL: <a href="https://CRAN.R-project.org/package=nlme" class="uri">https://CRAN.R-project.org/package=nlme</a>&gt;.</p>
+<p>Shi L, Chen G (2008). “Case Deletion Diagnostics in Multilevel Models.” <em>Journal of Multivariate Analysis</em>, 99(9), 1860–1877.</p>
+<p>West, B., Welch, K. &amp; Galecki, A. (2006) Linear Mixed Models: A Practical Guide Using Statistical Software. First Edition. Chapman Hall / CRC Press. ISBN 1584884800</p>
+<p>Zewotir T (2008). “Multiple Cases Deletion Diagnostics for Linear Mixed Models.” <em>Communications in Statistics – Theory and Methods</em>, 37(7), 1071–1084.</p>
+</div>
+</div>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

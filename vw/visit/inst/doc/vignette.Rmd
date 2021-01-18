@@ -1,0 +1,169 @@
+---
+title: "visit: Vaccine Phase I Design with Simultaneous Evaluation of Immnunogeneicity and Toxicity"
+author: "Chenguang Wang"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{visit: Vaccine Phase I Design with Simultaneous Evaluation of Immnunogeneicity and Toxicity}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, eval = TRUE, echo = FALSE, message = FALSE}
+require(visit);
+set.seed(10000);
+```
+
+# Introduction
+
+Phase I clinical trials are the first step in drug development to apply a new
+drug or drug combination on humans. Typical designs of Phase I trials use
+toxicity as the primary endpoint and aim to find the maximum tolerable dosage.
+However, these designs are generally inapplicable for the development of cancer
+vaccines because the primary objectives of a cancer vaccine Phase I trial often
+include determining whether the vaccine shows biologic activity.
+
+R package **visit** implements a dose escalation algorithm that simultaneously
+accounts for immunogenicity and toxicity. It uses lower dose levels as the
+reference for determining if the current dose level is optimal in terms of
+immune response. It also ensures subject safety by capping the toxicity rate
+with a given upper bound. These two criteria are simultaneously evaluated using
+an intuitive decision region.
+
+Users are referred to the following paper for details of the **visit** design: 
+
+Wang, C., Rosner, G. L., & Roden, R. B. (2019). A Bayesian design for phase I cancer
+therapeutic vaccine trials. Statistics in medicine, 38(7), 1170-1189.
+
+# Installation
+
+The package **visit** can be installed directly from *CRAN*: 
+```{r, eval = FALSE, echo = TRUE}
+install.packages("visit");
+require(visit);
+```
+Some packages (e.g., *shiny*) are required to run the graphical user interface for *visit***, 
+but are not required to run **visit** through a *R* terminal.
+
+# Conduct Simulation Studies During Study Design 
+
+Simulation studies are necessary for evaluating study characteristics for a
+specific study design. **visit** provides functions for conducting simulation
+studies and summarizing the simulation results. 
+
+## Simulation Scenarios
+
+The first step in the simulation studies is usually to specify the simulation 
+scenarios. This is done in **visit** by the function *vtScenario*:
+
+```{r, eval = TRUE, echo = TRUE}
+tox       <-  c(0.07, 0.23, 0.66);
+res       <-  c(0.50, 0.17, 0.59);
+rho       <-  c(0.98, 0.40, 0.46);
+scenario  <-  vtScenario(tox = tox, res = res, rho = rho);
+summary(scenario);
+```
+The simulation scenarios are constructed using the level-specific DLT risk rates (*tox*), 
+immune response rates (*res*), and odds ratios (*rho*). The result is a class  *VTTRUEPS* object 
+which has S3 methods *summary* and "plot".
+
+```{r, eval = TRUE}
+summary(scenario);
+```
+
+```{r, eval = TRUE, echo = TRUE, fig.height = 4, fig.width = 8}
+oldpar <- par(mfrow = c(1,2));
+plot(scenario, draw.curves = 1:2, main = "Marginal DLT Risk and Response Rates");
+plot(scenario, draw.curves = 3:6, main = "Joint DLT Risk and Response Rates");
+par(oldpar);
+```
+
+## Incorporate Prior Knowledge and Specify Priors
+
+Prior knowledge about the DLT risk rates and the prior choices of the parametric
+model parameters should be encapsulate into a class
+*VTPRIOR* object by the function *vtPriorPar*. Details of the parameters can be 
+found in Wang el. al. (2019).
+
+```{r, eval = TRUE, echo = TRUE}
+tau   <- c(0.39, 0.87, 0.49);
+prior <- vtPriorPar(tau = tau, sdalpha = 10, sdrho = 10);
+```
+
+## Conduct Simulation
+
+The main simulation function in the **visit** package is the *vtSimu* function.
+The function requires a class *VTRUEPS* object for simulation scenarios and a
+class "VTPRIOR" class object for priors and other design parameters including
+*etas* for the lower and upper boundary of DLT risks, *size.cohort* for cohort
+sizes, etc. Probability model needs to be specified by *prob.mdl*. The options
+are *NONPARA* for non-parametric model, NONPARA+ for non-parametric model with
+$\rho=1$, *PARA* for partially parametric model, and *PARA+* for partially
+parametric model with $\rho=1$.
+
+```{r, eval = TRUE, results = 'hide'}
+simu <- vtSimu(n.rep = 100, trueps = scenario,
+               size.cohort = 5, size.level = 10,
+               etas = c(0.3, 0.7), dec.cut = c(0.45, 0.55, 0.75),
+               prob.mdl = "NONPARA+");
+```
+
+The result is a class *VTSIMUT* object with S3 methods *summary* and *summary2*.
+
+```{r, eval = TRUE, echo = TRUE}
+sum.1 <- summary(simu);
+print(sum.1);
+```
+
+```{r, eval = TRUE, echo = TRUE}
+sum.2 <- summary2(simu);
+print(sum.2);
+```
+
+
+# Conduct Data Analysis for Ongoing Phase I Studies
+
+During the conduction of a Phase I study, the *visit** package provide functions
+to carry our the interim analysis and provide decisions about dose escalation.  
+
+## Interim Analysis
+
+To perform the interim analysis, the current level of observation and the
+previous level of observation is needed. Decision cuts, lower and upper bound of
+DLT risk, prob.mdl, and priors are all optional arguments. Please refer to the
+**visit** package PDF for details on the result *decision map*.
+
+```{r, eval = TRUE, echo = TRUE, fig.height = 5, fig.width = 5}
+etas       <- c(0.1, 0.3)
+dec.cut    <- c(0.6,0.6,0.6)
+cur.obs.y  <- c(3, 2, 1, 1)
+prev.obs.y <- c(5, 2, 0, 0)
+rst.inter  <- vtInterim(cur.obs.y,  prev.obs.y = prev.obs.y,
+                        prob.mdl = "NONPARA", etas = etas, dec.cut = dec.cut,
+                        nsmp = 2000);
+
+plot(rst.inter);
+```
+
+## Track of Study History
+
+A function *vtTrack* is provided to visualize the entire progress of the study,
+including the observed data and dose escalation decisions. The required data is
+a five column matrix, with the first column indicating the dose level, and the
+rest should indicate the observed number of patients with *No DLT, No
+Response*, *No DLT, Response*, *DLT, No Response*, and *DLT, Response*.
+
+```{r, eval = TRUE, echo = TRUE, fig.height = 4, fig.width = 7}
+obs <- rbind(c(1, 6, 4, 3, 6), c(2, 4, 9, 3, 3), c(3, 2, 6, 6, 5));
+vtTrack(obs, end.width = 0.8);
+```
+
+# Graphical User Interface (GUI)
+
+The **visit** package provides a web-based GUI for composite endpoint analysis.
+The GUI can be accessed by
+
+```{r, echo=TRUE, eval=FALSE}
+vtShiny();
+```
+

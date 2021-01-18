@@ -1,0 +1,128 @@
+---
+title: "Overview"
+date: "2019-03-18"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Overview}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+`websocket` is a [WebSocket](https://en.wikipedia.org/wiki/WebSocket) client package for R backed by the [websocketpp](https://github.com/zaphoyd/websocketpp) C++ library.
+
+WebSocket clients are most commonly used from [JavaScript in a web browser](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_client_applications), and their use in R with this package is not much different. The experience of using `websocket` is designed to be similar to the experience of using WebSockets in a browser.
+
+Like WebSockets in a browser, `websocket` makes it easy to asynchronously process data from a WebSocket server. In the context of an R or Shiny application, this functionality is useful for incrementally consuming data from an external data source presented as a WebSocket server.
+
+The I/O for a WebSocket happens on a separate thread from the main R thread; there is one thread for each WebSocket.
+
+## Creating WebSockets
+
+WebSockets are represented as instances of an [R6](https://github.com/r-lib/R6) object, and are created with `$new()`:
+
+```{r, eval = FALSE}
+ws <- WebSocket$new("ws://echo.websocket.org/")
+```
+
+By default, and similarly to how WebSockets in JavaScript work, constructing a WebSocket with `$new()` will automatically initiate the WebSocket connection. In normal usage, such as in a Shiny app or from within a function, this default behavior is ideal. When run interactively from the R console however, the default behavior is problematic. The reason is that the connection will open before the user is given an opportunity to register any event handlers, meaning messages from the server could be dropped.
+
+So, in the console, WebSockets should be created like this:
+
+```{r, eval = FALSE}
+ws <- WebSocket$new("ws://echo.websocket.org/", autoConnect = FALSE)
+# Set up callbacks here...
+ws$connect()
+```
+
+## Interaction with `later`
+
+The technical reason that `autoConnect = FALSE` is necessary at the console has to do with how [later](https://github.com/r-lib/later) works. `later` is a package that provides an event loop for R, and the `websocket` package uses it to schedule callbacks that run in response to WebSocket events (like incoming messages).
+
+When a function has been put in to the queue with `later`, there are two ways it could be executed. One way is when `later::run_now()` is called. The second way is when the R console is idle (and the R call stack is empty): when that happens, `later` will automatically execute callbacks from the queue.
+
+When running a block of code like this in a function, or surrounded with `{` and `}`, the console does not have a chance to be idle in between the lines of code:
+
+```{r, eval = FALSE}
+{
+  ws <- WebSocket$new("ws://echo.websocket.org/")
+  ws$onOpen(function(event) { message("websocket opened") })
+}
+```
+
+In this code, the WebSocket has queued a connection attempt before `ws$onOpen()` is called. However, the `ws$onOpen()` runs _before_ R tries to call any `onOpen` callbacks, because there were no idle "ticks" between the two lines of code for `later` to respond to any opened connections.
+
+(Technical note: `websocket` runs the I/O on a separate thread; when an event occurs, like an open event or message, it uses `later` to schedule a callback to run on the main R thread. In the case above, the WebSocket connection could actually be opened -- on the I/O thread -- before the main R thread calls `ws$onOpen()` to set up the callback. If that happened it would only be able to schedule the invocation of the `onOpen` callback immediately; only at a later point in time, when the R console is idle, or when `later::run_now()` is called, would it be able to actually execute the callbacks. So in the example above, the `onOpen` callback is guaranteed to run when the connection is successfully opened.)
+
+Because `$new()` only *schedules* the work of connecting &mdash; it does not perform it immediately &mdash; it's safe within a code block to attach handlers, because none of them can possibly run until after the enclosing block returns.
+
+## Adding handlers
+
+After a `WebSocket` object is created, you have an opportunity to associate handler functions with various WebSocket events using the following R6 methods:
+
+1. `$onOpen()`: Invoked when the connection is first opened
+1. `$onMessage()`: Invoked when a message is received from the server
+1. `$onClose()`: Invoked when the client or server closes the connection
+1. `$onError()`: Invoked when an error occurs
+
+For example, the following code instantiates a WebSocket, installs an `onOpen` handler, and prints a message once the WebSocket is open:
+
+```{r, eval = FALSE}
+{
+  ws <- WebSocket$new("ws://echo.websocket.org/")
+  ws$onOpen(function(event) {
+    cat("connected\n")
+  })
+}
+```
+
+> Note that because the `$new()` and `$onOpen()` calls are within the same code block, `autoConnect` does not need to be `FALSE`.
+
+### Event environment
+
+Every handler function is passed an `event` environment. This environment contains at least the entry `target`, which is a reference to the WebSocket object on which the event occurred.
+
+In addition to `target`, other entries are available depending on the handler type:
+
+* `$onMessage()`
+    * `data`: Text or binary data received from the server, as a character vector or raw vector, respectively
+* `$onClose()`
+    * `code`: The numeric [close code](https://developer.mozilla.org/en-US/docs/Web/API/CloseEvent)
+    * `reason`: Character vector, the reason for closing
+* `$onError()`
+    * `message`: Character vector, an error message
+
+## Removing handlers
+
+Multiple handler functions for the same event type can be added to the WebSocket by repeatedly calling a handler registration method such as `$onMessage()`.
+
+The return value of every registration method is a zero-argument function that may be invoked to **deregister** the handler function.
+
+The following is an example of an `$onMessage()` handler that immediately removes itself:
+
+```{r, eval = FALSE}
+{
+  ws <- WebSocket$new("ws://echo.websocket.org/")
+  removeThis <- ws$onMessage(function(event) {
+    cat("this is the last time i'll run\n")
+    removeThis()
+  })
+  ws$onOpen(function(event) {
+    ws$send("one")
+    ws$send("two")
+  })
+}
+```
+
+Even though `ws$send()` is called twice in the `$onOpen()` handler function, the `$onMessage()` handler function is only run once.
+
+
+### Other notes
+
+* As long as a WebSocket object has an open connection, it will not be eligible for garbage collection, even if you lose all your references to the object, because the callback scheduling system maintains a reference to the object. This means that any callbacks on the WebSocket will continue to execute. If the connection is closed, the callback scheduling system will drop its references to the WebSocket object, and it will then be eligible for garbage collection.

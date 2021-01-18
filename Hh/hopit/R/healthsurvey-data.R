@@ -1,0 +1,45 @@
+#' Artificially generated health survey data
+#'
+#' A dataset containing artificially generated survey data
+#'
+#' @format A data frame with 10000 rows and 11 variables:
+#' \describe{
+#'   \item{ID}{ personal identification number. }
+#'   \item{health}{ reported health, 5 levels. }
+#'   \item{diabetes}{ has diabetes? "yes" or "no".}
+#'   \item{obese}{ is obese? "yes" or "no".}
+#'   \item{IADL_problems}{ has problems with Instrumental Activities of Daily Living? "yes" or "no".}
+#'   \item{hypertension}{ has hypertension? "yes" or "no".}
+#'   \item{high_cholesterol}{ has high cholesterol? "yes" or "no".}
+#'   \item{respiratory_problems}{ has respiratory problems? "yes" or "no".}
+#'   \item{heart_attack_or_stroke}{ had a stroke or a heart attack? "yes" or "no".}
+#'   \item{poor_mobility}{ has poor mobility? "yes" or "no".}
+#'   \item{very_poor_grip}{ cannot perform grip strength test? "yes" or "no".}
+#'   \item{depression}{ has depression? "yes" or "no".}
+#'   \item{other_diseases}{ has other diseases? "yes" or "no".}
+#'   \item{sex}{ sex/gender: "woman" or "man".}
+#'   \item{ageclass}{ categorized age: [50,60), [60,70), [70,80), [80,120).}
+#'   \item{education}{ two levels of education: primary or lower ("prim-") and secondary or higher ("sec+".}
+#'   \item{country}{ country: "X", "Y", or "Z".}
+#'   \item{csw}{ cross-sectional survey weights.}
+#'   \item{psu}{ primary statistical unit.}
+#' }
+#'
+#' @source
+#' \code{healthsurvey} is a completely artificial data set simulated using distributions of
+#' some major health and socio-demographic characteristics. The distributions and the data
+#' structure are roughly based on the WAVE1 SHARE database (DOIs: 10.6103/SHARE.w1.600); see
+#' \insertCite{Borsch2013}{hopit} for technical details.
+#' None of the records represent any part of the true data.
+#'
+#' The SHARE data collection has been primarily funded by the European Commission through FP5 (QLK6-CT-2001-00360), FP6 (SHARE-I3: RII-CT-2006-062193, COMPARE: CIT5-CT-2005-028857, SHARELIFE: CIT4-CT-2006-028812) and FP7 (SHARE-PREP: N°211909, SHARE-LEAP: N°227822, SHARE M4: N°261982). Additional funding from the German Ministry of Education and Research, the Max Planck Society for the Advancement of Science, the U.S. National Institute on Aging (U01_AG09740-13S2, P01_AG005842, P01_AG08291, P30_AG12815, R21_AG025169, Y1-AG-4553-01, IAG_BSR06-11, OGHA_04-064, HHSN271201300071C) and from various national funding sources is gratefully acknowledged (see www.share-project.org).
+#'
+#' @references \insertAllCited{}
+#' @name healthsurvey
+#' @examples
+#' # load *healthsurvey* dataset
+#' data(healthsurvey)
+#'
+#' # horizontal view of the dataset (omitting ID)
+#' print(t(healthsurvey[1:6,-1]), quote=FALSE, na.print='NA', right=TRUE)
+"healthsurvey"

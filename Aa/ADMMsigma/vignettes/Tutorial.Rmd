@@ -1,0 +1,282 @@
+---
+title: " ADMMsigma Tutorial"
+#author: "Matt Galloway"
+#date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{ADMMsigma Tutorial}
+  %\VignetteEngine{knitr::knitr}
+  %\usepackage[UTF-8]{inputenc}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+
+## Introduction
+
+In many statistical applications, estimating the covariance for a set of random variables is a critical task. The covariance is useful because it characterizes the *relationship* between variables. For instance, suppose we have three variables $X, Y, \mbox{ and } Z$ and their covariance matrix is of the form
+
+\[ \Sigma_{xyz} = \begin{pmatrix}
+1 & 0 & 0.5 \\ 
+0 & 1 & 0 \\ 
+0.5 & 0 & 1
+\end{pmatrix} \]
+
+We can gather valuable information from this matrix. First of all, we know that each of the variables has an equal variance of 1. Second,  we know that variables $X$ and $Y$ are likely independent because the covariance between the two is equal to 0. This implies that any information in $X$ is useless in trying to gather information about $Y$. Lastly, we know that variables $X$ and $Z$ are moderately, positively correlated because their covariance is 0.5.
+
+Unfortunately, estimating $\Sigma$ well is often computationally expensive and, in a few settings, extremely challenging. For this reason, emphasis in the literature and elsewhere has been placed on estimating the inverse of $\Sigma$ which we like to denote as $\Omega \equiv \Sigma^{-1}$.
+
+`ADMMsigma` is designed to estimate a robust $\Omega$ efficiently while also allowing for flexibility and rapid experimentation for the end user.
+
+We will illustrate this with a short simulation.
+
+<br>\vspace{0.5cm}
+
+## Simulation
+
+Let us generate some data.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+library(ADMMsigma)
+
+#  generate data from a sparse matrix
+# first compute covariance matrix
+S = matrix(0.7, nrow = 5, ncol = 5)
+for (i in 1:5){
+  for (j in 1:5){
+    S[i, j] = S[i, j]^abs(i - j)
+  }
+}
+
+# generate 100 x 5 matrix with rows drawn from iid N_p(0, S)
+set.seed(123)
+Z = matrix(rnorm(100*5), nrow = 100, ncol = 5)
+out = eigen(S, symmetric = TRUE)
+S.sqrt = out$vectors %*% diag(out$values^0.5) %*% t(out$vectors)
+X = Z %*% S.sqrt
+
+# snap shot of data
+head(X)
+
+```
+<br>\vspace{0.5cm}
+
+We have generated 100 samples (5 variables) from a normal distribution with mean equal to zero and an oracle covariance matrix $S$.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# print oracle covariance matrix
+S
+
+# print inverse covariance matrix (omega)
+round(qr.solve(S), 5)
+
+```
+<br>\vspace{0.5cm}
+
+It turns out that this particular oracle covariance matrix (tapered matrix) has an inverse - or precision matrix - that is sparse (tri-diagonal). That is, the precision matrix has many zeros.
+
+In this particular setting, we could estimate $\Omega$ by taking the inverse of the sample covariance matrix $\hat{S} = \sum_{i = 1}^{n}(X_{i} - \bar{X})(X_{i} - \bar{X})^{T}/n$:
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# print inverse of sample precision matrix (perhaps a bad estimate)
+round(qr.solve(cov(X)*(nrow(X) - 1)/nrow(X)), 5)
+
+```
+<br>\vspace{0.5cm}
+
+However, because $\Omega$ is sparse, this estimator will likely perform very poorly. Notice the number of zeros in our oracle precision matrix compared to the inverse of the sample covariance matrix. Instead, we will use `ADMMsigma` to estimate $\Omega$.
+
+By default, `ADMMsigma` will construct $\Omega$ using an elastic-net penalty and choose the optimal `lam` and `alpha` tuning parameters.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# elastic-net type penalty (set tolerance to 1e-8)
+ADMMsigma(X, tol.abs = 1e-8, tol.rel = 1e-8)
+
+```
+<br>\vspace{0.5cm}
+
+We can see that the optimal `alpha` value selected was 1. This selection corresponds with a lasso penalty -- a special case of the elastic-net penalty. Further, a lasso penalty embeds an assumption in the estimate (call it $\hat{\Omega}$) that the true $\Omega$ is sparse. Thus the package has automatically selected the penalty that most-appropriately matches the *true* data-generating precision matrix.
+
+We can also explicitly assume sparsity in our estimate by restricting the class of penalties to the lasso. We do this by setting `alpha = 1` in our function:
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# lasso penalty (default tolerance)
+ADMMsigma(X, alpha = 1)
+
+
+```
+<br>\vspace{0.5cm}
+
+We might also want to restrict `alpha = 0.5`:
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# elastic-net penalty (alpha = 0.5)
+ADMMsigma(X, alpha = 0.5)
+
+```
+<br>\newpage
+
+Or maybe we want to assume that $\Omega$ is *not* sparse but has entries close to zero. In this case, a ridge penalty would be most appropriate. We can estimate an $\Omega$ of this form by setting `alpha = 0` in the `ADMMsigma` function or using the `RIDGEsigma` function. `RIDGEsigma` uses a closed-form solution rather than an algorithm to compute its estimate -- and for this reason should be preferred in most cases (less computationally intensive).
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# ridge penalty
+ADMMsigma(X, alpha = 0)
+
+# ridge penalty (using closed-form solution)
+RIDGEsigma(X, lam = 10^seq(-8, 8, 0.01))
+
+```
+<br>\newpage
+
+`ADMMsigma` also has the capability to provide plots for the cross validation errors. This allows the user to analyze and select the appropriate tuning parameters.
+
+In the heatmap plot below, the more bright (white) areas of the heat map correspond to a better tuning parameter selection.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# produce CV heat map for ADMMsigma
+ADMM = ADMMsigma(X, tol.abs = 1e-8, tol.rel = 1e-8)
+plot(ADMM, type = "heatmap")
+
+```
+<br>\vspace{0.5cm}
+
+We can also produce a line graph of the cross validation errors:
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# produce line graph for CV errors for ADMMsigma
+plot(ADMM, type = "line")
+
+```
+<br>\vspace{0.5cm}
+
+And similarly for `RIDGEsigma`:
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# produce CV heat map for RIDGEsigma
+RIDGE = RIDGEsigma(X, lam = 10^seq(-8, 8, 0.01))
+plot(RIDGE, type = "heatmap")
+
+# produce line graph for CV errors for RIDGEsigma
+plot(RIDGE, type = "line")
+
+```
+<br>\vspace{0.5cm}
+
+## More advanced options
+
+`ADMMsigma` contains a number of different criteria for selecting the optimal tuning parameters during cross validation. The package default is to choose the tuning parameters that maximize the log-likelihood (`crit.cv = loglik`). Other options include `AIC` and `BIC`.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# AIC
+plot(ADMMsigma(X, crit.cv = "AIC"))
+
+# BIC
+plot(ADMMsigma(X, crit.cv = "BIC"))
+
+```
+<br>\vspace{0.5cm}
+
+This allows the user to select appropriate tuning parameters under various decision criteria. We also have the option to print *all* of the estimated precision matrices for each tuning parameter combination using the `path` option. This option should be used with *extreme* care when the dimension and sample size is large -- you may run into memory issues.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# keep all estimates using path
+ADMM = ADMMsigma(X, path = TRUE)
+
+# print only first three objects
+ADMM$Path[,,1:3]
+
+```
+<br>\vspace{0.5cm}
+
+A huge issue in precision matrix estimation is the computational complexity when the sample size and dimension of our data is particularly large. There are a number of built-in options in `ADMMsigma` that can be used to improve computation speed:
+
+ - Reduce the number of `lam` values during cross validation. The default number is 10.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE, eval = FALSE}
+
+# reduce number of lam to 5
+ADMM = ADMMsigma(X, nlam = 5)
+
+```
+<br>\vspace{0.5cm}
+
+ - Reduce the number of `K` folds during cross validation. The default number is 5.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE, eval = FALSE}
+
+# reduce number of folds to 3
+ADMM = ADMMsigma(X, K = 3)
+
+```
+<br>\vspace{0.5cm}
+
+ - Relax the convergence critera for the ADMM algorithm using the `tol.abs` and `tol.rel` options. The default for each is 1e-4.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE, eval = FALSE}
+
+# relax convergence criteria
+ADMM = ADMMsigma(X, tol.abs = 1e-3, tol.rel = 1e-3)
+
+```
+<br>\vspace{0.5cm}
+
+ - Adjust the maximum number of iterations. The default is 1e4.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE, eval = FALSE}
+
+# adjust maximum number of iterations
+ADMM = ADMMsigma(X, maxit = 1e3)
+
+```
+<br>\vspace{0.5cm}
+
+ - Adjust `adjmaxit`. This allows the user to adjust the maximum number of iterations *after* the first `lam` tuning parameter has fully converged during cross validation. This allows for *one-step estimators* and can greatly reduce the time required for the cross validation procedure while still choosing near-optimal tuning parameters.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE, eval = FALSE}
+
+# adjust adjmaxit
+ADMM = ADMMsigma(X, maxit = 1e4, adjmaxit = 2)
+
+```
+<br>\vspace{0.5cm}
+
+ - We can also opt to run our cross validation procedure in parallel. The user should check how many cores are on their system before using this option
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE, eval = FALSE}
+
+# parallel CV
+ADMM = ADMMsigma(X, cores = 3)
+
+```
+<br>\vspace{0.5cm}

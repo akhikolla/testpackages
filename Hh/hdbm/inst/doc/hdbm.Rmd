@@ -1,0 +1,101 @@
+---
+title: "High Dimensional Bayesian Mediation Analysis in R"
+author: "Alexander Rix"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{High Dimensional Bayesian Mediation Analysis in R}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+`hdbm` is a Bayesian inference method that uses continuous shrinkage priors for
+high-dimensional mediation analysis, developed by Song et al (2018).
+`hdbm` provides estimates for the regression coefficients as well as
+the posterior inclusion probability for ranking mediators.
+
+# Installation
+You can install `hdbm` from CRAN
+```{r, eval = FALSE}
+install.packages("hdbm")
+
+```
+
+or from github via `devtools`
+```{r, eval = FALSE}
+# install.packages(devtools)
+devtools::install_github("umich-cphds/hdbm", built_opts = c())
+```
+`hdbm` requires the R packages `Rcpp` and `RcppArmadillo`, so you may want to
+install / update them before downloading. If you decide to install `hdbm` from
+source (eg github), you will need a C++ compiler that supports C++11. On Windows
+this can accomplished by installing
+[Rtools](https://cran.r-project.org/bin/windows/Rtools/), and
+[Xcode](https://apps.apple.com/us/app/xcode/id497799835?mt=12) on MacOS.
+
+# Example problem
+`hdbm` contains a semi-synthetic example data set, `hdbm.data` that is used in
+this example. `hdbm.data` contains a continuous response `y` and a continuous
+exposure `a` that is mediated by 100 mediators, `m[1:100]`.
+
+```{r}
+library(hdbm)
+# print just the first 10 columns
+head(hdbm.data[,1:10])
+```
+
+The mediators have an internal correlation structure that is based off the
+covariance matrix from the Multi-Ethnic Study of Atherosclerosis (MESA) data.
+However,  `hdbm` does not model internal correlation between mediators.
+Instead, `hdbm` employs continuous Bayesian shrinkage priors to select mediators
+and assumes that all the potential mediators contribute small effects
+in mediating the exposure-outcome relationship, but only a small proportion of
+mediators exhibit large effects.
+
+We use no adjustment covariates in this example, so we just include the
+intercept. Also, in a real world situation, it may be beneficial to normalize
+the input data.
+
+```{r}
+
+Y <- hdbm.data$y
+A <- hdbm.data$a
+
+# grab the mediators from the example data.frame
+M <- as.matrix(hdbm.data[, paste0("m", 1:100)], nrow(hdbm.data))
+
+# We just include the intercept term in this example.
+C <- matrix(1, nrow(M), 1)
+
+# Initial guesses for coefficients
+beta.m  <- rep(0, ncol(M))
+alpha.a <- rep(0, ncol(M))
+
+set.seed(12345)
+# It is recommended to pick a larger number for burnin.
+hdbm.out <- hdbm(Y, A, M, C, C, beta.m, alpha.a,
+                   burnin = 1000, ndraws = 100)
+
+# Which mediators are active?
+active <- which(colSums(hdbm.out$r1 * hdbm.out$r3) > 100 / 2)
+colnames(M)[active]
+```
+
+Here, we calculate the posterior inclusion probability `r1 = r3 = 1 | Data`, 
+and classify a mediator as active if its posterior probability is greater than
+0.5.
+
+# Reference
+Yanyi Song, Xiang Zhou et al. Bayesian Shrinkage Estimation of
+High Dimensional Causal Mediation Effects in Omics Studies.
+bioRxiv [10.1101/467399](https://doi.org/10.1101/467399)
+
+##Contact information
+If you would like to report a bug, ask questions, or suggest something, please
+e-mail Alexander Rix at `alexrix@umich.edu`.

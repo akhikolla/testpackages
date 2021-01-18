@@ -1,0 +1,659 @@
+---
+title: "3. Optimum Contribution Selection"
+author: "Robin Wellmann"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+bibliography: references.bib
+vignette: >
+  %\VignetteIndexEntry{3. Optimum Contribution Selection}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+The aim of optimum contribution selection (OCS) is to find the optimum number of offspring for each breeding animal and to determine if a young animal (a selection candidate) should be selected for breeding or not. This is done in an optimal way, i.e. in a way that ensures that genetic gain is achieved, and that genetic diversity and genetic originality of the population are maintained or recovered. It can be based either on pedigree data or on marker data, whereby the latter approach is recommended. It requires that data is available from a sample of the population which includes the selection candidates.
+
+OCS can be done for populations with overlapping and non-overlapping generations. For OCS with overlapping generations, the percentage which each age class represents in the population must be defined, and the data set should contain individuals from all age classes with non-zero contribution.
+
+Even if the frequency of use of breeding animals is not regulated by the breeding organization, running the optimization still provides valuable information for a breeder, as the animals with highest optimum contributions are most valuable for a breeding program.
+
+This vignette is organized as follows:
+
+- [Example Data Set](#example-data-set)
+- [Introductory Example: Traditional OCS](#introductory-example-traditional-ocs)
+- [Defining the Objective of a Breeding Program](#defining-the-objective-of-a-breeding-program)
+- [Marker-based OCS](#marker-based-ocs)
+      - [Maximize Genetic Gain](#maximize-genetic-gain-marker-based)
+      - [Minimize Inbreeding](#minimize-inbreeding-marker-based)
+      - [Recover the Native Genetic Background](#recover-the-native-genetic-background-marker-based)
+      - [Increase Diversity Between Breeds](#increase-diversity-between-breeds)
+- [Pedigree-based OCS](#pedigree-based-ocs)
+      - [Maximize Genetic Gain](#maximize-genetic-gain-pedigree-based)
+      - [Minimize Inbreeding](#minimize-inbreeding-pedigree-based)
+      - [Recover the Native Genetic Background](#recover-the-native-genetic-background-pedigree-based)
+
+## Example Data Set
+
+All evaluations using marker data are demonstrated at the example of cattle data included in the package. This multi-breed data has already been described in the [companion vignette for basic marker-based evaluations](seg-vignette.html).
+
+Data frame `Cattle` includes simulated phenotypic information and has columns `Indiv` (individual IDs), `Born` (years of birth), `Breed` (breed names), `BV`  (breeding values), `Sex` (sexes), and `herd` (herds). 
+
+```{r}
+library("optiSel")
+data(Cattle)
+head(Cattle)
+```
+
+The data frame contains information on the `r length(unique(Cattle$Breed))` breeds `r names(table(Cattle$Breed))`. The "Angler" is an endangered German cattle breed, which had been upgraded with Red Holstein (also called "Rotbunt"). The Rotbunt cattle are a subpopulation of the "Holstein" breed. The "Fleckvieh" or Simmental breed is unrelated to the Angler. The Angler cattle are the selection candidates.
+
+This small example data set contains only genotypes from the first parts of the first two chromosomes.
+Vector `GTfiles` defined below contains the names of the genotype files. There is one file for each chromosome. Data frame `map` contains the marker map and has columns `Name` (marker name), `Chr` (chromosome number), `Position`, `Mb` (position in Mega base pairs), and `cM` (position in centiMorgan):
+
+```{r}
+data(map)
+dir     <- system.file("extdata", package="optiSel")
+GTfiles <- file.path(dir, paste("Chr", unique(map$Chr), ".phased", sep=""))
+head(map)
+```
+
+## Introductory Example: Traditional OCS
+
+As an introductory example consider traditional OCS with marker based kinship matrices. All alternative approaches involve the same steps, so it is recommended to read this section even if you want to minimize inbreeding instead of maximizing genetic gain. The  following steps are involved:
+
+For populations with overlapping generations you need to define the percentage which each age class represents in the population. One possibility is to assume that the percentage represented by a class is proportional to the percentage of offspring that is not yet born. Moreover, males and females (excluding newborn individuals) should be equally represented. These percentages can be estimated with function agecont from pedigree data. Since pedigree data is not available for this data set, the percentages are entered by hand:
+
+
+```{r}
+cont  <- data.frame(
+  age   = c(   1,    2,    3,    4,    5,    6,    7,   8,    9,    10), 
+  male  = c(0.14, 0.14, 0.09, 0.04, 0.03, 0.03, 0.02, 0.02, 0.01, 0.01),
+  female= c(0.08, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.02, 0.02))
+```
+
+One age class spans one year and the individuals born in the current year are in age class 1. Note that in this example young male classes have higher percentages than young female classes because males were used for breeding at an earlier age. The generation interval in years is approximately
+
+```{r}
+L <- 1/(4*cont$male[1]) + 1/(4*cont$female[1])
+L
+```
+
+Define a data frame containing the phenotypes of a sample from the population which includes the selection candidates. Make sure that there is one column for each trait that should be improved. Logical column `isCandidate` is appended indicating the individuals available as selection candidates.
+
+```{r}
+phen <- Cattle[Cattle$Breed=="Angler",]
+phen$isCandidate <- phen$Born<=2013
+```
+
+Compute the kinships that are to be managed. Below, the kinship is named `sKin`, which is a shorthand for *segment based kinship*.
+
+```{r}
+sKin <- segIBD(GTfiles, map)
+```
+
+Create variable `cand` with function [candes][candes], containing all information required to describe the selection candidates, which are the phenptypes and the kinships. The current values of the parameters in the population and the available objective functions and constraints for OCS are shown. Generations are defined to be non-overlapping if argument `cont` is omitted. 
+
+```{r}
+cand  <- candes(phen=phen, sKin=sKin, cont=cont)
+```
+
+
+For numeric columns in data frame `phen` the possibility is provided to define an upper bound (prefix `ub`), a lower bound (prefix `lb`), an equality constraint (prefix `eq`), or to minimize (prefix `min`) or to maximize (prefix `max`) the weighted sum of the values, whereby the weights are the contributions of the selection candidates. If the column contains breeding values, then this is the expected mean breeding value  in the offspring.
+
+For each kinship and native kinship included in the call of function candes, the possibility is provided to define an upper bound for the expected mean value of the kinship in the offspring (prefix `ub`), or to minimize the value (prefix `min`).
+
+Constraints `ub` and `lb` allow to define upper bounds and lower bounds for the contributions of the selection candidates. Constraint `uniform` allows to assume that individuals belonging to specified groups have equal contributions.
+
+Now choose the parameters you want to restrict and the parameters you want to optimize. For traditional OCs the objective is to maximize genetic gain with method `max.BV`,  and to restrict the mean kinship in the offspring by defining constraint `ub.sKin`.
+
+The upper bound for the mean kinship in the offspring should depend on the current mean kinship in the population, which is included in component `mean` of `cand`. 
+
+```{r}
+cand$mean
+```
+
+In general, if an upper bound for a kinship $K$ should be defined, it is recommended to derive the threshold value from the desired effective size $N_e$ of the population. If the OCS program started at time $t_0$, then the upper bound for the mean kinship at time $t$ should be
+$$ub.K=1-(1-\overline{K}_{t_0})\left(1-\frac{1}{2 N_e}\right)^{\frac{t-t_0}{L}},$$
+where $\overline{K}_{t_0}$ is the mean kinship in the  population at time $t_0$, and $L$ is the generation interval. The critical effective size, i. e. the size below which the fitness of the population steadily decreases, depends on the population and is usually between 50 and 100. But there seems to be a consensus that 50-100 is a long-term viable effective size. To be on the safe side, an effective size of $N_e=100$ should be envisaged [@Meuwissen2009]. 
+
+A list containing the constraints is defined below.
+
+```{r}
+Ne <- 100
+
+con <- list(
+  uniform = "female",
+  ub.sKin = 1-(1-cand$mean$sKin)*(1-1/(2*Ne))^(1/L)
+)
+```
+
+The component named `ub.sKin` defines the upper bound for the mean kinship `sKin` in the population in the next year. Component `uniform = "female"` states that all females from a particular age cohort should have equal contributions, so only the contributions of male selection candidates will be optimized. Upper and lower bounds for the contributions of selection candidates could be defined with `lb` and `ub` (see the help page of function [opticont][opticont]).
+
+Now the optimum contributions of the selection candidates can be calculated:
+```{r}
+Offspring <- opticont("max.BV", cand, con, trace=FALSE)
+```
+
+The report above states that the solution is considered optimal by the solver and that all constraints are fulfilled since valid=TRUE. This information can also be obtained as
+
+```{r}
+Offspring$info
+```
+
+The value of the objective function can be accessed as
+```{r}
+Offspring$obj.fun
+```
+
+and the expected average values of the kinshps and traits in the offspring are
+```{r}
+Offspring$mean
+```
+
+The results are OK. If they are not, then try to use another solver. The solver can be specified in parameter `solver` of function [opticont][opticont].
+Available solvers are `"alabama"`, `"cccp"`, `"cccp2"`, and `"slsqp"`. By default the solver is chosen automatically. Alternatively, the same solver may be used but with different tuning parameters. The available paramters are displayed if the function [opticont][opticont] is called (as shown above).
+
+The optimum contributions of the selection candidates are in component `parent`:
+
+```{r}
+Candidate <- Offspring$parent[,  c("Indiv", "Sex", "oc", "herd")]
+head(Candidate[Candidate$Sex=="male" & Candidate$oc>0.001,])
+```
+
+In general, since the number of females with offspring is large, we expect that about $\frac{N_e}{4L}\approx 5$ new males are selected each year. In the first year of OCS with overlapping generation often only very few individuals are selected for breeding. This changes in subsequent years and can be avoided by imposing upper bounds for the optimum contributions.
+
+The numbers of offspring can be obtained from the optimum contributions and the size `N` of the offspring population with function [noffspring][noffspring]. These values are rounded up or down to whole numbers.
+
+```{r}
+Candidate$n <- noffspring(Candidate, N=20)$nOff
+head(Candidate[Candidate$Sex=="male" & Candidate$oc>0.001,])
+```
+
+Males and females can be allocated for mating with function matings
+such that all breeding animals have the desired number of matings. In the example below the mean marker-based inbreeding coefficient in the offspring is minimized.
+```{r}
+Mating <- matings(Candidate, Kin=sKin)
+head(Mating)
+```
+
+The mean inbreeding in the offspring (which is equal to the mean kinship of the parents) is:
+
+```{r}
+attributes(Mating)$objval
+```
+
+## Defining the Objective of a Breeding Program
+
+The objective of a breeding program depends on several factors. These are the intended use of the breed, the presence of historic bottlenecks, and the importance being placed on the maintenance of genetic originality. In most livestock breeds the focus is on increasing the economic merit, so the objective of the breeding program is to *maximize genetic gain*. In contrast, companion animals often suffer from historic bottlenecks due to an overuse of popular sires. Hence, in these breeds the objective is to *minimize inbreeding*. In endangered breeds, which get subsidies for conservation, the focus may be on increasing their conservation values by *recovering the native genetic background* or by *increasing the genetic distance to other breeds*.
+
+However, these are conflicting objectives: For maximizing genetic gain, the animals with highest breeding values would be used for breeding, which may create a new bottleneck and contribute to inbreeding depression. Maximizing genetic gain would also favor the use of animals with high genetic contributions
+from commercial breeds because these animals often have the highest breeding values. But this would reduce the genetic originality of the breed. Minimizing inbreeding in the offspring favors the use of animals with high contributions from other breeds because they have low kinship with the population and it may require the use of outcross animals with breeding values below average.
+
+Thus, focussing on only one aspect automatically worsens the other ones. This can be avoided by imposing constraints on the aspects that are not optimized.
+
+In general, best practice is genotying all selection candidates to enable marker based evaluations. A breeding program based on marker information is more efficient than a breeding program based only on pedigree information, provided that the animals are genotyped for a sufficient number of markers. For several species, however, genotyping is still too expensive, so the breeding programs rely only on pedigree information.
+
+Depending on what the objective of the breeding program is, you may continue reading at the appropriate section:
+
+- [Marker-based OCS](#marker-based-ocs)
+    - Maximize Genetic Gain
+    - Minimize Inbreeding
+    - Recover the Native Genetic Background
+    - Increase Diversity Between Breeds
+- [Pedigree-based OCS](#pedigree-based-ocs)
+    - Maximize Genetic Gain
+    - Minimize Inbreeding]
+    - Recover the Native Genetic Background
+
+
+
+
+
+## Marker-based OCS
+
+The required genotype file format, the marker map, the parameters `minSNP`, `minL`, `unitL`, `unitP`, and `ubFreq`, which are used for estimating the *segment based kinship*, the *kinships at native haplotype segments*, and the *breed composition*, have been described in the [companion vignette for basic marker-based evaluations](seg-vignette.html).
+
+The *breed composition* of individuals can be estimated with function [segBreedComp][segBreedComp]. Since native contributions `NC` of the Angler cattle should be considered, they are computed and added as an additional column to data frame `Cattle`.
+
+```{r, results="hide"}
+wdir  <- file.path(tempdir(), "HaplotypeEval")
+wfile <- haplofreq(GTfiles, Cattle, map, thisBreed="Angler", minL=1.0, w.dir=wdir)
+Comp  <- segBreedComp(wfile$match, map)
+Cattle[rownames(Comp), "NC"] <- Comp$native
+```
+```{r}
+head(Cattle[,-1])
+```
+
+A matrix containing the *segment based kinship* between all pairs of individuals can be computed with function [segIBD][segIBD], whereas the *kinships at native haplotype segments* can be calculated from the results of function [segIBDatN][segIBDatN]. Both kinships are computed below. These kinships and the phenotypes of the selection candidates are combined into a single R-object with function candes. This function computes also the current values of the parameters in the population and displays the available objective functions and constraints. Below, the *kinship at native haplotype segments* is named `sKinatN`:
+
+```{r, results="hide"}
+phen    <- Cattle[Cattle$Breed=="Angler",]
+phen$isCandidate <- phen$Born<=2013
+
+sKin    <- segIBD(GTfiles, map, minL=1.0)
+sKinatN <- segIBDatN(GTfiles, Cattle, map, thisBreed="Angler", minL=1.0)
+```
+
+```{r}
+cand  <- candes(phen=phen, sKin=sKin, sKinatN=sKinatN, cont=cont)
+```
+
+ Compared to the introductory example the possibility to restrict or to maximize native contributions became available because column `NC` was added to data frame `Cattle`. Additionally, the possibility to minimize or to restrict the kinship at native segments `sKinatN` became available since this kinship was used as an argument to function candes. The current mean values in the population are
+```{r}
+cand$mean
+```
+
+Function [opticont][opticont]  can now be used to perform the optimization.
+
+Depending on what the objective of the breeding program is, you may continue reading at the appropriate section:
+
+  - [Maximize Genetic Gain](#maximize-genetic-gain-marker-based)
+  - [Minimize Inbreeding](#minimize-inbreeding-marker-based)
+  - [Recover the Native Genetic Background](#recover-the-native-genetic-background-marker-based)
+  - [Increase Diversity Between Breeds](#increase-diversity-between-breeds)
+
+
+### <a name="maximize-genetic-gain-marker-based"/>Maximize Genetic Gain</a> 
+
+
+First we create a list of constraints:
+
+```{r}
+con <- list(
+  uniform = "female",
+  ub.sKin = 1-(1-cand$mean$sKin)*(1-1/(2*Ne))^(1/L)
+  )
+```
+
+Again, equal contributions are assumed for the females and only the contributions of males are to be optimized. The upper bound for the mean segment based kinship was derived from the effective population size as explained above. Now the optimum contributions of the selection candidates can be calculated:
+
+```{r, results="hide"}
+Offspring   <- opticont("max.BV", cand, con, trace=FALSE)
+```
+
+```{r}
+Offspring$info
+```
+
+The expected values of the parameters in the next generation are
+
+```{r}
+Offspring$mean
+```
+
+The results are the same as in the introductory example (as expected). This approach may be apppropriate for a population without introgression, but for populations with historic introgression, the kinship at native alleles should be restricted as well in accordance with the desired effective size, and the native contributions should be restricted in order not to decrease. Otherwise the genetic originality of the breed may get lost in the long term.
+
+```{r, results="hide"}
+con <- list(
+  uniform    ="female",
+  ub.sKin    = 1-(1-cand$mean$sKin)*(1-1/(2*Ne))^(1/L),
+  ub.sKinatN = 1-(1-cand$mean$sKinatN)*(1-1/(2*Ne))^(1/L),
+  lb.NC      = cand$mean$NC
+  )
+
+Offspring2 <- opticont("max.BV", cand, con)
+```
+
+For comparison, the summaries of both scenarios are combined into a single data frame:
+
+```{r}
+rbind(Ref=cand$mean, maxBV=Offspring$mean, maxBV2=Offspring2$mean)
+```
+
+Since native contributions and breeding values are negatively correlated, the genetic gain decreases slightly when native contributions are constrained not to decrease.
+
+### <a name="minimize-inbreeding-marker-based"/>Minimize Inbreeding</a> 
+
+Minimizing inbreeding means to minimize the average kinship of the population in order to enable breeders to avoid inbreeding. This is the appropriate approach e.g. for companion animals suffering from a historic bottleneck. It can be done with or without accounting for breeding values. In the example below no breeding values are considered since accurate breeding values are not available for most of these breeds.
+
+First we create a list of constraints:
+
+```{r}
+con  <- list(uniform="female")
+```
+
+Again, equal contributions are assumed for the females and only the contributions of males are to be optimized. The segment based kinship is not constrained in this example because it should be minimized.
+
+
+```{r, results="hide"}
+Offspring   <- opticont("min.sKin", cand, con)
+```
+```{r}
+rbind(cand$mean, Offspring$mean)
+```
+Minimizing kinship without constraining the mean breeding value decreases the mean breeding value in the offspring slightly because the individuals with high breeding values are related. For this breed, it also increases the native contribution because the individuals from other breeds that were used for upgrading were related.
+
+While in livestock breeds the native contributions should be restricted in order to maintain the genetic originality of the breeds, in several companion breeds the opposite is true. Several companion breeds have high inbreeding coefficients and descend from only very few (e.g. 3) founders [@Wellmann2009], and purging seems to be not feasible. Hence, a sufficient genetic diversity of the population cannot be achieved in the population even if marker data is used to minimize inbreeding. For these breeds it may be appropriate to use unrelated individuals from a variety of other breeds in order to increase the genetic diversity. However, only a small contribution from other breeds is needed, so the native contributions should be restricted also for these breeds in order to preserve their genetic originality. Hence, the difference between a breed with high diversity and a breed with low diversity suffering from inbreeding depression is, that the optimum value for the native contribution is smaller than 1 for the latter.
+
+For such a breed it is advisable to allow the use of unrelated individuals from other breeds but to restrict the admissible mean contribution from other breeds in the population. The mean kinship at native alleles should be restricted as well to require only a small amount of introgression:
+
+
+```{r, results="hide"}
+con <- list(
+  uniform    = "female",
+  lb.NC      = cand$mean$NC + 0.04,
+  ub.sKinatN = 1-(1-cand$mean$sKinatN)*(1-1/(2*Ne))^(1/L)
+)
+Offspring2     <- opticont("min.sKin", cand, con)
+```
+
+For comparison, the estimates for both scenarios are combined into a single data frame:
+
+```{r}
+rbind(Ref=cand$mean, minKin=Offspring$mean, minKin2=Offspring2$mean)
+```
+
+Of course, for a companion breed, the lower bound for the native contribution should be much higher.
+
+### <a name="recover-the-native-genetic-background-marker-based"/>Recover the Native Genetic Background</a> 
+
+For endangered breeds the priority of a breeding program could be to recover the original genetic background by maximizing native contributions. However, since the individuals with highest native contributions are related, this may considerably increase the inbreeding coefficients if the diversity at native alleles is not preserved. Hence, constraints are defined below not only for the segment based kinship but also for the kinship at native segments in accordance with the desired effective size:
+
+```{r, results="hide"} 
+con <- list(
+  uniform    = "female",
+  ub.sKin    = 1-(1-cand$mean$sKin)*(1-1/(2*Ne))^(1/L),
+  ub.sKinatN = 1-(1-cand$mean$sKinatN)*(1-1/(2*Ne))^(1/L)
+)
+Offspring <- opticont("max.NC", cand, con)
+```
+```{r}
+Offspring$info
+```
+
+```{r}
+Offspring$mean
+```
+
+For this breed, maximizing native contributions results in negative genetic gain because native contributions and breeding values are negatively correlated. This can be avoided by adding an additional constraint for the breeding values:
+
+```{r, results="hide"} 
+con <- list(
+  uniform    = "female",
+  ub.sKin    = 1-(1-cand$mean$sKin)*(1-1/(2*Ne))^(1/L),
+  ub.sKinatN = 1-(1-cand$mean$sKinatN)*(1-1/(2*Ne))^(1/L),
+  lb.BV      = cand$mean$BV
+)
+
+Offspring2  <- opticont("max.NC", cand, con)
+```
+
+For comparison, the estimated parameters of both scenarios are combined into a single data frame:
+
+```{r}
+rbind(Ref=cand$mean, maxNC=Offspring$mean, maxNC2=Offspring2$mean)
+```
+
+
+### Increase Diversity Between Breeds
+
+While removing introgressed genetic material from the population is one possibility to increase the conservation value of an endangered breed, an alternative approach is to increase the genetic distance between the endangered breed and commercial breeds. In this case we do not care about whether alleles are native or not. We just want to accumulate haplotype segments which are rare in commercial breeds. This can be done with a core set approach.
+
+In the core set approach, a hypothetical population is considered, consisting of individuals from various breeds. This population is called the core set.  The contributions of each breed to the core set are such that the genetic diversity of the core set is maximized. 
+
+In the following example the parameter to be minimized is the mean kinship of individuals from the core set in the next generation. Constraint `uniform` defined below states that the contributions of the male selection candidates from the breed of interest are to be optimized, whereas individuals from all other breeds have uniform contributions. 
+
+Since the average kinship in a multi-breed population should be managed, argument `phen` of function cand contains individuals from all genotyped breeds. This was not the case in the above examples, where argument `phen` contained only the selection candidates.
+
+```{r} 
+Cattle$isCandidate <- Cattle$Born<=2013
+cand <- candes(phen=Cattle, sKin=sKin, sKinatN.Angler=sKinatN, bc="sKin", cont=cont)
+ 
+mKin <- cand$mean$sKinatN.Angler
+con  <- list(
+  uniform = c("Angler.female", "Fleckvieh", "Holstein", "Rotbunt"), 
+  ub.sKinatN.Angler = 1-(1-mKin)*(1-1/(2*Ne))^(1/L)
+  )
+```
+
+ The upper bound for the mean native kinship was derived from the effective population size as explained above. Now the optimum contributions of the selection candidates can be calculated:
+
+```{r} 
+Offspring <- opticont("min.sKin", cand, con, trace=FALSE)
+```
+```{r} 
+Offspring$info
+```
+
+```{r} 
+Offspring$mean
+```
+
+Since the contributions of the selection candidates minimize the mean kinship `sKin` in the core set, they maximize the genetic diversity of the core set. This is achieved by increasing the gentic diversity within the breed or by increasing the genetic distance between the breed of interest and the other breeds. The optimum contributions are standardized so that their sum is equal to one within each breed:
+
+```{r} 
+head(Offspring$parent[Offspring$parent$oc>0.02,c("Breed","lb","oc","ub")])
+```
+
+
+## Pedigree-based OCS
+
+All evaluations using pedigree data are demonstrated at the example of the Hinterwald cattle. A pedigree is contained in the package. The pedigree and the functions dealing with pedigree data  have already been described in the [companion vignette for basic pedigree-based evaluations](ped-vignette.html).
+
+The pedigree completeness is an important factor to get reliable results. If an animal has many missing ancestors, then it would falsely considered to be unrelated to other animals, so it will falsely obtain high optimum contributions. There are several approaches to overcome this problem:
+
+- Calculate the pedigree completeness for all selection candidates and exclude individuals with a small number of equivalent complete generations from the evaluations. The number of equivalent complete generations can be computed with function [summary][summary.Pedig].
+ 
+- Classify the breed of founders born after some fixed date as `unknown`, and restrict the genetic contribution from these founders in the offspring. The breed names of the founders can be classified by using appropriate values for parameters `lastNative` and `thisBreed` in function [prePed][prePed].
+ 
+- Classify the breed of founders born after some fixed date as `unknown`, so that these founders are considered non-native, and restrict or minimize the kinship at native alleles which is less affected by incomplete pedigrees than the classical pedigree-based kinship.
+
+Of course, all 3 approaches can be followed simultaneously. First, we prepare the pedigree and classify the breed of founders born after 1970 to be `unknown`:
+
+```{r, results="hide"}
+data("PedigWithErrors")
+Pedig <- prePed(PedigWithErrors, thisBreed="Hinterwaelder", lastNative=1970)
+```
+
+```{r}
+tail(Pedig[,-1])
+```
+
+The *breed composition* of individuals can be estimated with function [pedBreedComp][pedBreedComp]. Since the native contribution should be considered in some scenarios, they are added as additional column `NC` to the pedigree.
+
+```{r}
+cont     <- pedBreedComp(Pedig, thisBreed="Hinterwaelder")
+Pedig$NC <- cont$native
+tail(cont[, 2:5])
+```
+
+Below, the Hinterwald cattle born between 1980 and 1990 with at least 4 complete equivalent generations in the pedigree are selected to describe the population and the individuals being at least 1 year old are chosen as selection candidates. The aim is computing optimum contributions of the selection candidates to the birth cohort 1991.
+Data frame `phen` is defined below, which contains the individual IDs in Colmumn 1 (`Indiv`), sexes in Column 2 (`Sex`), breed names (`Breed`), years of birth (`Born`), breeding values (`BV`), and the native contributions (`NC`) of the  individuals. Finally, the logical column `isCandidate` indicating the selection candidates is appended.
+
+```{r}
+use   <- Pedig$Born %in% (1980:1990) & Pedig$Breed=="Hinterwaelder"
+use   <- use & summary(Pedig)$equiGen>=4
+phen  <- Pedig[use, c("Indiv", "Sex", "Breed", "Born", "BV", "NC")]
+phen$isCandidate <- phen$Born<=1991
+```
+
+Since cattle have overlapping generations, the percentage which each age class represents in the population must be defined. One possibility is to assume that the percentage represented by a class is proportional to the percentage of offspring that is not yet born. Moreover, males and females (excluding newborn individuals) should be equally represented. Percentages fulfilling these assumptions can obtained with function agecont: 
+
+```{r}
+cont     <- agecont(Pedig, phen$Indiv)
+head(cont)
+```
+
+The generation interval is approximately
+
+```{r}
+L <- 1/(4*cont$male[1]) + 1/(4*cont$female[1])
+L
+```
+
+ The breeding values were simulated such that breeding values and native contributions are negatively correlated. This mimics historic introgression from a high-yielding commercial breed.
+
+A matrix containing the *pedigree based kinship* between all pairs of individuals can be computed with function [pedIBD][pedIBD]. It is half the additive relationship matrix.
+ The *pedigree based kinship at native alleles* can be calculated from the results of function [pedIBDatN][pedIBDatN]. 
+ 
+The data fame containing phenotypes and the kinships are combined below into a single R-object with function candes.  This function also estimates the current values of the parameters in the population and displays the available objective functions and constraints. Below, the *pedigree based kinship* is named `pKin`, and the *kinship at native alleles* is named `pKinatN`:
+
+```{r, results="hide"}
+pKin    <- pedIBD(Pedig, keep.only=phen$Indiv)
+pKinatN <- pedIBDatN(Pedig, thisBreed="Hinterwaelder", keep.only=phen$Indiv)
+```
+
+```{r}
+cand <- candes(phen=phen, pKin=pKin, pKinatN=pKinatN, cont=cont)
+```
+
+
+Compared to the introductory example the possibility to restrict or to maximize native contributions becomes available because column `NC` is now included in data frame `phen`. Additionally, there is the possibility to minimize or to restrict the *kinship at native alleles* `pKinatN` and the *pedigree based kinship* `pKin`.
+
+For defining appropriate threshold values for the constraints, the current mean kinships, the mean native contribution, and the mean breeding value in the population need to be known. The values can be obtained as
+
+```{r}
+cand$mean
+```
+
+Depending on what the objective of the breeding program is, you may continue reading at the appropriate section:
+
+  - [Maximize Genetic Gain](#maximize-genetic-gain-pedigree-based)
+  - [Minimize Inbreeding](#minimize-inbreeding-pedigree-based)
+  - [Recover the Native Genetic Background](#recover-the-native-genetic-background-pedigree-based)
+
+
+
+
+### <a name="maximize-genetic-gain-pedigree-based"/>Maximize Genetic Gain</a> 
+
+This is the traditional approach proposed by @Meuwissen1997. First we create a list of constraints:
+
+```{r}
+con <- list(
+  uniform = "female",
+  ub.pKin = 1-(1-cand$mean$pKin)*(1-1/(2*Ne))^(1/L)
+)
+```
+
+Here, equal numbers of offspring are assumed for the females and only the contributions of males are to be optimized. The upper bound for the mean pedigree based kinship was derived from the effective population size as explained above. Now the optimum contributions of the selection candidates can be calculated:
+
+```{r, results="hide"}
+Offspring <- opticont("max.BV", cand, con)
+```
+
+```{r}
+rbind(cand$mean, Offspring$mean)
+```
+
+This approach may be apppropriate for a population without introgression and complete pedigrees, but for populations with historic introgression, the kinship at native alleles should be restricted as well in accordance with the desired effective size, and the native contributions should be restricted in order not to decrease. Otherwise the genetic originality of the breed may get lost in the long term.
+
+```{r, results="hide"}
+con <- list(
+  uniform    = "female",
+  ub.pKin    = 1-(1-cand$mean$pKin)*(1-1/(2*Ne))^(1/L),
+  ub.pKinatN = 1-(1-cand$mean$pKinatN)*(1-1/(2*Ne))^(1/L),
+  lb.NC      = cand$mean$NC
+)
+Offspring2     <- opticont("max.BV", cand, con)
+```
+
+For comparison, the parameters of both scenarios are combined into a single data frame with `rbind`:
+
+```{r}
+rbind(Ref=cand$mean, maxBV=Offspring$mean, maxBV2=Offspring2$mean)
+```
+
+Thus, genetic gain in Method 2 is only slightly below the genetic gain in Method 1, but the native contributions do not decrease and the kinship at native alleles increases at a lower rate. 
+
+### <a name="minimize-inbreeding-pedigree-based"/>Minimize Inbreeding</a> 
+
+Minimizing inbreeding means to minimize the average kinship of the population in order to enable breeders to avoid inbreeding. This is the appropriate approach e.g. for companion animals suffering from a historic bottleneck. It can be done with or without accounting for breeding values. In the example below no breeding values are considered since accurate breeding values are not available for most of these breeds.
+
+First we create a list of constraints:
+
+```{r}
+con  <- list(uniform="female")
+```
+
+Again, equal numbers of offspring are assumed for all females and only the contributions of males are to be optimized. The pedigree based kinship is not constrained in this example because it should be minimized.
+
+```{r, results="hide"}
+Offspring <- opticont("min.pKin", cand, con)
+```
+```{r}
+rbind(cand$mean, Offspring$mean)
+```
+
+The approach shown above has the disadvantage that kinships between individuals are less reliable if ancestors are missing in the pedigree. The alternative approach, shown below, is to minimize the kinship at native alleles and to restrict pedigree based kinship.
+
+While in livestock breeds the native contributions should be preserved in order to maintain the genetic originality of the breeds, in several companion breeds the opposite is true. Several companion breeds have high inbreeding coefficients and descend from only very few (e.g. 3) founders. Hence, a sufficient genetic diversity  cannot be achieved in the population. For these breeds it may be appropriate to use unrelated individuals from a variety of other breeds in order to increase the genetic diversity. However, only a small contribution from other breeds is needed, so the native contributions should be restricted also for these breeds in order to preserve their genetic originality. The difference between a breed with high diversity and a breed with low diversity suffering from inbreeding depression is, that the optimum value for the native contribution is smaller than 1 for the latter. For such a breed it is advisable to allow the use of individuals from other breeds but to restrict the admissible mean contribution from other breeds.
+
+In summary, the alternative approach is to minimize the kinship at native alleles and to restrict pedigree based kinship and native contributions:
+
+```{r, results="hide"}
+con  <- list(
+  uniform = "female",
+  lb.NC   = 1.02*cand$mean$NC,
+  ub.pKin = 1-(1-cand$mean$pKin)*(1-1/(2*Ne))^(1/L)
+)
+
+Offspring2  <- opticont("min.pKinatN", cand, con)
+```
+
+
+For comparison, the parameter estimates are combined into a single data frame:
+
+```{r}
+rbind(Ref=cand$mean, minKin=Offspring$mean, minKin2=Offspring2$mean)
+```
+
+The pedigree based kinship is slightly higher in the second approach, but the kinship at native alleles is lower. Since pedigree based kinships are less reliable due to missing ancestors in the pedigree, the second approach is recommended. However, the use of pedigree data has the disadvantage that only the expected kinships can be minimized. The expected kinships deviate from the realized kinships due to mendelian segregation. Hence, for breeds with serious inbreeding problems it is recommended to genotype the selection candidates and to perform marker-based optimum contribution selection.
+
+### <a name="recover-the-native-genetic-background-pedigree-based"/>Recover the Native Genetic Background</a> 
+
+For endangered breeds the priority of a breeding program could be to recover the original genetic background by maximizing native contributions. However, since the individuals with highest native contributions are related, this may considerably increase the inbreeding coefficients if the diversity at native alleles is not preserved. Hence, constraints are defined below not only for the pedigree based kinship, but also for the kinship at native alleles in accordance with the desired effective size:
+
+```{r, results="hide"} 
+con <- list(
+  uniform    = "female",
+  ub.pKin    = 1-(1-cand$mean$pKin)*(1-1/(2*Ne))^(1/L),
+  ub.pKinatN = 1-(1-cand$mean$pKinatN)*(1-1/(2*Ne))^(1/L)
+)
+Offspring <- opticont("max.NC", cand, con)
+```
+
+```{r}
+Offspring$mean
+```
+
+For some breeds, native contributions and breeding values are negatively correlated, so maximizing native contributions results in negative genetic. This can be avoided by adding an additional constraint for the breeding values:
+
+```{r, results="hide"} 
+con <- list(
+  uniform    = "female",
+  ub.pKin    = 1-(1-cand$mean$pKin)*(1-1/(2*Ne))^(1/L),
+  ub.pKinatN = 1-(1-cand$mean$pKinatN)*(1-1/(2*Ne))^(1/L),
+  lb.BV      = cand$mean$BV
+)
+Offspring2 <- opticont("max.NC", cand, con)
+```
+
+For comparison, the estimates for both scenarios are combined into a single data frame:
+
+```{r}
+rbind(Ref=cand$mean, maxNC=Offspring$mean, maxNC2=Offspring2$mean)
+```
+
+
+## References
+
+[segIBD]:           https://rdrr.io/cran/optiSel/man/segIBD.html
+[noffspring]:       https://rdrr.io/cran/optiSel/man/noffspring.html
+[segIBDatN]:        https://rdrr.io/cran/optiSel/man/segIBDatN.html
+[segInbreeding]:    https://rdrr.io/cran/optiSel/man/segInbreeding.html
+[haplofreq]:        https://rdrr.io/cran/optiSel/man/haplofreq.html
+[freqlist]:         https://rdrr.io/cran/optiSel/man/freqlist.html
+[plot.HaploFreq]:   https://rdrr.io/cran/optiSel/man/plot.HaploFreq.html
+[segBreedComp]:     https://rdrr.io/cran/optiSel/man/segBreedComp.html
+[opticomp]:         https://rdrr.io/cran/optiSel/man/opticomp.html
+[opticont]:         https://rdrr.io/cran/optiSel/man/opticont.html
+[sim2dis]:          https://rdrr.io/cran/optiSel/man/sim2dis.html
+[summary.Pedig]:    https://rdrr.io/cran/optiSel/man/summary.Pedig.html
+[prePed]:           https://rdrr.io/cran/optiSel/man/prePed.html
+[pedIBD]:           https://rdrr.io/cran/optiSel/man/pedIBD.html
+[pedIBDatN]:        https://rdrr.io/cran/optiSel/man/pedIBDatN.html
+[pedBreedComp]:     https://rdrr.io/cran/optiSel/man/pedBreedComp.html
+[candes]:           https://rdrr.io/cran/optiSel/man/candes.html
+
+

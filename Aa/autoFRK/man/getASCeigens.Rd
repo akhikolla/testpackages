@@ -1,0 +1,1 @@
+\name{getASCeigens} \alias{getASCeigens} \title{ internal function } \description{ internal function } \keyword{internal}

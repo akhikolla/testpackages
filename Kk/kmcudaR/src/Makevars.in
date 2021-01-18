@@ -1,0 +1,47 @@
+CXX_STD = CXX11
+
+PKG_LIBS = -L@CUDA_LIBDIR@ -Wl,-rpath,@CUDA_LIBDIR@ -lcudart
+R_LIBS = @R_LIBS@
+
+cu_sources = kmeans.cu knn.cu transpose.cu
+cu_sharedlibs = kmeans.o knn.o transpose.o
+
+cc_sources = kmcuda.cc
+cc_sharedlibs = kmcuda.o
+
+cpp_sources = kmcudaR.cpp RcppExports.cpp
+cpp_sharedlibs = kmcudaR.o RcppExports.o
+
+OBJECTS = $(cu_sharedlibs) $(cc_sharedlibs) $(cpp_sharedlibs)
+
+R_INC = -I../inst/include @R_INCL@ @RCPP_INCL@ @RCPP_EIGEN_INCL@ @CU_INCL@
+CXX_ARGS = @R_CPIC@ -fopenmp -DR_DEBUG
+CC_ARGS = @R_CPIC@ -DR_DEBUG
+
+CU_ARGS = -std=c++11 -Xcompiler -fPIC -Xcudafe --diag_suppress=boolean_controlling_expr_is_constant -DR_DEBUG
+CU_INCL = -I../inst/include @R_INCL@ @RCPP_INCL@
+CU_ARCH = -gencode arch=compute_30,code=sm_30 \
+-gencode arch=compute_35,code=sm_35 \
+-gencode arch=compute_37,code=sm_37 \
+-gencode arch=compute_52,code=sm_52 \
+-gencode arch=compute_60,code=sm_60 \
+-gencode arch=compute_61,code=sm_61
+
+CXX=@CXX@
+NVCC=@NVCC@
+
+all : kmcudaR.so
+
+kmcudaR.so: $(OBJECTS)
+
+%.o: %.cc $(cc_sources)
+		$(CXX) $(CXX_ARGS) -DCUDA_ARCH=52 $(R_INC) -I/usr/local/cuda-8.0/include/ $< -c
+
+%.o: %.cpp $(cpp_sources)
+		$(CXX) $(CXX_ARGS) $(R_INC) $< -c
+
+%.o: %.cu $(cu_sources)
+		$(NVCC) $(CU_ARCH) $(CU_ARGS) $(CU_INCL) $< -c
+
+clean:
+	rm -rf *.o Makevars

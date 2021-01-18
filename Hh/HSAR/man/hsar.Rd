@@ -1,0 +1,159 @@
+\name{hsar}
+\alias{hsar}
+%\alias{hsar}
+\title{Hierarchical SAR model estimation}
+\description{
+  The specification of a HSAR model is as follows: 
+
+\deqn{y_{i,j} = \rho *\mathbf{W}_i *\mathbf{y} + \mathbf{x}^\prime_{i,j} * \mathbf{\beta} +
+\mathbf{z}^\prime_j * \mathbf{\gamma} + \theta_j + \epsilon_{i,j}  }{y_i,j = \rho * W_i * y + x'_i,j * \beta +z'_j * \gamma + \theta_j + \epsilon_i,j}
+
+\deqn{\theta_j = \lambda * \mathbf{M}_j * \mathbf{\theta} + \mu_j  }{\theta_j = \lambda * M_j * \theta + \mu_j}
+
+\deqn{\epsilon_{i,j} \sim N(0,\sigma_e^2), \hspace{2cm} \mu_j \sim N(0,\sigma_u^2)}{\epsilon_i,j ~ N(0,\sigma^2_e); \mu_j ~ N(0,\sigma^2_u)}
+where \eqn{i=1,2,...,n_j} and \eqn{j=1,2,...,J} are indicators of lower- and higher-level spatial units. \eqn{n_j} is the number of lower-level units in the \eqn{j-th} higher level unit and \eqn{\sum_{j=1}^J=\mathbf{N}}{Sum(j=1,J)=N}. \eqn{\mathbf{x}^\prime_{i,j}}{x'_i,j} and \eqn{\mathbf{z}^\prime_j}{z'_j} represent vectors of lower- and higher-level independent variables. \eqn{\mathbf{\beta}}{\beta} and \eqn{\mathbf{\gamma}}{\gamma} are regression coefficients to estimate. \eqn{\mathbf{\theta}}{\theta}, a \eqn{N \times J}{N * J} vector of higher-level random effects, also follows a simultaneous autoregressive process. \eqn{\mathbf{W}}{W} and \eqn{\mathbf{M}}{M} are two spatial weights matrices (or neighbourhood connection matrices) at the lower and higher levels, defining how spatial units at each level are connected. \eqn{\rho} and \eqn{\lambda} are two spatial autoregressive parameters measuring the strength of the dependencies/correlations at the two spatial scales.   
+
+A succinct matrix formulation of the model is,
+\deqn{\mathbf{y} = \rho * \mathbf{W} * \mathbf{y} + \mathbf{X} * \mathbf{\beta} + 
+\mathbf{Z} * \mathbf{\gamma} + \Delta * \mathbf{\theta} + \mathbf{\epsilon} }{y = \rho * W * y + X * \beta + Z * \gamma + \Delta * \theta + \epsilon}
+
+\deqn{\mathbf{\theta} = \lambda * \mathbf{M} * \mathbf{\theta} + \mathbf{\mu}}{\theta = \lambda * M * \theta + \mu }
+
+It is also useful to note that the HSAR model nests a standard (random intercept) multilevel model model when \eqn{\rho} and \eqn{\lambda} are both equal to zero and a standard spaital econometric model when \eqn{\lambda} and \eqn{\sigma^2_u} are both equal to zero.    
+
+}
+
+\usage{
+hsar( formula, data = NULL, W=NULL, M=NULL, Delta, 
+burnin=5000, Nsim=10000, thinning = 1, parameters.start = NULL)
+}
+
+\arguments{
+  \item{formula}{A symbolic description of the model to fit. A formula for the covariate part of the model using the syntax of the lm() function fitting standard linear regression models. Neither the response variable nor the explanatory variables are allowed to contain NA values.}
+  \item{data}{A data frame containing variables used in the formula object. }
+  \item{W}{The N by N lower-level spatial weights matrix or neighbourhood matrix where N is the total number of lower-level spatial units. The formulation of W could be based on geographical distances separating units or based on geographical contiguity. To ensure the maximum value of the spatial autoregressive parameter \eqn{\rho} less than 1, W should be row-normalised before running the HSAR model. As in most cases, spatial weights matrix is very sparse, therefore W here should be converted to a sparse matrix before imported into the hsar() function to save computational burdon and reduce computing time. More specifically, W should be a column-oriented numeric sparse matrices of a dgCMatrix class defined in the \pkg{Matrix} package. The converion between a dense numeric matrix and a sparse numeric matrix is made quite convenient through the Matrix library.   
+}
+  \item{M}{The J by J higher-level spatial weights matrix or neighbourhood matrix where J is the total number of higher-level spatial units. Similar with W, the formulation of M could be based on geographical distances separating units or based on geographical contiguity. To ensure the maximum value of the spatial autoregressive parameter \eqn{\lambda} less than 1, M is also row-normalised before running the HSAR model. As with W, M should also be a column-oriented numeric sparse matrices.      
+}
+  \item{Delta}{The N by J random effect design matrix that links the J by 1 higher-level random effect vector back to the N by 1 response variable under investigation. It is simply how lower-level units are grouped into each high-level units with columns of the matrix being each higher-level units. As with W and M, \eqn{\delta} should also be a column-oriented numeric sparse matrices.  
+}
+  \item{burnin}{The number of MCMC samples to discard as the burnin period.}
+  \item{Nsim}{The total number of MCMC samples to generate.}
+  \item{thinning}{MCMC thinning factor.}
+  \item{parameters.start}{A list with names "rho", "lambda", "sigma2e", "sigma2u" and "beta" corresponding to initial values for the model parameters \eqn{\rho, \lambda, \sigma^2_e, \sigma^2_u} and the regression coefficients respectively.}
+}
+
+\details{
+In order to use the hsar() function, users need to specify the two spatial weights matrices W and M and the random effect design matrix \eqn{\delta}. However, it is very easy to extract such spatial weights matrices from spatial data using the package \pkg{spdep}. Geographic distance-based or contiguity-based spatial weights matrix for both spatial points data and spatial polygons data are available in the \pkg{spdep} package.   
+
+Before the extraction of W and M, it is better to first sort the data using the higher-level unit identifier. Then, the random effect design matrix can be extracted simply (see the following example) and so are the two spatial weights matrices. Make sure the order of higher-level units in the weights matrix M is in line with that in the \eqn{\delta} matrix.   
+
+Two simpler versions of the HSAR model can also be fitted using the hsar() function. The first is a HSAR model with \eqn{\lambda} equal to zero, indicating an assumption of independence in the higher-level random effect \eqn{\mathbf{\theta}}. The second is a HSAR with \eqn{\rho} equal to zero, indicating an independence assumption in the outcome variable conditioning on the hgiher-level random effect. This model is useful in situations where we are interested in the neighbourhood/contextual effect on individual's outcomes and have good reasons to suspect the effect from geographical contexts upon individuals to be dependent. Meanwhile we have no information on how lower-level units are connnected.    
+}
+
+\value{
+A list object containing:
+\item{cbetas}{A matrix with the MCMC samples of the draws for the coefficients.}
+  \item{Mbetas}{A vector of estimated mean values of regression coefficients. }
+  \item{SDbetas}{The standard deviations of estimated regression coefficients.}
+  \item{Mrho}{The estimated mean of the lower-level spatial autoregressive parameter \eqn{\rho}.}
+  \item{SDrho}{The standard deviation of the estimated lower-level spatial autoregressive parameter.}
+\item{Mlamda}{The estimated mean of the higher-level spatial autoregressive parameter \eqn{\lambda}.}
+\item{SDlambda}{The standard deviation of the estimated higher-level spatial autoregressive parameter.}
+\item{Msigma2e}{The estimated mean of the lower-level variance parameter \eqn{\sigma^2_e}.}
+\item{SDsigma2e}{The standard deviation of the estimated lower-level variance parameter \eqn{\sigma^{2}_{e} }.}
+\item{Msigma2u}{The estimated mean of the higher-level variance parameter \eqn{\sigma^2_u}.}
+\item{SDsigma2u}{The standard deviation of the estimated higher-level variance parameter \eqn{\sigma^2_u}.}
+\item{Mus}{Mean values of \eqn{\theta} }
+\item{SDus}{Standard deviation of \eqn{\theta} }
+\item{DIC}{The deviance information criterion (DIC) of the fitted model.}
+\item{pd}{The effective number of parameters of the fitted model.  }
+\item{Log_Likelihood}{The log-likelihood of the fitted model. }
+\item{R_Squared}{A pseudo R square model fit indicator.   }
+\item{impact_direct}{Summaries of the direct impact of a covariate effect on the outcome variable.}
+\item{impact_idirect}{Summaries of the indirect impact of a covariate effect on the outcome variable. }
+\item{impact_total}{Summaries of the total impact of a covariate effect on the outcome variable.}
+
+}
+
+\references{ Dong, G. and Harris, R. 2015. Spatial Autoregressive Models for Geographically Hierarchical Data Structures. \emph{Geographical Analysis}, 47:173-191. 
+
+
+LeSage, J. P., and R. K. Pace. (2009). \emph{Introduction to Spatial Econometrics}. Boca Raton, FL: CRC Press/Taylor & Francis.     
+}
+
+\author{Guanpeng Dong, Richard Harris, Angelos Mimis \email{mimis@panteion.gr} }
+
+\seealso{\code{\link{sar}}, \code{\link{landprice}}, \code{\link{Beijingdistricts}}, \code{\link{landSPDF}}}
+
+\examples{
+library(spdep)
+
+# Running the hsar() function using the Beijing land price data
+data(landprice)
+
+# load shapefiles of Beijing districts and land parcels
+data(Beijingdistricts)
+data(landSPDF)
+
+plot(Beijingdistricts,border="green")
+plot(landSPDF,add=TRUE,col="red",pch=16,cex=0.8)
+
+# Define the random effect matrix
+model.data <- landprice[order(landprice$district.id),]
+head(model.data,50)
+
+# the number of individuals within each neighbourhood
+MM <- as.data.frame(table(model.data$district.id))
+# the total number of neighbourhood, 100
+Utotal <- dim(MM)[1]
+Unum <- MM[,2]
+Uid <- rep(c(1:Utotal),Unum)
+
+n <- nrow(model.data)
+Delta <- matrix(0,nrow=n,ncol=Utotal)
+for(i in 1:Utotal) {
+  Delta[Uid==i,i] <- 1
+}
+rm(i)
+# Delta[1:50,1:10]
+Delta <- as(Delta,"dgCMatrix")
+
+# extract the district level spatial weights matrix using the queen's rule
+nb.list <- spdep::poly2nb(Beijingdistricts)
+mat.list <- spdep::nb2mat(nb.list,style="W")
+M <- as(mat.list,"dgCMatrix")
+
+# extract the land parcel level spatial weights matrix
+nb.25 <- spdep::dnearneigh(landSPDF,0,2500)
+# to a weights matrix
+dist.25 <- spdep::nbdists(nb.25,landSPDF)
+dist.25 <- lapply(dist.25,function(x) exp(-0.5 * (x / 2500)^2))
+mat.25 <- spdep::nb2mat(nb.25,glist=dist.25,style="W")
+W <- as(mat.25,"dgCMatrix")
+
+
+## run the hsar() function
+res.formula <- lnprice ~ lnarea + lndcbd + dsubway + dpark + dele + 
+popden + crimerate + as.factor(year)
+
+betas= coef(lm(formula=res.formula,data=landprice))
+pars=list( rho = 0.5,lambda = 0.5, sigma2e = 2.0, sigma2u = 2.0, betas = betas )
+
+\dontrun{
+res <- hsar(res.formula,data=model.data,W=W,M=M,Delta=Delta,
+burnin=500, Nsim=1000, thinning = 1, parameters.start=pars)
+summary(res)
+
+# visualise the district level random effect
+library(classInt)
+library(RColorBrewer)
+x <- as.numeric(res$Mus)
+breaks <- classIntervals(x,4,"fisher")$brks
+groups <- cut(x,breaks,include.lowest=TRUE,labels=FALSE)
+palette <- brewer.pal(4, "Blues")
+plot(Beijingdistricts,col=palette[groups],border="grey")
+}
+
+}
+\keyword{spatial econometrics}

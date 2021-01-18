@@ -1,0 +1,239 @@
+---
+title: "Joint Models for Longitudinal Measurements and Competing Risks Failure Time Data"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+bibliography: JMcmprsk.bib
+vignette: >
+  %\VignetteIndexEntry{Joint Models for Longitudinal Measurements and Competing Risks Failure Time Data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+Joint analysis of longitudinal outcomes and survival times has gained a lot of attention in recent years. There have been extended to handle competing risks for both continuous and ordinal outcomes [ @MR2526626, @MR2758452]. This vignette offers a brief introduction to the R package JMcmprsk, which implements the methods proposed to deal with such joint models, and two competing risks are assumed. The data sets for generating the initial values are provided.
+
+## Joint modeling framework
+#### Continuous outcomes
+Let $Y_i(t)$ be the longitudinal outcome measured at time $t$ for subject $i$, $i=1,2,\cdots,n$, and $n$ is the total number of subjects in study. Let $C_i=(T_i,D_i)$ denote the competing risks data on subject $i$, where $T_i$ is the failure time or censoring time, and $D_i$ takes value in $\{0,1,\cdots,g\}$, with $D_i=0$ indicating a censored event and $D_i=k$ showing that subject $i$ fails from the $k$th type of failure, where $k=1,\cdots,g$.
+
+The joint model is specified in terms of the following two linked components:
+\begin{eqnarray*}
+Y_i(t)&=&X_i^{(1)}(t)^\top \beta+\tilde X_i^{(1)}(t)^\top b_i+\epsilon_i(t),\\
+\lambda_k(t)&=&\lambda_{0k}(t)\exp(X_i^{(2)}(t)^\top \gamma_k+\nu_k u_i),~~\mbox{for}~~k=1,\cdots,g,
+\end{eqnarray*}
+where $X_i^{(1)}(t)$, $X_i^{(2)}(t)$ denote the covaraites for the fixed-effects $\beta$ and $\gamma_k$, $\tilde X_i^{(1)}(t)$ denotes the covaraites for the random-effects $b_i$, and $\epsilon_i(t)\sim N(0,\sigma^2)$ for all $t\geq 0$. The parameter $\nu_1$ is set to 1 to ensure identifiability. We assume that $b_i$ is independent of $\epsilon_i(t)$ and that $\epsilon_i(t_1)$ is independent of $\epsilon_i(t_2)$ for any $t_1\neq t_2$. We further assume the random effects $b_i$ and $u_i$ jointly have a multivariate normal distribution, denoted by $\theta_i\sim N(0,\Sigma)$, where $\Sigma=(\Sigma_{b},\Sigma_{bu}^\top;\Sigma_{bu},\sigma_u)$.
+
+Denote $\Psi$ as the unknown parameters from the joint models. We propose to obtain the maximum likelihood estimate of $\Psi$ through an EM algorithm. The complete data likelihood is
+\begin{eqnarray*}
+&&L(\Psi;Y,C,\theta)\\
+&&\propto \Pi_{i=1}^n\Big[\Pi_{j=1}^{n_i}\frac{1}{\sqrt{2\pi\sigma^2}}\exp(-\frac{1}{2\sigma^2}(Y_{ij}-X_i^{(1)}(t_{ij})^\top\beta-\tilde X_i^{(1)}(t_{ij})^\top b_i)^2)\Big]\\
+&&\times \Pi_{k=1}^g\lambda_k(T_i)^{I(D_i=k)}\exp\Big\{-\int_0^{T_i}\sum_{k=1}^g\lambda_k(t)dt\Big\}\\
+&&\times \frac{1}{\sqrt{(2\pi)^d|\Sigma|}}\exp(-\frac{1}{2}\theta_i^\top\Sigma^{-1}\theta_i).
+\end{eqnarray*}
+In the E-step, we need to calculate the expected value of all the functions of $\theta$,
+The integral does not have a closed-form solution, and thus a numerical method must be employed for its evaluation. Standard option is the Gaussian quadratic rules. In the M-step, we can update $\Psi$ through maximizing the function obtained from the E-step.
+
+#### Ordinal outcomes
+Let $Y_{ij}$ denote the $j$th response measured on subject $i$, where $i=1,\cdots,n$, $j=1,\cdots,n_i$, and $Y_{ij}$ takes values in $\{1,\cdots,K\}$. The competing risks failure times on subject $i$ is $(T_i,D_i)$, and the meaning is the same as in subsection of "Continuous outcomes".
+
+we propose the following partial proportional odds model for $Y_{ij}$
+\begin{eqnarray*}
+P(Y_{ij}\leq k|X_{ij},\tilde X_{ij},W_{ij},b_i)=\frac{1}{1+\exp(-\theta_{k}-X_{ij}\beta-\tilde X_{ij}\alpha_{k}-W_{ij}^\top b_i)}.
+\end{eqnarray*}
+where $k=1,\cdots,K-1$, $X_{ij}$ and $\tilde X_{ij}$ are $p\times 1$ and $s\times 1$ vectors of covaraites for the fixed-effect $\beta$ and $\alpha_{k}$, with $\alpha_{1}=0$, and $\tilde X_{ij}$ is a subset of $X_{ij}$ for which the proportional odds assumption may not be satisfied. The $q\times 1$ vector $b_i$ represents random effects of the associated covaraites $W_{ij}$.
+
+The distribution of the competing risks failure times $(T_i,D_i)$ are assumed to take the form of the following cause-specific hazards frailty model:
+\begin{eqnarray*}
+\lambda_d(t|Z_i(t),u_i)&=&\lambda_{0d}(t)\exp(Z_i(t)^\top \gamma_d+\nu_d u_i),~~\mbox{for}~~d=1,\cdots,g,
+\end{eqnarray*}
+where the $l\times 1$ vector $\gamma_d$ and $\nu_d$ are cause-specific coefficients for the covariates $Z_i(t)$ and the random effects $u_i$, respectively.
+
+The parameter $\nu_1$ is set to 1 to ensure identifiability. We assume the random effects $b_i$ and $u_i$ jointly have a multivariate normal distribution, denoted by $a_i\sim N(0,\Sigma)$.
+
+Denote $\Psi$ as the unknown parameters from the joint models. We propose to obtain the maximum likelihood estimate of $\Psi$ through an EM algorithm. The complete data likelihood is
+\begin{eqnarray*}
+&&L(\Psi;Y,C,a)\\
+&&\propto \Pi_{i=1}^n\Big[\Pi_{j=1}^{n_i}\Pi_{k=1}^{K}\{\pi_{ij}(k)-\pi_{ij}(k-1)\}^{I(Y_{ij}=k)}\Big]\\
+&&\times \Pi_{d=1}^g\lambda_d(T_i)^{I(D_i=d)}\exp\Big\{-\int_0^{T_i}\sum_{k=1}^d\lambda_d(t)dt\Big\}\\
+&&\times \frac{1}{\sqrt{(2\pi)^{q+1}|\Sigma|}}\exp(-\frac{1}{2}a_i^\top\Sigma^{-1}a_i).
+\end{eqnarray*}
+where $\pi_{ij}(k)$ stands for the probability that $Y_{ij}\leq k$ given the covariates and the random effects. The implementation of EM algorithm is the same as that of subection of "Continuous outcomes".
+
+## The R package JMcmprsk
+
+The function that fits continuous outcomes in JMcmprsk is called jmc(). As an illustrative example of jmc(), we consider Scleroderma Lung Study [@tashkin2006cyclophosphamide], a double-blinded, randomized clinical trial to evaluate effectiveness of oral cyclophosphamide (CYC) versus placebo in the treatment of lung disease due to scleroderma. This study includes 158 patients, the primary outcome is forced vital capacity (FVC, as \% predicted) determined at 3-month intervals from the baseline. The event of interest is the time-to-treatment failure or death. We consider two factors baseline \%FVC ($FVC_0$) and baseline lung fibrosis ($FIB_0$) and two risks, informative and noninformative. The model setups are as follows,
+\begin{eqnarray*}
+\%FVC_{ij}&=&\beta_1+\beta_2t_{ij}+\beta_3FVC_{0i}+\beta_4FIB_{0i}+\beta_5CYC_i\\
+&&+\beta_6FVC_{0i}\times CYC_i+\beta_7FIB_{0i}\times CYC_i+\beta_8 t_{ij}\times CYC_i+b_it_{ij}+\epsilon,
+\end{eqnarray*}
+and the cause-specific hazards frailty models are
+\begin{eqnarray*}
+\lambda_1(t)=\lambda_{01}(t)\exp(\gamma_{11}FVC_{0i}+\gamma_{12}FIB_{0i}+\gamma_{13}CYC_i+\gamma_{14}FVC_{0i}\times CYC_i+\gamma_{15}FIB_{0i}\times CYC_i+u_i)\\
+\lambda_2(t)=\lambda_{02}(t)\exp(\gamma_{21}FVC_{0i}+\gamma_{22}FIB_{0i}+\gamma_{23}CYC_i+\gamma_{24}FVC_{0i}\times CYC_i+\gamma_{25}FIB_{0i}\times CYC_i+\nu_2u_i),
+\end{eqnarray*}
+
+
+## Examples
+
+We first load the package and the data.
+```{r, eval=FALSE, message=FALSE, warning=FALSE}
+require(JMcmprsk)
+set.seed(123)
+data(lung)
+yread <- lung[, c(1,2:11)]
+cread <- unique(lung[, c(1, 12, 13, 6:10)])
+```
+
+The model can be specified by the function jmc():
+```{r, eval=FALSE, message=FALSE, warning=FALSE}
+jmcfit <- jmc(long_data = yread, surv_data = cread, out = "FVC", 
+           FE = c("time", "FVC0", "FIB0", "CYC", "FVC0.CYC", 
+                  "FIB0.CYC", "time.CYC"), 
+           RE = "linear", ID = "ID",cate = NULL, intcpt = 0, 
+            quad.points = 20, quiet = FALSE)
+jmcfit
+```
+
+We can also call the internal function jmc_0() to get the same model fit. Below is the illustrative example of using the same dataset.
+```{r, message=FALSE, warning=FALSE, results='asis'}
+require(JMcmprsk)
+data(lung)
+lungY <- lung[, c(2:11)]
+lungC <- unique(lung[, c(1, 12, 13, 6:10)])
+lungC <- lungC[, -1]
+lungM <- data.frame(table(lung$ID))
+lungM <- as.data.frame(lungM[, 2])
+```
+The number of rows in lungY is the total number of measurements for all subjects in the study. The columns in yfile should start with the longitudinal outcome (column 1), the covariates for the random effects, and then the covariates for the fixed effects. For lungC, the survival / censoring time is included in the first column, and the failure type coded as 0 (censored events), 1 (risk 1), or 2 (risk 2) is given in the second column. Two competing risks are assumed. The covariates are included in the third column and on. lungM is to indicate the number of longitudinal measurements per subject. The number of rows equals to the number of subjects.
+
+Hence, the model can be specified by the function jmc_0():
+```{r, eval=FALSE, message=FALSE, warning=FALSE}
+res1=jmc_0(p=8, lungY, lungC, lungM, point=20, do.trace = FALSE, type_file = FALSE)
+res1
+```
+with $p$ the dimension of fixed effects (include intercept) in yfile, the option "point" is the number of points used to approximate the integral in the E-step, default is 20, and "do.trace" is used to control whether the programm prints the iteration details. "type_file" is to control whether the datasets are called from file paths / data frames, default is TRUE, i.e., file paths. If we would like to see a concise summary of the result we can simply type
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE, results='base'}
+#because of the long running time, we save the jmo and jmc results within the package
+fitfile=system.file("extdata", "runfit.RData", package = "JMcmprsk")
+load(fitfile)
+jmcfit
+```
+The resulting table contains three parts, the fixed effects in longitudinal model, survival model and random effects. It gives the estimated parameters in the first column, standard error in the second column, 95\% confidence interval and $p$-value for these parameters in the third and forth columns. In our example, there is only one random effect, if there are more than one random effect, the outputs will include
+$sigma_b11, sigma_b12, sigma_b22, sigma_b1u, sigma_b2u$
+and so on.
+
+By the way, the supporting function coef() can be used to extract the coefficients of the longitudinal/survival process:
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+coef(jmcfit, coeff = "beta")
+coef(jmcfit, coeff = "gamma")
+```
+We proceed by checking the fit of the model using linearTest().
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+## Linear hypothesis of testing all coefficients of beta's / gamma's equal 0
+linearTest(jmcfit,coeff="beta")
+linearTest(jmcfit,coeff="gamma")
+```
+We can see that the hypothesis that $\beta_1=\beta_2=\cdots=\beta_7=0$ will be rejected, and the hypothesis $\gamma_{11}=\gamma_{12}=\cdots=
+\gamma_{15}=0$ and $\gamma_{21}=\gamma_{22}=\cdots=\gamma_{25}=0$ will not be rejected at the nominal level of 0.05.
+
+We extract the standard error and 95 percent confidence interval using summary().
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+## Extract the standard errors for the longitudinal portion
+summary(jmcfit, coeff = "longitudinal")
+## Extract the standard errors for the survival portion
+summary(jmcfit, coeff = "survival")
+```
+
+The implement of jmo() is the same as that of jmc(). As an illustrative example, we use the data from NINDS rt-PA stroke trial  [@stroke1995tissue]. In this study, 624 patients are included, and the patients treated with rt-PA were compared with those given placebo to look for an improvement from baseline in the score on the modified Rankin scale, an ordinal measure of degree of disability with categories ranging from no symptoms, no significant disability to severe disability or death, which means in this example, $Y_{ij}$ takes $K=4$ ordinal values. The following covaraites are considered: treatment group (rt-PA or placebo), modified Rankin scale prior stroke onset, time since randomization (dummy variables for 3, 6 and 12 months), and the three subtypes of acute stroke (small vessel occlusive disease, large vessel atherosclerosis or cardioembolic stroke, and unknown reasons). Similarly, we also consider the informative and noninformative risks. The model setups are as follows,
+\begin{eqnarray*}
+P(Y_{ij}\leq k)&=&[1+\exp(-\theta_{k}-(\beta_1Group+\beta_2\mbox{Modified Rankin scale prior onset}+\beta_3time3\\
+&&+\beta_4time6+\beta_5time12+\beta_6\mbox{Small vessel}+\beta_7\mbox{Large vessel or cardioembolic stroke}\\
+&&+\beta_8 \mbox{Small vessel*group}+\beta_9\mbox{Large vessel or cardioembolic stroke*group})\\
+&&-(\alpha_{k1}\mbox{Small vessel}+\alpha_{k2}\mbox{Large vessel or cardioembolic stroke})-b_i)]^{-1}.
+\end{eqnarray*}
+where $k=1,\cdots,K-1$.
+\begin{eqnarray*}
+\lambda_1(t)&=&\lambda_{01}(t)\exp(\gamma_{11}Group+\gamma_{12}\mbox{Modified Rankin scale prior onset}\\
+&&+\gamma_{13}\mbox{Small vessel}+\gamma_{14}\mbox{Large vessel or cardioembolic stroke}\\
+&&+\gamma_{15} \mbox{Small vessel*group}+\gamma_{16}\mbox{Large vessel or cardioembolic stroke*group}+u_i)\\
+\lambda_2(t)&=&\lambda_{02}(t)\exp(\gamma_{21}Group+\gamma_{22}\mbox{Modified Rankin scale prior onset}\\
+&&+\gamma_{23}\mbox{Small vessel}+\gamma_{24}\mbox{Large vessel or cardioembolic stroke}\\
+&&+\gamma_{25} \mbox{Small vessel*group}+\gamma_{26}\mbox{Large vessel or cardioembolic stroke*group}+\nu_2u_i),
+\end{eqnarray*}
+
+We first load the package and the data.
+```{r, message=FALSE, warning=FALSE, results='asis'}
+set.seed(123)
+require(JMcmprsk)
+data(ninds)
+yread <- ninds[, c(1, 2:14)]
+cread <- ninds[, c(1, 15, 16, 6, 10:14)]
+cread <- unique(cread)
+```
+
+Next, the model can be specified by the function jmo():
+```{r, eval=FALSE, message=FALSE, warning=FALSE, results='asis'}
+jmofit <- jmo(yread, cread, out = "Y",
+            FE = c("group", "time3", "time6", "time12", "mrkprior",
+                   "smlves", "lvORcs", "smlves.group", "lvORcs.group"),
+            cate = NULL,RE = "intercept", NP = c("smlves", "lvORcs"), 
+            ID = "ID",intcpt = 1, quad.points = 20, 
+            max.iter = 1000, quiet = FALSE, do.trace = FALSE)
+jmofit
+```
+
+We can also call the internal function jmo_0() to get the same model fit. Below is the illustrative example of using the same dataset.
+```{r, message=FALSE, warning=FALSE, results='asis'}
+require(JMcmprsk)
+data(ninds)
+yread <- ninds[, c(2:14)]
+mread <- as.data.frame(table(ninds$ID))
+mread <- as.data.frame(mread[, 2])
+cread <- ninds[, c(1, 15, 16, 6, 10:14)]
+cread <- unique(cread)
+cread <- cread[, -1]
+```
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, results='asis'}
+jmofit <- jmo_0(p=9,s=2, yread,cread,mread,point=6,do.trace = FALSE, type_file = FALSE)
+jmofit
+```
+with $p$ the dimension of proportional odds covariates (not including intercept) in yread and $s$ the dimension of non-proportional odds covariates in yread. 
+If we would like to see a concise summary of the result we can simply type
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE, results='base'}
+#because of the long running time, we save the jmo and jmc results within the package
+fitfile=system.file("extdata", "runfit.RData", package = "JMcmprsk")
+load(fitfile)
+jmofit
+```
+
+```{r, message=FALSE, warning=FALSE, results='base'}
+##extract the parameter estimates of longitudinal proportional odds fixed effects
+beta <- coef(jmofit, coeff = "beta")
+beta
+##extract the parameter estimates of longitudinal non-proportional odds fixed effects
+alpha <- coef(jmofit, coeff = "alpha")
+alpha
+##extract the parameter estimates of longitudinal logit-specific intercept
+theta <- coef(jmofit, coeff = "theta")
+theta
+##extract the parameter estimates of survival fixed effects
+gamma <- coef(jmofit, coeff = "gamma")
+gamma
+```
+
+```{r, message=FALSE, warning=FALSE, results='base'}
+## Linear hypothesis of testing all coefficients of beta's / gamma's / alpha's equal 0
+linearTest(jmofit,coeff="beta")
+linearTest(jmofit,coeff="gamma")
+linearTest(jmofit,coeff="alpha")
+```
+
+```{r, message=FALSE, warning=FALSE, results='base'}
+## Extract the standard errors of both longitudinal and survival portions
+summary(jmofit, coeff = "longitudinal")
+summary(jmofit, coeff = "survival")
+```
+# References

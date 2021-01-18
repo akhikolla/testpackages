@@ -1,0 +1,86 @@
+---
+title: "Technical overview of the intervalaverage function"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{intervalaverage-technicaloverview}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup,echo=FALSE,message=FALSE}
+library(intervalaverage)
+```
+
+## Motivation
+
+The interval average function was born out of the need to take values measured 
+over a set of intervals and time-weight average those values into a different set
+of intervals. Algorithmically, the simplest approach to deal with this problem
+is just to expand interval data into repeated values over intervals that are all
+the same length (e.g. the value of `8` measured over the interval `[3,5]` becomes
+the value of 8 measured over `[3,3]` and `[4,4]` and `[5,5]`) but this is incredibly
+memory intensive.  Instead a weighting approach is necessary. 
+
+I was not able to find a package which accomplished this exact task (although there probably is one somewhere), much less
+a package which accomplished it quickly and with minimal memory overhead.  Since these package was designed to replace SQL database procedures the priorities were correctness, memory efficiency, and speed in that order. But given the amount of effort put into optimizing this, it's almost exactly as fast as a less memory efficient version.
+
+## Integer vs numeric intervals
+I made the intentional choice to disallow numeric intervals. Restricting intervals to integer types (integer or class IDate) allowed me to avoid having to foresee issues that would arise with numeric intervals. If you're dealing with continuous data and would like to use this package, just discretize the data to your desired amount of precision convert to those discrete periods to integers.
+
+
+## This vignette
+The remainder of this vignette describes some of the decision-making behind how the intervalaverage function was written and may not be interesting or useful to a general purpose audience.
+
+
+
+## A brief description of the intervalaverage algorithm (with a focus on explaining why seemingly convoluted choices were made in the function body)
+
+The `intervalaverage` function starts by merging periods in y to periods in x by
+ interval variables and possible grouping variables using a non-equijoin. 
+Technically speaking `intervalaverage(x,y, interval_vars,group_vars)`
+performs a right join on group_vars and non-equi joining (for partial overlaps)
+on interval_vars. If intervals from x have start and end points [a,b] and intervals from y have start and end points [c,d], the non-equi join for partial overlaps requires that b>=c & a <= d. 
+
+That resulting operation returns a joined table with two sets of intervals. Those two sets of intervals can then be intersected (ie: [max(a,b), min(c,d) ]) to identify the period of overlap.  The length of this period of overlap (min(c,d)-max(a,b)+1 ) is important in that it determines the weight that the corresponding value from x will have when trying to average that value into the interval from y ([c,d]).
+
+
+This is all done directly in C++ because this code needs to have very little overhead for a specific reason: namely that the non-equijoin is repeatedly calling the average for each group in by=.EACHI. Previously the function generated the entire intermediate table and operations (such as taking products to calculate the weighted mean) could be done once on the entire vectors in the intermediate table, but to save memory I'm using the .EACHI technique which doesn't ever allocate the intermediate table (at least not all at once).
+Using this .EACHI approach makes the function highly memory efficient (basically the only things allocated other than the inputs is a table of the resulting join subsetted to the largest group. This memory is then reused for each group. This is data.table's optimization, not mine, but at the time of writing it is not well documented.) 
+
+Before describing the C++ code which does the above operation, I'll mention that there is one other memory optimization I implemented: extreme care was taken to avoid copying x or y. This was challenging since x and y needed to be modified in various ways prior to the join, but this is all addressed via adding columns and/or possibly reordering (for an error check)--all of this is reversed on function exit. I don't know much about situations where multiple parallel R processes are sharing the same object at the same time, but if that's something you want to do you'll definitely need to copy the objects first or else who knows what will happen. Note when I say "multiple parallel R processes sharing the same object at the same time" I'm not referring to standard parallelization approaches like those used in library(parallel) or on a cluster because I'm almost certain those always make copies when forking.
+
+In any case, the C code:
+
+The C++ code takes the following inputs: 
+- a list of values
+- a vector of start integers from x
+- a vector of end integers from x
+- a scalar--start integer from y
+- a scalar--end integer from y
+- a collated vector of desired names in this form: `c("valuevar1","nobs_valuevar1","valuevar2","nobs_valuevar2"...etc)` which will determine the names of those columns in the return list of the C function. I probably could have generated this in C but I was having trouble figuring out text string manipulation.
+
+The return is list contains precomputed columns (xduration, values, nobs_values, and xminstart/xmaxend) as described in the help.
+
+The C code is specifically designed to work with the conditions generated by the non-equi join and should not be generalized to other situations without major modification. Namely, because of the .EACHI grouping, there is one set  of y intervals and possibly multiple xintervals (hence the scalar for y/vector for x).
+Additionally, all intervals are assumed to be non-missing with the exception of a special case: if any intervals in x are missing, they're all assumed to be missing and this only results when the .EACHI group does not contain ANY matching rows from x--ie, the set of join conditions resulted in no match. data.table will automatically generated a single row with missings for the x variables. This is detected simply through the presence of a missingness in the vector of start integers. The correct output for this situation is generated manually (xminstart/xmaxend and the average values are returned NA but xduration is returned as 0).
+
+If nonmissing, the function proceeds to loop through each value variable provided as the outer loop (indexed by j). Each j loop returns two variables corresponding to the value variable: the *nonmissing* (ie omitting NAs) average value as well as the number of observations that the value variable had which contributed to the average. This is less than or equal to xduration (equal to if that value variable has no missings).  Additionally, when j=0 (ie on the first iteration),
+interval information--ie the length of the intersect as well as xminstart/xmaxend-- is determined (these are necessary to calculate the weights for the average so this happens first in the loop).
+
+
+This optimization and the abstractions which allow intervalaverage to be called flexibly for arbitrary groups and number of values variables make the intervalaverage function fairly intricate. This intricacy  (read: potential for bugs) is partially addressed by the large number of error checks specified at the top of the R function body. (there are no error checks in the C code as this would slow down the R function since the C code is called repeatedly). Potential for bugs is further addressed by the fact that I rewrote a slower but simpler version of the averaging function using a different algorithm. The "unit tests" are more than just unit tests--they're a series of datasets passed through both functions. Both functions return exactly identical results in all cases or the checks fail so I can say with high certainty that despite the level of abstraction involved that this function works as intended at least in the use-cases that I've foreseen.  With that said, if you encounter a bug please let me know and I will patch it.
+
+
+
+
+ 
+ 
+ 

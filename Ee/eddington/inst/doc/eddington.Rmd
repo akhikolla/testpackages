@@ -1,0 +1,197 @@
+---
+title: "Computing your Eddington number using the `eddington` package."
+author:
+  "Paul W. Egeler, M.S."
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{eddington}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5,
+  fig.align = "center"
+)
+
+# Putting this here too so that we don't have pkg startup messages.
+library(dplyr)
+```
+
+## Introduction
+
+One statistic that cyclists might be interested to track is their Eddington
+number. The Eddington number for cycling, _E_, is the maximum number where a
+cyclist has ridden _E_ miles in _E_ days. So to get a number of 30, you need to
+have ridden 30 miles or more on 30 separate days.
+
+This package allows the user to compute Eddington numbers and more. For example,
+users can determine if a specific Eddington number is satisfied or how many
+rides of the appropriate distance are needed to increment their Eddington
+number. It also contains **simulated** data to demonstrate the package use.
+
+## The Data
+
+Loading the simulated data is simple. Let's take a quick look at the first few lines.
+
+```{r setup}
+library(eddington)
+head(rides)
+```
+
+First, we need to establish the granularity of the data. As you can see above,
+there are at least two entries for 2009-01-18. Since this data simulates a rider
+who tracked each individual ride, there could be more than one ride per day in
+this dataset. Therefore, we need to transform the data to aggregate on day.
+
+```{r xform}
+library(dplyr)
+
+days <- rides %>%
+  group_by(ride_date) %>%
+  summarize(n = n(), total = sum(ride_length))
+
+head(days)
+```
+
+Let's just take a quick peek at the summary stats:
+
+```{r summary}
+summary(days)
+```
+
+
+### Histogram of Daily Mileages
+
+This plot provides a histogram of daily mileages. Note the summary Eddington
+number is in dark red---we'll see how that's calculated in the next section.
+
+```{r, echo=FALSE}
+hist(
+  as.integer(days$total), 
+  breaks = 30, 
+  main = "Histogram of Daily Mileages", 
+  xlab = "Miles"
+)
+
+abline(v = E_num(days$total), col = "darkred")
+
+legend(
+  "topright",
+  legend = "Eddington Number",
+  col = "darkred",
+  bty = "n",
+  lty = 1L
+)
+```
+
+## Computing Eddington Numbers
+
+To compute the Eddington number, we use the `E_num()` function like so:
+
+```{r enum}
+E_num(days$total)
+```
+
+### Cumulative E
+
+To see how the Eddington number progressed over the year, use `E_cum()`. It can
+be useful to add the vector as a new column onto the existing dataset:
+
+```{r ecum}
+days$E <- E_cum(days$total)
+
+head(days)
+```
+
+It might be more interesting to see that graphically:
+
+```{r needle, echo=FALSE}
+E <- E_num(days$total)
+
+E_contribs <- days[days$total >= E,]
+
+
+plot(
+  y = days$total,
+  x = days$ride_date,
+  type = "h",
+  main = "Ride Mileages in 2009",
+  xlab = "Ride Day",
+  ylab = "Total Miles",
+  bty = "n",
+  ylim = c(0, 90)
+)
+
+
+lines(
+  y = c(0, days$E),
+  x = c(as.Date("2009-01-01"), days$ride_date),
+  type = "s",
+  col = "darkred"
+)
+
+abline(h = E, lty = 2L, col = "darkred")
+
+text(
+  E_contribs[,c("ride_date","total")],
+  labels = as.integer(E_contribs[["total"]]),
+  pos = 3,
+  cex = 0.7
+  )
+
+legend(
+  "topleft",
+  title = "Eddington Number",
+  legend = c("Cumulative", "Summary"),
+  col = "darkred",
+  bty = "n",
+  lty = c(1L, 2L)
+)
+```
+
+## Addtional Functionality
+
+### Incrementing to the Next Eddington Number
+
+So now that we know that the summary Eddington number was 29 for the year, let's
+see how many more rides of length 30 or greater that we would have needed to
+increment the _E_ to 30.
+
+```{r enext}
+E_next(days$total)
+```
+
+### Stretch Goals
+
+An ambitious rider might be interested to see the number of rides required to
+reach a stretch goal. Say, how many more rides would have been needed to reach
+an _E_ of 50? For that, we use `E_req()`, which stands for "required."
+
+```{r ereq}
+E_req(days$total, 50)
+```
+
+### Check if a Dataset Satisfies an Arbitrary _E_
+
+We could also check to see if we've gotten to 30 by using `E_sat()`, which
+stands for "satisfies."
+
+```{r esat}
+E_sat(days$total, 30)
+```
+
+## Conclusion
+
+The text above should give you a good start in using the `eddington` package.
+Although this package was developed with bicycling in mind, it has applications
+for other users as well. The Eddington number is a specific application of
+computing the side length of a Durfee square. Another application is the Hirsch
+index, or _h_-index, which a popular number in bibliometrics.

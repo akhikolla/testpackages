@@ -1,0 +1,367 @@
+---
+title: "1. Pedigree-based Evaluations"
+author: "Robin Wellmann"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+bibliography: references.bib
+vignette: >
+  %\VignetteIndexEntry{1. Pedigree-based Evaluations}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+Animal breeding relies on the prediction of breeding values of selection candidates and subsequent selection of animals for breeding in a way that restricts the rate of inbreeeding and maintains genetic originality of the breed. The methods of choice are the utilization of pedigree data, of genetic marker data, or a combination of both. This section covers the following evaluations based on pedigree data:
+
+-	[Data Preparation](#data-preparation)
+    - Pedigrees (includes plotting)
+-	[Quality Control](#quality-control) 
+    -	Pedigree Completeness
+    -	Number of Equivalent Complete Generations
+    -	Number of Fully Traced Generations
+    -	Number of Maximum Generations Traced
+    -	Index of Pedigree Completeness
+-	[Individual Specific Parameters](#individual-specific-parameters)
+    - [Inbreeding Coefficients](#inbreeding-coefficients)
+    - [Breed Composition](#breed-composition)
+    - [Kinship](#kinship)
+    - [Kinship at Native Alleles](#kinship-at-native-alleles)
+-	[Population Specific Parameters](#population-specific-parameters)
+    - [Genetic Diversity](#genetic-diversity)
+    - [Kinship and Diversity at Native Alleles](#kinship-and-diversity-at-native-alleles)
+    - [Native Effective Size](#native-effective-size)
+    - [Effective Size](#effective-size)
+    - [Change of Native Genome Equivalent and Ne](#change-of-native-genome-equivalent-and-ne)
+    - [Change of Breed Compostion](#change-of-breed-composition)
+
+Note that the calculation of breeding values is not included as there already exist a couple of R packages for this purpose. Recommended are the free package [MCMCglmm][1] for small and medium sized data sets, and package [asreml][2] for large data sets.
+
+[1]: https://www.jstatsoft.org/article/view/v033i02/v33i02.pdf
+[2]: https://www.vsni.co.uk/downloads/asreml/release2/doc/asreml-R.pdf
+
+## Data Preparation
+
+A pedigree is a data frame or data table with the first three columns  being the individual ID, the sire ID, and the dam ID. Depending on the intended evaluation, the pedigree may also provide the names of the breeds (column `Breed`), the years of birth or generation numbers (column `Born` ), and the sexes (column `Sex`). A toy example of a pedigree may look like this:
+
+
+```{r}
+Pedigree <- data.frame(
+  Indiv= c("Iffes",     "Peter",    "Anna-Lena", "Kevin",    "Horst"),
+  Sire = c("Kevin",     "Kevin",     NA,          0,         "Horst"),
+  Dam  = c("Chantalle", "Angelika", "Chantalle", "",           NA),
+  Breed= c("Angler",    "Angler",   "Angler",    "Holstein", "Angler"),
+  Born = c(2015,        2016,       2011,       2010,        2015)
+  )
+Pedigree
+```
+
+Individual IDs must be unique and should not contain blank spaces. The above pedigree contains a loop, so it is not a valid pedigree (Horst is an ancestor of himself). Function [prePed][prePed] will prepare the pedigree and turn it into a valid one. The function
+
+- renames the first three columns as `Indiv`, `Sire`, `Dam` (if needed),
+- replaces 0, "", and " " in columns `Sire` and `Dam` by `NA`,
+- breaks loops and reports which animal was included in a loop,
+- adds or updates column `Sex`. Sexes will be denoted as `male` and `female`.
+- adds one row for each founder if the row is not already included,
+- sorts the pedigree such that individuals appear in the pedigree before they appear as parent,
+- guesses the breed name of animals with missing breeds (including added founders),
+- adds columns `numIndiv`, `numSire`, and `numDam` with numeric IDs of the individuals (if `addNum=TRUE` is specified),
+- sets the breed name of founders from  `thisBreed` that are born after `lastNative` to unknown (if these parameters are specified).
+
+
+
+
+
+
+```{r}
+library("optiSel")
+Pedig <- prePed(Pedigree)
+```
+
+The result is:
+
+```{r}
+Pedig[,-1]
+```
+
+Plots can be created to show specified individuals and their relatives. In the first step, function [subPed][subPed] is used below to create a small pedigree that includes only the individuals to be plotted, which are `"Chantalle"` and `"Angelika"`, up to `prevGen` previous (ancestral) generations, and up to `succGen` succeeding (descendant) generations. The pedigree was plotted with function [pedplot][pedplot]. It is basically a wrapper function for function `plot.pedigree` from package `kinship2`, but has additional arguments. Parameter `label`
+contains the columns of the pedigree to be used for labeling. By default, symbols of individuals
+included in vector `keep` are plotted in black and for individuals from other breeds the
+symbol is crossed out.
+
+
+
+```{r, warning=FALSE}
+sPed <- subPed(Pedig, keep = c("Chantalle","Angelika"), prevGen = 2, succGen = 1)
+pedplot(sPed, label = c("Indiv", "Born", "Breed"), cex = 0.55)
+```
+
+Hereby, `SAnna-Lena` denotes the unknown sire of `Anna-Lena`.
+
+
+## Quality Control
+
+The next step is to find out if the completeness of the pedigree is sufficient for the intended evaluation, and to identify individuals with sufficient pedigree information. This will be demonstrated at the example of a pedigree of Hinterwald cattle. Data frame `Phen` contains  selection candidates with breeding values in column `BV`, and data frame `PedigWithErrors` contains their pedigree. The column with individual IDs is called `Indiv` in both data sets. 
+```{r, results="hide"}
+data("PedigWithErrors")
+data("Phen")
+Pedig <- prePed(PedigWithErrors)
+```
+
+Function [completeness][completeness] can be used to determine the proportion of known ancestors of each specified individual in each ancestral generation:
+
+```{r}
+compl <- completeness(Pedig, keep=Phen$Indiv, by="Indiv")
+head(compl)
+```
+
+or the mean completeness of the pedigrees of specified individuals within sexes:
+
+```{r, warning=FALSE}
+compl <- completeness(Pedig, keep=Phen$Indiv, by="Sex")
+library("ggplot2")
+ggplot(compl, aes(x=Generation, y=Completeness, col=Sex)) + geom_line()
+```
+
+The completeness of the pedigree of each individual can be summarized with function [summary][summary.Pedig]:
+
+```{r}
+Summary <- summary(Pedig, keep.only=Phen$Indiv)
+head(Summary[Summary$equiGen>3.0, -1])
+```
+
+The following parameters were computed for each individual:
+
+`equiGen`
+:   Number of equivalent complete generations, defined as the sum of the proportion of known ancestors over all generations traced,
+
+`fullGen`
+:   Number of fully traced generations,
+
+`maxGen`
+:   Number of maximum generations traced,
+
+`PCI`
+:   Index of pedigree completeness, which is the harmonic mean of the pedigree completenesses of the parents (MacCluer et al, 1983),
+
+`Inbreeding`
+:   Inbreeding coefficient.
+
+The best possibility to characterize completeness of pedigree information by a single value is the *number of equivalent complete generations*, averaged over all individuals of the actual breeding population which were included in the evaluations.
+
+The relevant parameter to identify individuals with insufficient pedigree information to estimate inbreeding, however, is the `PCI`. This is because inbreeding can be detected only if both maternal and paternal ancestries are known. The harmonic mean ensures that the less complete paternal pedigree is weighted more heavily, so the `PCI` equals zero when either parent is unkown. Inbreeding coefficients can be valid despite small `PCI`s if the most recent founders were indeed unrelated, e.g. because they were from other breeds.
+
+Note that inbreeding coefficients can be computed faster with function [pedInbreeding][pedInbreeding].
+
+
+
+### Individual Specific Parameters
+
+#### Inbreeding Coefficients
+
+The inbreeding coefficient of an individual is the probability that two alleles chosen at random from the maternal and paternal haplotypes are identically by descent (IBD). This parameter estimates the extent to which the individual may suffer from inbreeding depression and predicts the homogeneity of its offspring. It can be calculated with
+
+```{r}
+Animal <- pedInbreeding(Pedig)
+mean(Animal$Inbr[Animal$Indiv %in% Phen$Indiv])
+```
+
+Whether mating to a sound inbred individual should be favored or avoided depends on whether the breeder wishes offspring with uniform or heterogeneous breeding values. More important than the inbreeding coefficient of an animal itself, however, is the expected inbreeding coefficient of the offspring, which should be low. The expected inbreeding coefficient of the offspring is equal to the kinship of the parents.
+
+#### Kinship
+
+The kinship between two individuals is the probability that two alleles randomly chosen from both individuals are IBD. A matrix containing the kinship between all pairs of individuals can be computed with function [pedIBD][pedIBD]. It is half the numerator relationship matrix. The R code below computes the kinship between the female with ID `276000812750188` and all male selection candidates that have a breeding value larger than 1.0 and a pedigree with at least 5 equivalent complete generations.
+
+```{r}
+pKin   <- pedIBD(Pedig, keep.only=Phen$Indiv)
+isMale <- Pedig$Sex=="male" & (Pedig$Indiv %in% Phen$Indiv[Phen$BV>1.0])
+males  <- Pedig$Indiv[isMale & summary(Pedig)$equiGen>5]
+pKin[males, "276000812750188", drop=FALSE]
+```
+
+The males with lowest kinship should be favoured for mating.
+
+#### Breed Composition
+
+Mating decisions should not only depend on the breeding value of the male and the kinship between male and female, but also on the native contribution of the male. Many endangered breeds have been graded up with commercial high-yielding breeds. These increasing contributions from other breeds displace the original genetic background of the endangered breed, decrease the genetic contribution from native ancestors, and reduce the conservation value of the breed. 
+
+For computing the breed composition of individuals it should be taken into account that the breed name of founders born recently is in fact unkown even if they have been classified as purebred. Hence, for these individuals, the breed name should be changed to `"unknown"`. Below, the breed name of founders born after 1970 is changed to `"unknown"` if they had been classified as Hinterwald cattle. Thereafter, function [pedBreedComp][pedBreedComp] was used to estimate the contribution of each individual from each foreign breed and from native founders. The contribution an individual has from native founders is called the native contribution NC of the individual. Finally, column `NC` containing the native contributions was added to the pedigree. 
+
+```{r, results="hide"}
+Pedig <- prePed(PedigWithErrors, thisBreed="Hinterwaelder", lastNative=1970)
+```
+
+```{r}
+cont  <- pedBreedComp(Pedig, thisBreed="Hinterwaelder")
+Pedig$NC <- cont$native
+head(cont[rev(Phen$Indiv), 2:6])
+```
+
+The columns are ordered so that the most influential foreign breeds come first. It can be seen that the contribution from native founders varies considerably between individuals. Individuals with high genetic contribution from native founders should be favored for mating provided that the kinship between male and female is sufficiently low. 
+
+#### Kinship at Native Alleles
+
+Since animals with high native contributions tend to be related, the inbreeding level could increase considerably when introgressed genetic material is removed from the population. This could be avoided by restricting the incease in kinship at native alleles in the population. The kinship at native alleles is also called the native kinship. An R-Object containing the information needed to estimate native kinship from pedigree can be obtained as:
+
+```{r, results="hide"}
+pKinatN <- pedIBDatN(Pedig, thisBreed="Hinterwaelder", keep.only=Phen$Indiv)
+```
+For pairs of individuals the native kinship can be estimated as:
+
+```{r}
+pKinatN$of <- pKinatN$Q1/pKinatN$Q2
+pKinatN$of["276000891862786","276000812497659"]
+```
+
+However, the kinship at native alleles between two individuals says nothing about the amount of genetic material the individuals have from native ancesors. It only quantifies how different these native alleles are. Hence, in any case, the native contributions of the individuals should also be considered:  
+
+```{r}
+Pedig[c("276000891862786", "276000812497659"),c("Born","NC")]
+```
+
+The native contributions of both indivividuals are larger than the mean NC of the phenotyped individuals, which is `r  round(mean(Pedig[Phen$Indiv,"NC"]),2)`. However, their native kinship is larger than the average, which is
+
+```{r}
+pKinatN$mean
+```
+
+The correlation between the kinship and the native kinship is high (as expected): 
+
+```{r}
+subKin    <- pKin[Phen$Indiv, Phen$Indiv]
+subNatKin <- pKinatN$of[Phen$Indiv, Phen$Indiv]
+diag(subKin)    <- NA
+diag(subNatKin) <- NA
+cor(c(subKin), c(subNatKin), use="complete.obs")
+```
+The correlation is even higher if only individuals with high native contributions are considered.
+
+
+### Population Specific Parameters
+
+#### Genetic Diversity
+
+The genetic diversity of a population is the probability that two alleles chosen at random from the population are not IBD. It is one minus the average kinship of the individuals.  A simple estimate can be obtained as
+
+```{r}
+1 - mean(pKin[Phen$Indiv, Phen$Indiv])
+```
+
+The diversity of this population is high. A high genetic diversity enables to avoid inbreeding and ensures that polygenic traits have a high additive variance, which is required to achieve genetic gain. However, the diversity of this population seems to be extremely high. 
+This could have two reasons:
+
+- The diversity is indeed very high because the individuals are in fact crossbred individuals with genetic contributions from many unrelated breeds, or
+
+- The completeness of the pedigrees is insufficient for such an evaluation.
+
+For this breed it is unclear whether pedigree completeness is low because pedigrees of indivduals from other breeds were cut, or because previously unregistered animals have been registered. Hence, pedigrees of introduced individuals from other breeds should not be cut to reduce this uncertainty.
+
+A parameter which depends not so much on the completeness of the pedigrees is the diversity at native alleles.
+
+#### Kinship and Diversity at Native Alleles
+
+The kinship at native alleles in the population is the probability that two alleles chosen at random from the population are not IBD, given that both alleles originate from native founders.  The mean kinship at native alleles is
+
+```{r}
+pKinatN$mean
+```
+
+The genetic diversity at native alleles is one minus the kinship at native alleles [named *conditional gene diversity* in @Wellmann2012]. Thus, it can be calculated as
+
+```{r}
+1 - pKinatN$mean
+```
+
+Note that incomplete pedigrees result in an overestimation of the genetic diversity. This is not the case for the genetic diversity at native alleles because alleles originating from founders born after 1970 were classified to be non-native. Hence, the diversity at alleles originating from these individuals does not affect the estimate.
+
+A high diversity at native alleles is important if a goal of the breeding program is to remove introgressed genetic material from the population. Without maintenance of a high diversity at native alleles, inbreeding coefficients will soon rise to an unreasonable level.
+
+#### Native Effective Size
+
+The *native effective size* of a population is defined as the size of an idealized random mating population for which the *genetic diversity* decreases as fast as the *diversity at native alleles* decreases in the population under study [@Wellmann2012]. Thus, the native effective size quantifies how fast the diversity at native alleles decreases. In contrast, the effective size quantifies how fast the genetic diversity decreases.
+
+In a population without historic introgression the native effective size (native Ne) is equal to the effective size (Ne) as estimated by @Wellmann2011. But in a population with historic introgression it can be argued that the effective size is not useful to describe the history of a population because even a small amount of introgression with unrelated individuals prevents a drop of genetic diversity, so the effecive size would be infinite.
+
+For estimating the native effective size, the diversity at native alleles needs to be estimated at various times, and then the native effective size is estimated from the slope of a regression function.
+
+An estimate of the native effective size is automatically provided when the kinship at native alleles is computed and parameter \code{nGen} is specified:
+
+```{r}
+pKinatN  <- pedIBDatN(Pedig, thisBreed="Hinterwaelder", keep.only=Phen$Indiv, nGen=6)
+```
+
+The native Ne is stored as an attribute of the result:
+
+```{r}
+attributes(pKinatN)$nativeNe
+```
+
+Thus, the diversity at native alleles decreases as fast as in an idealized population consisting of `r  round(attributes(pKinatN)$nativeNe,2)` individuals.
+
+#### Effective Size
+
+The effective size Ne of a population is the size of an idealized random mating population for which the *genetic diversity* decreases as fast as in the population under study. It is commonly estimated from the mean rate of increase in coancestry [@Cervantes2011], whereby the increase in coancestry between any pair of individuals $i$ and $j$ is computed as $\Delta c_{ij}=1-\sqrt[\frac{g_i+g_j}{2}]{1-c_{ij}}$, where $c_{ij}$ is the kinship between $i$ and $j$, and $g_i,g_j$ are the numbers of equivalent complete generations of individuals $i$ and $j$. The effective size is then estimated as $N_e=\frac{1}{2\overline{\Delta c}}$. Thus, the effective size can be estimated as:
+
+```{r}
+id     <- Summary$Indiv[Summary$equiGen>=4 & Summary$Indiv %in% Phen$Indiv]
+g      <- Summary[id, "equiGen"]
+N      <- length(g)
+n      <- (matrix(g, N, N, byrow=TRUE) + matrix(g, N, N, byrow=FALSE))/2
+deltaC <- 1 - (1-pKin[id,id])^(1/n)
+Ne     <- 1/(2*mean(deltaC))
+Ne
+```
+
+However, the above formula assumes that ancestors are missing at random. In populations with historic introgression, pedigrees of individuals from foreign breeds are often cut, so their parents are not missing at random. In fact, even a small amount of introgression suffices to prevent a decrease of genetic diversity, so that the effective size of such a population is $\infty$.
+
+#### Change of Native Genome Equivalent and Ne
+
+The native genome equivalent NGE of a population is the minimum number of founders that would be needed to create a population consisting of unrelated individuals that has the same diversity at native alleles as the population under study [@Wellmann2012]. It is assumed that the individuals were unrelated in base year `base`, which could be well before pedigree recording had started. Between the base year and the year `lastNative` in which the last native founder was born, the population had a historical effective size of `histNe`. This assumption implies that the founders of the pedigree were related due to ancestors whose pedigrees had not been recorded.
+
+The decrease of native genome equivalents is estimated below for the time since `lastNative=1970` by assuming that individuals were unrelated in year `base=1800` and that the historical effective size was `histNe=150` between 1800 and 1970. Since the computation for the full pedigree could take some time, the parameters are estimated below from a subset of the pedigree, which are the individuals included in vector `keep`. Vector `keep` contains from each birth cohort 50 randomly sampled Hinterwald cattle. 
+
+```{r, results="hide"}
+data("PedigWithErrors")
+Pedig <- prePed(PedigWithErrors, thisBreed="Hinterwaelder", lastNative=1970)
+set.seed(0)
+keep <- sampleIndiv(Pedig[Pedig$Breed=="Hinterwaelder",], from="Born", each=50)
+cand <- candes(phen   = Pedig[keep,],
+               pKin   = pedIBD(Pedig, keep.only=keep), 
+               pKinatN= pedIBDatN(Pedig, thisBreed="Hinterwaelder", keep.only=keep), 
+               quiet=TRUE, reduce.data=FALSE)
+```
+
+```{r, fig.show='hold'}
+sy <- summary(cand, tlim=c(1970, 2000), histNe=150, base=1800, df=4)
+ggplot(sy, aes(x=t, y=Ne)) + geom_line() + ylim(c(0,100))
+ggplot(sy, aes(x=t, y=NGE)) + geom_line() + ylim(c(0,7))
+```
+
+Not only the native genome equivalents (column `NGE`), but also the native effective size (column `Ne`), the mean kinship (column `pKin`), the mean kinship at native alleles `pKinatN`, and the generation interval (column `I`) have been estimated for all birth cohorts `t`.
+
+It is possible that the diversity at native alleles increases for a short period of time, in which case the estimate of the native effective size would be `NA`. Choose `df<4` to get a smooth estimate for the native effective size.
+
+
+#### Change of Breed Composition
+
+For monitoring the introgression from other breeds, the contributions of foreign breeds to all birth cohorts can be estimated with function [conttac][conttac] and then plotted, e.g. with function ggplot.
+
+```{r, fig.width = 5, fig.height = 3}
+use  <- Pedig$Breed=="Hinterwaelder" & Pedig$Born %in% (1950:1995)
+cont <- pedBreedComp(Pedig, thisBreed="Hinterwaelder")
+contByYear <- conttac(cont, cohort=Pedig$Born, use=use, mincont = 0.01)
+ggplot(contByYear, aes(x=Year, y=Contribution, fill=Breed)) + geom_area(color="black")
+```
+
+
+### References
+
+[prePed]:        https://rdrr.io/cran/optiSel/man/prePed.html
+[subPed]:        https://rdrr.io/cran/optiSel/man/subPed.html
+[pedplot]:       https://rdrr.io/cran/optiSel/man/pedplot.html
+[completeness]:  https://rdrr.io/cran/optiSel/man/completeness.html
+[summary.Pedig]: https://rdrr.io/cran/optiSel/man/summary.Pedig.html
+[pedInbreeding]: https://rdrr.io/cran/optiSel/man/pedInbreeding.html
+[pedIBD]:        https://rdrr.io/cran/optiSel/man/pedIBD.html
+[pedBreedComp]:  https://rdrr.io/cran/optiSel/man/pedBreedComp.html
+[conttac]:       https://rdrr.io/cran/optiSel/man/conttac.html
+
+

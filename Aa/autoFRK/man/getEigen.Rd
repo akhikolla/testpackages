@@ -1,0 +1,1 @@
+\name{getEigen} \alias{getEigen} \title{ internal function } \description{ internal function } \keyword{internal}

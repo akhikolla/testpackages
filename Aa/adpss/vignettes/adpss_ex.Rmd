@@ -1,0 +1,212 @@
+---
+title: "Design and Analysis of Clinical Trials with Fully Flexible Adaptive Sample Size Determination"
+author: "Kosuke Kashiwabara"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Illustration of adaptive sample size determination}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+library(adpss)
+.cost0 <- c(1683.45766074111, 1555.0203968489900, 1545.2777876660502, 1528.3974722278008, 1471.7273013354791)
+```
+In this vignettes, an application of a locally and a globally efficient 
+adaptive sample determination to a confirmatory randomized clinical trial
+is illustrated.
+
+# Clinical Trial Example
+This trial evaluated whether oral adjuvant chemotherapy with tegaful and uracil (UFT) and leucovorin (LV) reduces the recurrence after resection of liver metastasis from colorectal carcinoma as compared with no adjuvant therapy in Japan (UFT/LV trial) (Hasegawa et al. PLoS One 2016;11:e0162400.).
+The null hypothesis $log(HR) = 0$ was tested with the one-sided significance level of 0.025.  The minimum of clinically important effect size was hypothesized as HR = 0.65. The test statistic was a stratified log-rank score.
+Suppose that four interim analyses and one final analysis were planned to be performed but when to perform was not fixed in advance.
+
+The result of the interim analyses were as follows.
+* Fisher information at analyses: (5.67, 9.18, 14.71, 20.02)
+* Score statistic = (3.40, 4.35, 7.75, 11.11)
+
+## Locally efficient adaptive design
+The initial working test (SPRT) is prepared as a basis of conditional error function. Its stopping boundary is $-\log(\alpha) / \rho + 1 / 2 \rho t$,
+where the significance level $\alpha = 0.025$ and the minimum of clinically important effect size $\rho = -log(0.65)$ will be substituted and $t$ is the Fisher information. This stopping boundary is depicted below.
+
+```{r}
+# Working test: sequential probability ratio test (SPRT)
+plot(1, 1, type="n", xlim=c(0, 25), ylim=c(0, 15), xlab="Fisher Inf.", ylab = "Score Stat.")
+alpha <- 0.025
+rho <- -log(0.65)
+abline(-log(alpha) / rho, 1/2 * rho)
+```
+
+The four interim analyses can be performed by the function `adaptive_analysis_norm_local`.
+Designating `FALSE` to the argument `final_analysis` indicates that the latest analysis is not the final, i.e., the overall significance level must not be exhausted at this time.
+
+```{r}
+# Final interim analysis
+interim_analysis_4 <- adaptive_analysis_norm_local(
+  overall_sig_level = 0.025,
+  min_effect_size = -log(0.65),
+  times = c(5.67, 9.18, 14.71, 20.02),
+  stats = c(3.40, 4.35, 7.75, 11.11),
+  final_analysis = FALSE
+  )
+```
+
+The result is summarized as follows:
+
+```{r}
+# Summary
+print( with(interim_analysis_4, data.frame(analysis=0:par$analyses, time=par$times,
+  intercept=char$intercept, stat=par$stats, boundary=char$boundary,
+  pr_cond_err=char$cond_type_I_err, reject_H0=char$rej_H0)) )
+```
+
+At the forth (final) interim analysis, the null hypothesis is not rejected. Then, the maximum sample size (here, the maximum Fisher information level) is calculated.
+The alternative hypothesis for which an adequate level of power will be ensured can be determined arbitrarily referring to all available data including the interim results but not correlates of future data.
+Here, the maximum likelihood estimate $11.11 / 20.02$ at the forth interim analysis is chosen as the alternative hypothesis. The maximum information level to obtaine the marginal power of 0.75 can be calculated by the function `sample_size_norm_local`.
+
+```{r}
+# Sample size calculation
+sample_size_norm_local(
+  overall_sig_level = 0.025,
+  min_effect_size = -log(0.65),
+  effect_size = 11.11 / 20.02, # needs not be MLE
+  time = 20.02,
+  target_power = 0.75,
+  sample_size = TRUE
+  )
+```
+Finally, suppose that the final analysis is performed at $t = 24.44$.
+The same function used at interim analyses, `adaptive_analysis_norm_local`,  can be used with setting `final_analysis = TRUE`.
+
+```{r}
+# Final analysis
+final_analysis <- adaptive_analysis_norm_local(
+  overall_sig_level = 0.025,
+  min_effect_size = -log(0.65),
+  times = c(5.67, 9.18, 14.71, 20.02, 24.44),
+  stats = c(3.40, 4.35, 7.75, 11.11, 14.84),
+  final_analysis = TRUE
+  )
+```
+
+Again, the result is summarized as:
+
+```{r}
+# Summary
+print( with(final_analysis, data.frame(analysis=0:par$analyses, time=par$times,
+  intercept=char$intercept, stat=par$stats, boundary=char$boundary,
+  pr_cond_err=char$cond_type_I_err, reject_H0=char$rej_H0)) )
+```
+
+As indicated at the final row, the null hypothesis is rejected.
+
+
+
+## Globally efficient adaptive design
+
+Globally efficient adaptive design can be performed in a similar way by using the functions for globally efficient functions.
+
+The initial working test, a group sequential design with 50 analyses, is prepared as a basis of conditional error function. Its stopping boundary can be constructed by the function `work_test_norm_global`.
+
+```{r, eval=TRUE, echo=FALSE}
+init_work_test <- work_test_norm_global(min_effect_size = -log(0.65), cost_type_1_err = .cost0[1])
+```
+```{r, eval=FALSE, echo=TRUE}
+init_work_test <- work_test_norm_global(min_effect_size = -log(0.65), cost_type_1_err = 0)
+```
+
+Here, `cost_type_1_err = 0` means the value of loss caused by erroneous rejection of the null hypothesis is calculated to make the constructed working test have exactly the type I error probability of $\alpha$.
+The default value of `cost_type_1_err` is `0` and thus can be omitted.
+The boundary of the working test just constructed is displayed by the next code.
+
+```{r, echo=TRUE}
+with(init_work_test, plot(par$U_0, char$boundary, xlim=range(0, par$U_0),
+  ylim=range(0, char$boundary[-1]), pch=16, cex=0.5) )
+```
+
+The four interim analyses can be performed by the function `adaptive_analysis_norm_global`.
+Designating `FALSE` to the argument `final_analysis` indicates that the latest analysis is not the final, i.e., the overall significance level must not be exhausted at this time.
+
+```{r, eval=TRUE, echo=FALSE}
+# Final interim analysis
+interim_analysis_4 <- adaptive_analysis_norm_global(
+  initial_test = init_work_test,
+  times = c(5.67, 9.18, 14.71, 20.02),
+  stats = c(3.40, 4.35, 7.75, 11.11),
+  costs = .cost0[-1],
+  final_analysis = FALSE,
+  estimate = FALSE
+  )
+```
+
+```{r, eval=FALSE, echo=TRUE}
+# Final interim analysis
+interim_analysis_4 <- adaptive_analysis_norm_global(
+  initial_test = init_work_test,
+  times = c(5.67, 9.18, 14.71, 20.02),
+  stats = c(3.40, 4.35, 7.75, 11.11),
+  final_analysis = FALSE,
+  estimate = FALSE
+  )
+```
+
+The result is:
+
+```{r}
+# Summary
+print( with(interim_analysis_4, data.frame(analysis=0:par$analyses, time=par$times,
+  cost=char$cost0, stat=par$stats, boundary=char$boundary, pr_cond_err=char$cond_type_I_err,
+  reject_H0=char$rej_H0)) )
+```
+
+At the forth (final) interim analysis, the null hypothesis is not rejected. Then, the maximum Fisher information level is calculated.
+The maximum likelihood estimate $11.11 / 20.02$ at the forth interim analysis is chosen as the alternative hypothesis, though this is not compelling. The maximum information level to obtaine the marginal power of $0.75$ can be calculated by the function `sample_size_norm_global`.
+
+```{r}
+# Sample size calculation
+sample_size_norm_global(
+  initial_test = init_work_test,
+  effect_size = 11.11 / 20.02, # needs not be MLE
+  time = 20.02,
+  target_power = 0.75,
+  sample_size = TRUE
+  )
+```
+
+Finally, suppose that the final analysis is performed at $t = 25.88$.
+The same function used at interim analyses can be used, with setting `final_analysis = TRUE`. 
+
+```{r}
+# Final analysis
+final_analysis <- adaptive_analysis_norm_global(
+  initial_test = init_work_test,
+  times = c(5.67, 9.18, 14.71, 20.02, 25.88),
+  stats = c(3.40, 4.35, 7.75, 11.11, 14.84),
+  costs = interim_analysis_4$char$cost0[-1], # Omited element is for time = 0
+  final_analysis = TRUE,
+  estimate = FALSE
+  )
+# Summary
+print( with(final_analysis, data.frame(analysis=0:par$analyses, time=par$times,
+  cost=char$cost0, stat=par$stats, boundary=char$boundary, pr_cond_err=char$cond_type_I_err,
+  reject_H0=char$rej_H0)) )
+
+```
+
+As indicated by the final row, the null hypothesis is rejected.
+
+Note that, if `estimate = TRUE`, additionally exact P-value, median unbiased estimate, and confidence limits can be calculated.
+These results will be extracted by:
+
+```{r, eval=FALSE, echo=TRUE}
+# Estimte (P-value, median unbiased estimate, and confidence limits)
+print( final_analysis$est )
+```
+
+
+

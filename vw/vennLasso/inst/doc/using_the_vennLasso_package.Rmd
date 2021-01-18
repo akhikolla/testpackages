@@ -1,0 +1,363 @@
+---
+title: "Using the vennLasso Package"
+author: "Jared Huling"
+date: "`r Sys.Date()`"
+output: 
+    pdf_document:
+        toc: true
+        toc_depth: 3
+        fig_width: 7
+        fig_height: 4
+        includes:
+            in_header: vignette_preamble.tex
+bibliography: refs.bib
+pkgdown:
+  as_is: true
+  extension: pdf
+vignette: >
+  %\VignetteIndexEntry{Using the vennLasso Package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+# `vennLasso` Intro 
+
+The `vennLasso` package is an implementation of the methods proposed in @huling18 <https://doi.org/10.1111/biom.12769>. The underlying methodology is motivated by the need to address population heterogeneity in hospital system-wide risk modeling applications, however it can be used in a wide variety of settings. It is useful for high-dimensional modeling scenarios where heterogeneity is defined by several binary factors which stratify the population into multiple subpopulations. For example, `vennLasso` can be used in a hospital-wide risk modeling application if covariate effects in risk models differ for subpopulations of patients with different chronic conditions. Here the chronic conditions are the binary stratifying factors. The `vennLasso` provides computation for a variable selection method which yields variable selection patterns which adhere to the hierarchical nature of the relationships between the various subpopulations. 
+
+If the chronic conditions congestive heart failure (CHF), chronic obstructive pulmonary disorder (COPD), and diabetes are used as the stratifying factors, the subpopulations may look like in Figure \ref{fig:strata_data}.
+
+
+\begin{figure}[!h]
+\centering
+\resizebox{.75\textwidth}{!}{% <------ Don't forget this %
+\tikzstyle{background rectangle}=
+[draw=blue!8,fill=blue!8,rounded corners=1.5ex]
+\begin{tikzpicture}[font=\sffamily\sansmath,show background rectangle]
+% \node (1) [draw, rounded rectangle] {none};
+  \tikzset{venn circle/.style={draw,circle,minimum width=6.2cm,fill=#1,opacity=0.5}}
+
+  \node [venn circle = red][label=below left:{\LARGE CHF}] (A) at (0,0) {\large {}};
+  \node [venn circle = yellow][label=below right:{\LARGE Diabetes}] (C) at (0:4cm) {\large {}};
+  \node [venn circle = blue][label=above left:{\LARGE COPD}] (B) at (60:4cm) {\large {}};
+  \node[left,text=white] at (barycentric cs:A=0.9/3,B=1/2 ) {\large $n = 385$}; %
+  \node[below] at (barycentric cs:A=1/2,C=1/2 ) {\large $n = 1504$};   %
+  \node[right,text=white] at (barycentric cs:B=1/2,C=0.9/3 ) {\large $n = 269$};   %
+  \node[below,text=white] at (barycentric cs:A=0.9/3,B=1/3,C=0.9/3 ){\large $n = 230$};%
+  \node[below left] at (A.center) {{\large $n=3031$}}; %
+  \node[below right] at (C.center)  {{ \large $n = 5939$}}; %
+  \node[above,text=white] at (B.center) {{\large $n = 989$}};  %
+
+
+
+
+
+  \node[label=right:\LARGE$None$ ] (Non) at (5.5,5)  {}; 
+  \node[right] at (5.5,4) {{\large $n = 29632$}};  
+
+  %\draw[thick,green]  (-3.5,0) --(7.5,0);
+  %\draw[thick,green]  (0,-3.5) --(0,6.9);
+
+  \path(-3.5,0) --(7.5,0);
+  \path(0,-3.5) --(0,6.9);
+\end{tikzpicture}
+}
+\caption{\small Sample sizes for each subpopulation in the motivating cohort}
+\label{fig:strata_data}
+\end{figure}
+
+## Model Setup
+
+We allow for covariate effects to vary based on a set of binary stratifying factors by positing separate (generalized) linear models for each subpopulation (defined by the presence of specific combinations of these binary factors). Denote $Y_{ik}$ as the response for patient $i$ of subpopulation $k$, $X_{ik}$ is the vector of length $p_k$ of covariate values for patient $i$ of subpopulation $k$, and $g(\cdot$ as a known link function.   Continuing the example with models stratified based on CHF, COPD, and diabetes, the posited models are the following:
+
+$$E[ Y_{ik}|  \bfX_{ik}]  = g^{-1}(\bfX_{ik}\coef_{k,\bullet}), i = 1, \dots, n_k$$,
+
+where $k \in \{ H, P, D, HP, HD, PD, HPD, none \}$,
+  \begin{align*}
+	H = {} & \mbox{ Congestive {\bf{Heart}} Failure} \\
+	P = {} & \mbox{ Chronic Obstructive {\bf{Pulmonary}} Disease} \\
+	D = {} & \mbox{ \bf{Diabetes}} \\
+	HP = {} & \mbox{ C{\bf{H}}F $+$ CO{\bf{P}}D} \\
+	{} & \dots \\
+	none = {} & \mbox{None of $H$, $P$, or $D$},
+  \end{align*}
+  
+  $\bfX_k$ is of dimension $n_k\times p_k$, and $\bbeta_{k,\bullet}=(\beta_{k,1},\dots,\beta_{k,p})$. Note that  different covariates are allowed for different subpopulations. This can be useful if there are variables specific to particular stratifying factors, e.g. the particular location of a heart failure is only relevant for patients with any heart failures.
+
+The `vennLasso` package provides estimation and variable selection for the parameters in these models. The variable selection is performed in a scientifically-plausible manner that adheres to the inherent relationships between the subpopulations. Furthermore, the manner in which the variable selection is performed allows for the borrowing of strength across subpopulations. 
+
+## Borrowing Strength Across Subpopulations via Hierarchical Importance
+
+Consider for a moment a simpler scenario where models are stratified based on only CHF and diabetes. The variable selection performed by `vennLasso` is based on an assumption of hierarchical variable selection. This assumption has two components, outlined in Figure \ref{fig:sel_patterns_one} and for models with three stratifying factors in Figure \ref{fig:sel_patterns}. The first component of the hierarchical assumption is that if a particular variable is *not* important for a given subpopulation, it is not important for all 'descendent' subpopulations, i.e. subpopulations that only have any of the binary factors present in the given subpopulation. For example, the $P$ subpopulation is a descendent of the $HPD$ subpopulation. The second component is that if a particular variable is important for a given subpopulation, it should be important for all 'parent' subpopulations, i.e. any subpopulations that have at least all of the stratifying factor present in the given subpopulation. For example, the $HPD$ subpopulation is a parent of the $HP$ subpopulation.
+
+For the $j^{th}$ variable
+
+\begin{figure}[h]
+\centering
+%\resizebox{0.95\textwidth}{!}{% <------ Don't forget this %
+\hspace{-20pt}
+\resizebox{0.95\textwidth}{!}{% <------ Don't forget this %
+\begin{minipage}[b]{0.25 \linewidth}% just slightly shrunk to show the separation
+\begin{flushleft}
+\begin{tikzpicture}[edge from parent/.style={draw,-Implies,line width=1pt,double distance=2pt},
+every node/.style={},level 1/.style={sibling distance=20mm},level 2/.style={sibling distance=10mm}
+]
+\node(HP) {$\boldsymbol\beta_{HD, j} = 0$}
+    child { node (H) {$\boldsymbol\beta_{H, j} = 0$\ \footnotesize{\textcolor{red}{and}} }  edge from parent[double]
+  }
+    child { node (D) {\ $\boldsymbol\beta_{D, j} = 0$} edge from parent[double]
+  };
+\end{tikzpicture}
+\end{flushleft}
+\end{minipage}
+\hspace{2 cm}
+\begin{minipage}[b]{0.325 \linewidth}% just slightly shrunk to show the separation
+\begin{flushright}
+\begin{tikzpicture}[edge from parent/.style={draw,line width=1pt},
+every node/.style={},level 1/.style={sibling distance=20mm},level 2/.style={sibling distance=10mm}
+]
+\node(HP) {$\boldsymbol\beta_{HD, j} \neq 0$}
+    child { node (H) {$\boldsymbol\beta_{H, j}\neq 0$\quad \footnotesize{\alert{or}}} edge from parent[draw,Implies-,double distance=2pt]
+  }
+    child { node (D) {\, $\boldsymbol\beta_{D, j} \neq 0$} edge from parent[draw,Implies-,double distance=2pt]
+  };
+\end{tikzpicture}
+\end{flushright}
+\end{minipage}
+}
+\caption{Hierarchical selection patterns for models with two stratifying factors. }
+\label{fig:sel_patterns_one}
+\end{figure}
+
+
+
+\begin{figure}[h]
+\centering
+\resizebox{0.95\textwidth}{!}{% <------ Don't forget this %
+\begin{tikzpicture}[edge from parent/.style={draw,line width=0.65pt},
+font=\sffamily\sansmath,
+every node/.style={},level 1/.style={sibling distance=20mm},level 2/.style={sibling distance=10mm}
+]
+\node (HPD) {HPD}
+    child { node (HP) {\textcolor{DimGray}{HP}}
+      child { node (H) {\textcolor{DimGray}{H}} }
+      %child { node (B) {B}  }
+  }
+    child { node (PD) {\textcolor{DimGray}{PD}}
+      child { node (P) {\textcolor{DimGray}{P}}}
+      %child { node (C) {C}}
+  }
+  child { node (HD) {\textcolor{black}{HD}}
+      %child { node (BB) {B}}
+      child { node (D) {\textcolor{DimGray}{D}}}
+  };
+  \draw[line width=0.65pt] (HP.south east) -- (P.north west);
+  \draw[line width=0.65pt] (HD.south west) -- (H.north east);
+  \draw[line width=0.65pt] (PD.south east) -- (D.north west);
+  
+  %% implies arrows
+  \draw[implies-, double distance=2pt] ($(H.west) + (-0.49, 0.35)$) -- ($(HP.west) + (-0.355,-0.15)$);   
+  
+  
+  \node at  ($(H.west) + (-0.5, 0)$) {$= 0$};
+  \node at  ($(HP.west) + (-0.375,0.25)$) {$= 0$};
+  
+\begin{pgfonlayer}{background}
+  %\draw[blue,fill=blue,opacity=0.6, rounded corners = 6pt]
+  %(ABC.north west) -- (ABC.north east)  -- (AC.north east) -- (AC.south east) -- (C.south east) -- (C.south west)  -- (BC.south west) -- cycle  ;
+  %\draw[red,fill=red,opacity=0.6, rounded corners = 6pt]  (HP.south west) -- (HP.north west) --
+  %(HPD.north west) -- (HPD.north east)  -- (HPD.south east) -- (HP.south east)  -- cycle  ;
+  \draw[red,fill=red,opacity=0.6, rounded corners = 6pt]  (HD.south east) -- (HD.north east) --
+  (HPD.north east) -- (HPD.north west)  -- (HPD.south west) -- (HD.south west)  -- cycle  ;
+\end{pgfonlayer}
+\end{tikzpicture}
+\begin{tikzpicture}[edge from parent/.style={draw,line width=0.65pt},
+font=\sffamily\sansmath,
+every node/.style={},level 1/.style={sibling distance=20mm},level 2/.style={sibling distance=10mm}
+]
+\node (HPD) {HPD}
+    child { node (HP) {\textcolor{DimGray}{HP}}
+      child { node (H) {\textcolor{DimGray}{H}} }
+      %child { node (B) {B}  }
+  }
+    child { node (PD) {PD}
+      child { node (P) {\textcolor{DimGray}{P}}}
+      %child { node (C) {C}}
+  }
+  child { node (HD) {HD}
+      %child { node (BB) {B}}
+      child { node (D) {D}}
+  };
+  \draw[line width=0.65pt] (HP.south east) -- (P.north west);
+  \draw[line width=0.65pt] (HD.south west) -- (H.north east);
+  \draw[line width=0.65pt] (PD.south east) -- (D.north west);
+  
+  %% implies arrows
+  \draw[-implies, double distance=2pt] ($(D.east) + (0.52, 0.35)$) -- ($(HD.east) + (0.375,-0.15)$); 
+  
+  \draw[implies-, double distance=2pt] ($(HPD.north east) + (0.5, 0.1)$) -- ($(HD.north east) + (0,0.5)$);   
+  
+  \node at  ($(D.east) + (0.5, 0)$) {$\neq 0$};
+  \node at  ($(HD.east) + (0.375,0.35)$) {$\neq 0$};
+  \node at  ($(HPD.north east) + (0.1, 0.3)$) {$\neq 0$};
+  
+\begin{pgfonlayer}{background}
+  \draw[blue,fill=blue,opacity=0.6, rounded corners = 6pt]
+  (HPD.north west) -- (HPD.north east)  -- (HD.north east) -- (HD.south east) -- (D.south east) -- (D.south west)  -- (PD.south west) -- cycle  ;
+  %\draw[red,fill=red,opacity=0.6, rounded corners = 6pt]  (AB.south west) -- (AB.north west) --
+  %(ABC.north west) -- (ABC.north east)  -- (ABC.south east) -- (AB.south east)  -- cycle  ;
+\end{pgfonlayer}
+\end{tikzpicture}
+}
+\vspace{5pt}
+\caption{The two highlighted groups represent hierarchical selection patterns. }
+\label{fig:sel_patterns}
+\end{figure}
+
+
+## Loss Function for Hierarchical Selection
+
+The `vennLasso` package estimates coefficients with the hierarchical variable selection patterns described above using the penalized likelihood framework:
+
+\begin{align}
+f(\coef) = \sum_{k=1}^K\ell_k(\coef_{k,\bullet}) - \lambda P(\coef) \label{eqn:pen_lik} \nonumber
+\end{align}
+
+where $\ell_k$ are log-likelihood functions (or negative loss), $P$ is an overlapping group lasso penalty with special structure to induce hierarchical selection patterns, and $\coef = (\bbeta_{H,\bullet},\bbeta_{P,\bullet},\dots,\bbeta_{HPD,\bullet}, \bbeta_{none,\bullet})$ is the vector of all coefficients for all models. For simplicity here, we assume here that the number of variables is the same for each subpopulation, however the generalization to allow different variables for different subpopulations is straightforward and described in [insert reference].
+
+The form of $P$ is a group lasso penalty with overlapping groups:
+
+\[
+P(\coef) = \sum_{j = 1}^p\sum_{G \in \alert{\mathcal{G}}}\lambda_{G,j}||\coef_{G,j}||_2,
+\]
+
+where $\coef_{G,j} \equiv \{\beta_{k,j}, k\in G \}$. The particular structure of the groups in $\mathcal{G}$ determines patterns of selection. The group structure for models stratified on CHF, COPD, and diabetes is the following:
+$$\mathcal{G} = \{  \overline{{HPD}}, \overline{{HP}}, \overline{{HD}}, \overline{{PD}}, \overline{{H}}, \overline{{P}}, \overline{{D}}, none \}$$
+
+\begin{itemize}
+
+\item $\overline{{HPD}} = \{ HPD, HP, HD, PD, H, P, D \}$
+\item $\overline{{HP}} = \{ HP, H, P \}$
+\item $\cdots$
+\item $\overline{{P}} = \{P  \}$.
+
+\end{itemize}
+
+This group structure naturally generalizes to scenarios with an arbitrary number of stratifying factors. See [insert reference] for more details.
+
+The `vennLasso` package minimizes (\ref{eqn:pen_lik}) using a combined alternating direction method of multipliers (ADMM) and proximal Newton algorithm as described in the Supplementary Material of [insert reference].
+
+
+# Using the `vennLasso` Package
+
+## Installation
+
+
+Install `vennLasso` from GitHub:
+
+```{r, eval = FALSE}
+install.packages("devtools")
+devtools::install_github("jaredhuling/vennLasso")
+```
+
+Load the **vennLasso** package:
+```{r, warning=FALSE, message=FALSE}
+library(vennLasso)
+```
+
+## An Example with Simulated Data
+
+
+Using the `genHierSparseData()` function we will simulate data where covariate effects differ based on the presence of three binary factors. We will investigate how to use the `vennLasso` package using this data.
+
+```{r simdata}
+set.seed(123)
+dat.sim <- genHierSparseData(ncats = 3,   # number of binary stratifying factors
+                             nvars = 50,  # number of variables
+                             nobs = 150,  # number of observations per subpopulation
+                             nobs.test = 5000,
+                             hier.sparsity.param = 0.6, # the following two parameters
+                             prop.zero.vars = 0.5,      # determine how many variables 
+                             family = "gaussian")       # have no impact on response
+
+# design matrices
+x        <- dat.sim$x      # one for training
+x.test   <- dat.sim$x.test # one for testing
+
+# response vectors
+y        <- dat.sim$y
+y.test   <- dat.sim$y.test
+
+# binary stratifying factors
+grp      <- dat.sim$group.ind
+grp.test <- dat.sim$group.ind.test
+```
+
+The vennLasso model can be fit with the `vennLasso()` function. The adaptive version of the penalty can be fit by choosing `adaptive.lasso = TRUE`:
+
+```{r fitmodel}
+fit1 <- vennLasso(x = x, y = y, groups = grp, adaptive.lasso = TRUE)
+```
+
+The estimated coefficients are stored in a 3-dimensional array. The first dimension indexes the subpopulations, the second dimension indexes the variables, and the third dimension indexes the tuning parameter $\lambda$. In the following, we take a peak at the estimated coefficients  for a fixed value of $\lambda$:
+```{r lookatcoefs}
+round(fit1$beta[,1:10,35], 3)
+```
+Each row is labeled based on which binary factors are present for each subpopulation. For example the row labeled '0,1,0' is the vector of estimated coefficients for the subpopulation defined by those who have only the second binary factor, the row labeled '1,1,0' is the coefficients for the subpopulation of those with the first and second binary factor but not the third, and so on.
+
+Now compare the estimated coefficients above with the true coefficients that generated the data (the true intercepts are all zero):
+```{r truecoefs}
+round(dat.sim$beta.mat[,1:9], 3)
+```
+
+The coefficient paths for each subpopulation can be plotted by using the `plot()` function on fitted `vennLasso` objects:
+```{r plotpaths, fig.height = 8, fig.cap = "Coefficient paths for each subpopulation. The subpopulation denoted by '0,1,1' is the subpopulation of samples who have the second and third binary factor but not the first, the '0,1,0' subpopulation is the subpopulation of those who have only the second binary factor, and so on."}
+layout(matrix(1:9, ncol = 3))
+for (i in 1:nrow(fit1$beta)) plot(fit1, which.subpop = i, xvar = "loglambda")
+```
+
+
+### Cross Validation for Tuning Parameter Selection
+
+Typical for penalized regression methods, the tunining parameter must be selected. The `cv.vennLasso()` function provides a routine to select the tuning parameter via $k$-fold cross validation. In the following example we use 5-fold cross validation:
+```{r cvvennlasso}
+cvfit1 <- cv.vennLasso(x = x, y = y, groups = grp, adaptive.lasso = TRUE, nfolds = 5)
+```
+
+The tuning parameter which minimizes the cross validation error can be accessed via:
+```{r minlam}
+cvfit1$lambda.min
+```
+
+The curve and standard errors of the cross validation error can be plotted by using the `plot()` function on a fitted `cv.vennLasso` object:
+```{r plotcv}
+plot(cvfit1)
+```
+
+We can then use the model with the minimum cross validation error to generate predictions for the test set. Note that in addition to the design matrix, we must also provide the stratifying factors for the test set.
+```{r predict_cv}
+preds <- predict(cvfit1, 
+                 newx = x.test, 
+                 group.mat = grp.test, 
+                 s = "lambda.min")
+mean((y.test - preds) ^ 2)
+mean((y.test - mean(y.test)) ^ 2)
+```
+
+
+### Confidence Intervals Using the Adaptive Lasso
+
+```{r fitmodel_confint}
+fit2 <- vennLasso(x = x, y = y, groups = grp, 
+                  adaptive.lasso = TRUE,
+                  gamma = 1,
+                  conf.int = 0.90)   # specify the confidence level (90% here) for CIs
+```
+
+```{r lookatcis}
+round(fit2$lower.ci[,7:11,35], 3)
+round(fit2$upper.ci[,7:11,35], 3)
+```
+
+
+# References
+

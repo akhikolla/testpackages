@@ -1,0 +1,398 @@
+% -*- mode: noweb; noweb-default-code-mode: R-mode; -*-
+\documentclass[nojss]{jss}
+\usepackage{dsfont}
+\usepackage{bbm}
+\usepackage{amsfonts}
+\usepackage{wasysym}
+\usepackage{amssymb}
+\usepackage{yfonts}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% declarations for jss.cls %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%% just as usual
+\author{Robin K. S. Hankin\\Auckland University of Technology}
+\title{Integration in the \pkg{hyper2} package}
+%\VignetteIndexEntry{Integration in hyper2}
+
+%% for pretty printing and a nice hypersummary also set:
+\Plainauthor{Robin K. S. Hankin}
+\Plaintitle{Integration in the hyper2 package}
+\Shorttitle{Integration in the hyper2 package}
+
+%% an abstract and keywords
+
+\Abstract{The \pkg{hyper2} package presented a new formulation of the
+  \pkg{hyperdirichlet} package, offering speed advantages and the
+  ability to deal with higher-dimensional datasets.  However,
+  \pkg{hyper2} was based on likelihood methods and as originally
+  uploaded did not have the ability to integrate over the unit-sum
+  simplex.  This functionality has now been incorporated into the
+  package which is documented here, by reproducing earlier analysis.}
+
+\Keywords{Dirichlet distribution, hyperdirichlet, \pkg{hyper2},
+  combinatorics, \proglang{R}, multinomial distribution, constrained
+optimization, integration, simplex, unit-sum constraint}
+\Plainkeywords{Dirichlet distribution, hyperdirichlet, hyper2,
+  combinatorics, R, multinomial distribution, constrained
+optimization, integration, simplex, unit-sum constraint}
+
+%% publication information
+%% NOTE: This needs to filled out ONLY IF THE PAPER WAS ACCEPTED.
+%% If it was not (yet) accepted, leave them commented.
+%% \Volume{13}
+%% \Issue{9}
+%% \Month{September}
+%% \Year{2004}
+%% \Submitdate{2004-09-29}
+%% \Acceptdate{2004-09-29}
+
+%% The address of (at least) one author should be given
+%% in the following format:
+\Address{
+  Robin K. S. Hankin\\
+  Auckland University of Technology\\
+  E-mail: \email{hankin.robin@gmail.com}
+}
+%% It is also possible to add a telephone and fax number
+%% before the e-mail in the following format:
+%% Telephone: +43/1/31336-5053
+%% Fax: +43/1/31336-734
+
+%% for those who use Sweave please include the following line (with % symbols):
+%% need no \usepackage{Sweave.sty}
+
+%% end of declarations %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newcommand{\bolda}{\mathbf a}
+\newcommand{\boldp}{\mathbf p}
+\newcommand{\boldV}{\mathbf V}
+\newcommand{\boldalpha}{\mbox{\boldmath$\alpha$}}
+\newcommand{\boldzero}{\mathbf 0}
+
+\newcommand{\mcf}{\mathcal F}
+\newcommand{\mcm}{\mathcal M}
+\newcommand{\mcs}{\mathcal S}
+\newcommand{\mcw}{\mathcal W}
+
+\newcommand{\pG}{p_{\mbox{\frakfamily g}}}
+
+\SweaveOpts{}
+\begin{document}
+
+<<echo=FALSE,print=FALSE>>=
+ignore <- require(hyper2,quietly=TRUE)
+ignore <- require(magrittr,quietly=TRUE)
+@ 
+
+\section{Introduction}
+
+The \pkg{hyper2} package~\citep{hankin2017} presented a new
+formulation of the hyperdirichlet distribution~\citep{hankin2010}
+which offered speed advantages over the original \pkg{hyperdirichlet}
+package, and the ability to deal with higher-dimensional datasets.
+However, \pkg{hyper2} was based on likelihood methods and as
+originally uploaded did not have the ability to integrate over the
+unit-sum simplex.  This functionality has now been incorporated into
+the package which is documented here, by reproducing earlier analysis.
+
+\section{Chess}
+Consider Table~\ref{chess} in which matches between three chess
+players are tabulated; this dataset was analysed by~\citet{hankin2010}.
+
+
+\[C
+\frac{p_1^{30}p_2^{36}p_3^{22}}{
+  \left(p_1+p_2\right)^{35}
+  \left(p_2+p_3\right)^{35}
+  \left(p_1+p_3\right)^{18}
+  }
+\]
+
+(the symbol `$C$' consistently stands for an undetermined constant).
+This likelihood function is provided in the \pkg{hyper2} package
+as the \code{chess} dataset:
+
+<<chess_show>>=
+data(chess)
+chess
+@ 
+
+
+We can calculate the normalizing constant:
+
+<<chess_normalizing>>=
+B(chess)
+@ 
+
+comparing well with the value given by the \pkg{hyperdirichlet}
+package of $1.47\times 10^{-28}$.  \citet{hankin2010} went on to
+calculate the $p$-value for $H_0\colon
+p=\left(\frac{1}{3},\frac{1}{3},\frac{1}{3}\right)$ as 0.395, a
+calculation which may be performed in the \pkg{hyper2} package as
+follows:
+
+<<>>=
+f <- function(p){loglik(chess,indep(p)) > loglik(chess,c(1,1)/3)}
+probability(chess, disallowed=f,tol=0.01)
+@ 
+
+Again comparing well with the older result (smaller values of
+\code{tol} give closer agreement at the expense of increased
+computation time).  Finally, we can calculate the probability that
+Topalov is a better player than Anand:
+
+<<>>=
+T.lt.A <- function(p){p[1]<p[2]}
+probability(chess, disallowed=T.lt.A,tol=0.001)
+@
+
+again showing reasonable agreement with the 2010 value of 0.701.
+
+\begin{table}
+\centering
+\begin{tabular}{|ccc|c|}\hline
+Topalov  & Anand & Karpov & total\\ \hline
+22 & 13 & -  & 35\\ 
+-  & 23 & 12 & 35\\ 
+8  &  - & 10 & 18 \\ \hline
+30 & 36 & 22 & 88 \\ \hline
+\end{tabular}
+\caption{Results of 88 chess matches \label{chess} (dataset
+  \code{chess} in the \pkg{aylmer} package) between three
+  Grandmasters; entries show number of games won up to 2001 (draws are
+  discarded).  Topalov beats Anand 22-13; Anand beats Karpov 23-12;
+  and Karpov beats Topalov 10-8}
+\end{table}
+
+\section{Verification}
+
+In a breathtaking display of arrogance and/or incompetence,
+\citet{hankin2010} did not actually provide any evidence that the
+integration suite of \pkg{hyperdirichlet} was accurate.  Here I
+compensate for that inexcusable lapse by comparing numerical results
+with analytical formulae.  Consider the standard Dirichlet
+distribution:
+
+\begin{equation}
+  \frac{
+    p_1^{\alpha_1-1}\ldots p_k^{\alpha_k-1}
+  }{
+    B\left(\alpha_1,\ldots,\alpha_k\right)
+  }
+\end{equation}
+
+where it is understood that the $p_i>0$ and $\sum p_i=1$; here
+$B=\frac{\Gamma\sum\alpha_i}{\prod\Gamma\alpha_i}$ is the
+normalization constant.  We can verify that \code{hyper2::B()} is
+operating as expected for the case $\alpha_1=1, \alpha_2=2,
+\alpha_3=3, \alpha_4=4$:
+
+<<>>=
+prod(gamma(1:4))/gamma(sum(1:4))
+B(dirichlet(alpha=1:4))
+@   
+
+Further, consider a Dirichlet distribution with
+$\alpha_1=\alpha_2=\alpha_3=\alpha_4=3$.  Then, by symmetry, the
+probability that $p_1<p_2$ should be exactly $\frac{1}{2}$:
+
+<<>>=
+f <- function(p){p[1]<p[2]}
+H <- dirichlet(alpha=rep(2,4))
+probability(H,f,tol=0.1)
+@   
+
+Further, $\Prob(p_1<p_2<p_3)$ should be exactly $\frac{1}{6}$:
+
+<<>>=
+g <- function(p){(p[1]<p[2]) & (p[2]<p[3])}
+1-probability(H,disallowed=g,tol=0.1)
+@   
+
+\section{More results: icons dataset}
+
+Consider the \code{icons} dataset, shown in table~\ref{saffron}, and
+the following hypotheses, again following \citet{hankin2010}, and
+reproduced here for convenience. 
+
+<<>>=
+data("oneill")                    # load the dataset
+icons
+maxp(icons)
+@ 
+
+\begin{table}
+\centering
+\begin{tabular}{|cccccc|c|}\hline
+\multicolumn{6}{|c|}{icon}&\\ \hline
+NB & L & PB & THC & OA & WAIS & total\\ \hline
+5	&3	&-	&4	&-	&3	&15\\
+3	&-	&5	&8	&-	&2	&18\\
+-	&4	&9	&2	&-	&1	&16\\
+1	&3	&-	&3	&4	&-	&11\\
+4	&-	&5	&6	&3	&-	&18\\
+-	&4	&3	&1	&3	&-	&11\\
+5	&1	&-	&-	&1	&2	& 9\\
+5	&-	&1	&-	&1	&1	& 8\\
+-	&9	&7	&-	&2	&0	&18\\ \hline
+23      &24     &30     &24     &14     &9      &124\\ \hline
+\end{tabular} 
+\caption{Experimental results\label{saffron} from \citet{oneill2008}
+  (dataset \code{icons} in the package): respondents' choice of `most
+  concerning' icon of those presented.  Thus the first row shows
+  results from respondents presented with icons NB, L, THC, and WAIS;
+  of the~15 respondents, 5 chose NB as the most concerning (see text
+  for a key to the acronyms).  Note the ``0'' in row~9, column~6: this
+  option was available to the~18 respondents of that row, but none of
+  them actually chose WAIS}
+\end{table}
+
+For reference, the other hypotheses were:
+
+\begin{itemize}
+\item $H_1\colon p_1\geqslant\frac{1}{6}$
+\item $H_2\colon p_1\geqslant\max\left\{p_2,\ldots p_6\right\}$
+\item $H_3\colon p_5+p_6\geqslant\frac{1}{3}$
+\item $H_4\colon\max\left\{p_5,p_6\right\}\geqslant\min\left\{p_1,p_2,p_3,p_4\right\}$
+\end{itemize}
+
+<<>>=
+f1 <- function(p){p[1] > 1/6}
+f2 <- function(p){p[1] > max(fillup(p)[-1])}
+f3 <- function(p){sum(fillup(p)[5:6]) > 1/3}
+f4 <- function(p){max(fillup(p)[1:2]) > min(fillup(p)[3:6])}
+@                                                
+         
+Here I will analyse just the first hypothesis, that is $H_1\colon
+p_1\leqslant\frac{1}{6}$ using the integration facilities of the
+\pkg{hyper2} package, and compare with previous results.  Here we
+perform a Bayesian analysis, made possible by the efficient coding of
+\pkg{hyper2}:
+
+<<>>=
+probability(icons, disallowed=function(p){p[1] > 1/6}, tol=0.1)
+@ 
+
+See how the disallowed region is the {\em expected} bit of the
+parameter space.  Thus the probability that the $p_i$ are unexpected
+(that is, $p_1<1/6$) is about 1.5\% or conversely,
+$P\left(H_1\right)\simeq 0.985$.  The likelihood ratio reported was
+about 2.608, which would correspond to a $p$-value of about
+
+<<>>=
+pchisq(2*2.608,df=1,lower.tail=FALSE)
+@ 
+
+or just over 2\% under an asympotic distribution; thus this
+frequentist technique gives comparable strength of evidence for $H_1$
+to the Bayesian approach.
+
+\section{Incomplete survey data}
+ 
+This section performs the analysis originally presented
+in~\citet{altham2010}.  The data, given here in
+table~\ref{Linetaldata} arises from 69 medical malpractice claims, and
+are the two surgeons' answers to the question: was there a
+communication breakdown in the hand-off between physicians caring for
+the patient?
+
+
+\begin{table}[!th]
+\centering
+\begin{tabular} {|l| c  c  c c c|}
+\hline
+Reviewer 1 &\multicolumn{5}{c|}{Reviewer 2}\\ \cline{2-6}
+ $ \ $&Yes& No& Missing&\rule{2mm}{0mm}& Total\\
+\hline
+Yes& 26& 1&2&&29\\
+No & 5&18&9&&32\\
+Missing& 4&4&0&&8\\
+&&&&&\rule{0mm}{0mm}\\
+Total & 35 & 23 & 11 && 69\\  
+\hline
+\end{tabular}
+\caption{Two surgeon reviews of malpractice claims data}
+\label{Linetal}
+\end{table}
+
+\begin{table}[!th]
+\centering
+\begin{tabular} {|l| c  c  c c c|}
+\hline
+Reviewer 1 &\multicolumn{5}{c|}{Reviewer 2}\\ \cline{2-6}
+ $ \ $&Yes& No& Missing&\rule{2mm}{0mm}& Total\\
+\hline
+Yes     & $y_{11}$ & $y_{10}$& $z_{1+}$ && $y_{1+} + z_{1+}$\\
+No      & $y_{01}$ & $y_{00}$& $z_{0+}$ && $y_{0+} + z_{0+}$\\
+Missing & $u_{+1}$ & $u_{+0}$& $0$     && $ u_{++}$        \\
+&&&&&\rule{0mm}{0mm}\\
+Total & $y_{+1} + u_{+1}$ & $y_{+0} +u_{+0} $&$z_{++}$&&$n$ \\
+\hline
+\end{tabular}
+\caption{Notation for the data}
+\label{Linetaldata}
+\end{table}
+
+We may implement an appropriate likelihood function as follows:
+
+<<>>=
+H <- hyper2(d=4)
+pnames(H) <- c("t00","t10", "t01", "t11")
+H["t00"] <- 18
+H["t10"] <- 01
+H["t01"] <- 05
+H["t11"] <- 26
+H[c("t11","t10")] <- 2
+H[c("t01","t00")] <- 9
+H[c("t11","t01")] <- 4
+H[c("t10","t00")] <- 4
+H
+@ 
+
+(object \code{H} is provided as \code{handover} in the package).  Then
+we may estimate the probability that reviewer 2 is more likely to give
+a `yes' than reviewer 1 as follows:
+
+
+<<>>=
+free <- maxp(H,give=TRUE)
+m <- fillup(free$par)
+names(m) <- pnames(H)
+m
+free$value
+@ 
+
+Then the constrained optimization:
+
+<<>>=
+obj <- function(p){-loglik(H,p)}   # objective func
+gr  <- function(p){-gradient(H,p)} # gradient, needed for speed
+UI <- rbind(diag(3),-1)           # UI and CI specify constraints
+CI <- c(rep(0,3),-1)              # p_i >= 0 and sum p_i <= 1
+@ 
+
+                      
+We will test $H_A\colon p_2<p_3$ using the method of support.
+
+
+<<>>=
+ml_HA <- constrOptim(theta=c(0.1,0.2,0.1), f = obj,grad=gr,
+ui = rbind(UI,c(0,1,-1)),   # p2 > p3
+ci = c(CI,0))
+ml_HA$value
+@ 
+
+
+Thus  the support for $H_A$ is
+
+<<>>=
+ml_HA$value - free$value
+@ 
+
+thus agreeing almost exactly with~\citet{altham2010}.
+
+\bibliography{hyper2}
+\end{document}

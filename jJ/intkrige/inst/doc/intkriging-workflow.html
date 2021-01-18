@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<meta name="author" content="Brennan Bean" />
+
+<meta name="date" content="2020-02-07" />
+
+<title>Introducing the Interval-Valued Kriging Workflow</title>
+
+
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css" data-origin="pandoc">
+a.sourceLine { display: inline-block; line-height: 1.25; }
+a.sourceLine { pointer-events: none; color: inherit; text-decoration: inherit; }
+a.sourceLine:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode { white-space: pre; position: relative; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+code.sourceCode { white-space: pre-wrap; }
+a.sourceLine { text-indent: -1em; padding-left: 1em; }
+}
+pre.numberSource a.sourceLine
+  { position: relative; left: -4em; }
+pre.numberSource a.sourceLine::before
+  { content: attr(title);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; pointer-events: all; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {  }
+@media screen {
+a.sourceLine::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    for (var j = 0; j < rules.length; j++) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") continue;
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') continue;
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Introducing the Interval-Valued Kriging Workflow</h1>
+<h4 class="author">Brennan Bean</h4>
+<h4 class="date">2020-02-07</h4>
+
+
+
+<div id="problem" class="section level2">
+<h2>Problem</h2>
+<p>The global historical climatological network is composed of a series of measurement locations scattered across the United States. These measurements are commonly used to make maps of climate measurements for various regions. These maps play a vital role in understanding the nature and trends of weather in the United States. Two of the primary measurements in this network are minimum and maximum temperature. Indeed, millions of Americans take interest in the forecasts of minimum and maximum temperature when deciding how to dress each day. <span class="citation">(DeGaetano and Belcher 2007)</span> used various interpolation approaches to create minimum and maximum temperature maps of the northeastern United States. Their techniques treated minimum and maximum temperatures as separate observations. In a different framework, minimum and maximum temperatures could be considered as two elements of one and the same observation, which is daily temperature. In other words, these daily temperature measurements create a single <em>interval-valued</em> observation rather than two individual observations. This holistic view of temperature motivates the need for methods to analyze the interaction of temperature magnitude and range across space. The <TT>intkrige</TT> package provides a way to analyze and interpolate interval-valued data. A simple demonstration of the workflow underlying these interval-valued temperature predictions is provided in this vignette for the Ohio river basin. The package README also demonstrates this workflow by predicting interval-valued design ground snow loads in Utah. Further details regarding these snow load predictions are provided in <span class="citation">(Bean, Sun, and Maguire 2019a)</span> and <span class="citation">(Bean, Sun, and Maguire 2019b)</span>.</p>
+</div>
+<div id="data" class="section level2">
+<h2>Data</h2>
+<p>The Ohio river basin includes most of the states of Ohio, West Virginia, Kentucky, and Indiana, as well as parts of Pennsylvania, Illinois, and Tennessee. The region is approximately 204,000 square miles and home to nearly 25 million people <span class="citation">(Ohio River Basin Consortium 2019)</span>. The region was selected due its relatively homogeneous elevation profile when compared to the western United States. We wish to map the magnitude and range of temperatures across this region. This is done by creating intervals of the 30 year mean maximum and minimum daily temperatures for available measurement locations.</p>
+<p>Measurement locations were downloaded from National Oceanic and Atmospheric Administration’s (NOAA) Global Historical Climatological Network (GHCN) <span class="citation">(Menne et al. 2012)</span>. The 161 remaining observations in the dataset all contained at least 30 years of record with at least 300 daily observation for calendar years 1988 to 2018. Intervals were created using a 5% trimmed 30 year mean for maximum and minimum temperatures respectively. These data are included in the package and can be accessed with the commands</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb1-1" title="1"><span class="kw">library</span>(intkrige)</a>
+<a class="sourceLine" id="cb1-2" title="2"><span class="co">#&gt; Loading required package: sp</span></a>
+<a class="sourceLine" id="cb1-3" title="3"><span class="co">#&gt; Loading required package: gstat</span></a>
+<a class="sourceLine" id="cb1-4" title="4"><span class="co">#&gt; Loading required package: raster</span></a>
+<a class="sourceLine" id="cb1-5" title="5"><span class="kw">data</span>(ohtemp)</a>
+<a class="sourceLine" id="cb1-6" title="6"><span class="kw">head</span>(ohtemp)</a>
+<a class="sourceLine" id="cb1-7" title="7"><span class="co">#&gt;            ID                 NAME STATE LONGITUDE LATITUDE ELEVATION     minm</span></a>
+<a class="sourceLine" id="cb1-8" title="8"><span class="co">#&gt; 1 USC00111302              CARMI 3    IL  -88.1805  38.0733     102.1 76.11001</span></a>
+<a class="sourceLine" id="cb1-9" title="9"><span class="co">#&gt; 2 USC00111436           CHARLESTON    IL  -88.1653  39.4761     213.4 67.56999</span></a>
+<a class="sourceLine" id="cb1-10" title="10"><span class="co">#&gt; 3 USC00112140             DANVILLE    IL  -87.6478  40.1392     169.2 57.90647</span></a>
+<a class="sourceLine" id="cb1-11" title="11"><span class="co">#&gt; 4 USC00112931 FAIRFIELD RADIO WFIW    IL  -88.3264  38.3806     131.1 75.05457</span></a>
+<a class="sourceLine" id="cb1-12" title="12"><span class="co">#&gt; 5 USC00114198            HOOPESTON    IL  -87.6850  40.4664     216.4 57.97599</span></a>
+<a class="sourceLine" id="cb1-13" title="13"><span class="co">#&gt; 6 USC00116446             OLNEY 2S    IL  -88.0817  38.7003     139.9 72.36740</span></a>
+<a class="sourceLine" id="cb1-14" title="14"><span class="co">#&gt;       maxm</span></a>
+<a class="sourceLine" id="cb1-15" title="15"><span class="co">#&gt; 1 196.7273</span></a>
+<a class="sourceLine" id="cb1-16" title="16"><span class="co">#&gt; 2 180.6998</span></a>
+<a class="sourceLine" id="cb1-17" title="17"><span class="co">#&gt; 3 178.5897</span></a>
+<a class="sourceLine" id="cb1-18" title="18"><span class="co">#&gt; 4 197.1208</span></a>
+<a class="sourceLine" id="cb1-19" title="19"><span class="co">#&gt; 5 170.2541</span></a>
+<a class="sourceLine" id="cb1-20" title="20"><span class="co">#&gt; 6 191.8014</span></a></code></pre></div>
+<p>The following figure shows a map of this region with the 161 stations locations overlaid. The code for this map makes use of the <TT>ggmap</TT> package <span class="citation">(Kahle and Wickham 2013)</span>. The code to generate the map is not provided as the map rendering requires a registered Google API account.</p>
+<center>
+&lt;img src=“ohmap.png” alt=“Map of the 161 temperature measurement locations in the Ohio River Basin.”, style=“width:300px;height:300px;”&gt;
+</center>
+</div>
+<div id="interval-exploration" class="section level2">
+<h2>Interval exploration</h2>
+<p>Our goal is to create an interval-valued map of the mean maximum and minimum temperatures across the region. Doing so allows us to simultaneously compare spatial patterns in the magnitude and range of average temperatures experienced in the region. The intkrige package provides a formal workflow for analyzing interval valued data by extending <TT>SpatialPointsDataFrame</TT> and <TT>SpatialPixelsDataFrame</TT> objects from the <TT>sp</TT> package <span class="citation">(Bivand et al. 2013)</span>. These objects are created using the <TT>interval()</TT> function as demonstrated below.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb2-1" title="1"><span class="co"># First, create a SpatialPointsDataFrame in the usual way</span></a>
+<a class="sourceLine" id="cb2-2" title="2">sp<span class="op">::</span><span class="kw">coordinates</span>(ohtemp) &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">&quot;LONGITUDE&quot;</span>, <span class="st">&quot;LATITUDE&quot;</span>)</a>
+<a class="sourceLine" id="cb2-3" title="3">sp<span class="op">::</span><span class="kw">proj4string</span>(ohtemp) &lt;-<span class="st"> </span><span class="kw">CRS</span>(<span class="st">&quot;+proj=longlat +ellps=WGS84&quot;</span>)</a>
+<a class="sourceLine" id="cb2-4" title="4"><span class="kw">interval</span>(ohtemp) &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">&quot;minm&quot;</span>, <span class="st">&quot;maxm&quot;</span>)</a>
+<a class="sourceLine" id="cb2-5" title="5"></a>
+<a class="sourceLine" id="cb2-6" title="6"><span class="kw">head</span>(ohtemp)</a>
+<a class="sourceLine" id="cb2-7" title="7"><span class="co">#&gt;           coordinates             interval          ID                 NAME</span></a>
+<a class="sourceLine" id="cb2-8" title="8"><span class="co">#&gt; 1 (-88.1805, 38.0733) [76.11001, 196.7273] USC00111302              CARMI 3</span></a>
+<a class="sourceLine" id="cb2-9" title="9"><span class="co">#&gt; 2 (-88.1653, 39.4761) [67.56999, 180.6998] USC00111436           CHARLESTON</span></a>
+<a class="sourceLine" id="cb2-10" title="10"><span class="co">#&gt; 3 (-87.6478, 40.1392) [57.90647, 178.5897] USC00112140             DANVILLE</span></a>
+<a class="sourceLine" id="cb2-11" title="11"><span class="co">#&gt; 4 (-88.3264, 38.3806) [75.05457, 197.1208] USC00112931 FAIRFIELD RADIO WFIW</span></a>
+<a class="sourceLine" id="cb2-12" title="12"><span class="co">#&gt; 5  (-87.685, 40.4664) [57.97599, 170.2541] USC00114198            HOOPESTON</span></a>
+<a class="sourceLine" id="cb2-13" title="13"><span class="co">#&gt; 6 (-88.0817, 38.7003)  [72.3674, 191.8014] USC00116446             OLNEY 2S</span></a>
+<a class="sourceLine" id="cb2-14" title="14"><span class="co">#&gt;   STATE ELEVATION</span></a>
+<a class="sourceLine" id="cb2-15" title="15"><span class="co">#&gt; 1    IL     102.1</span></a>
+<a class="sourceLine" id="cb2-16" title="16"><span class="co">#&gt; 2    IL     213.4</span></a>
+<a class="sourceLine" id="cb2-17" title="17"><span class="co">#&gt; 3    IL     169.2</span></a>
+<a class="sourceLine" id="cb2-18" title="18"><span class="co">#&gt; 4    IL     131.1</span></a>
+<a class="sourceLine" id="cb2-19" title="19"><span class="co">#&gt; 5    IL     216.4</span></a>
+<a class="sourceLine" id="cb2-20" title="20"><span class="co">#&gt; 6    IL     139.9</span></a></code></pre></div>
+<p>This function creates an <TT>intsp</TT> object. Use of the interval function on <TT>SpatialPixelsDataFrame</TT> objects creates <TT>intgrd</TT> objects. Both of these objects contain an interval slot that extend their parent classes. The interval slot is filled by specifying column names within the data frame, or specifying a two-column matrix with the same number of rows as the object data. These two forms of specification allow for convenient transformations of the interval slot values with the appropriate calls.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb3-1" title="1"><span class="kw">interval</span>(ohtemp) &lt;-<span class="st"> </span><span class="kw">log</span>(<span class="kw">interval</span>(ohtemp))</a>
+<a class="sourceLine" id="cb3-2" title="2"><span class="kw">head</span>(ohtemp)</a>
+<a class="sourceLine" id="cb3-3" title="3"><span class="co">#&gt;           coordinates             interval          ID                 NAME</span></a>
+<a class="sourceLine" id="cb3-4" title="4"><span class="co">#&gt; 1 (-88.1805, 38.0733)  [4.33218, 5.281819] USC00111302              CARMI 3</span></a>
+<a class="sourceLine" id="cb3-5" title="5"><span class="co">#&gt; 2 (-88.1653, 39.4761) [4.213164, 5.196837] USC00111436           CHARLESTON</span></a>
+<a class="sourceLine" id="cb3-6" title="6"><span class="co">#&gt; 3 (-87.6478, 40.1392) [4.058829, 5.185091] USC00112140             DANVILLE</span></a>
+<a class="sourceLine" id="cb3-7" title="7"><span class="co">#&gt; 4 (-88.3264, 38.3806) [4.318215, 5.283817] USC00112931 FAIRFIELD RADIO WFIW</span></a>
+<a class="sourceLine" id="cb3-8" title="8"><span class="co">#&gt; 5  (-87.685, 40.4664) [4.060029, 5.137292] USC00114198            HOOPESTON</span></a>
+<a class="sourceLine" id="cb3-9" title="9"><span class="co">#&gt; 6 (-88.0817, 38.7003)  [4.281756, 5.25646] USC00116446             OLNEY 2S</span></a>
+<a class="sourceLine" id="cb3-10" title="10"><span class="co">#&gt;   STATE ELEVATION</span></a>
+<a class="sourceLine" id="cb3-11" title="11"><span class="co">#&gt; 1    IL     102.1</span></a>
+<a class="sourceLine" id="cb3-12" title="12"><span class="co">#&gt; 2    IL     213.4</span></a>
+<a class="sourceLine" id="cb3-13" title="13"><span class="co">#&gt; 3    IL     169.2</span></a>
+<a class="sourceLine" id="cb3-14" title="14"><span class="co">#&gt; 4    IL     131.1</span></a>
+<a class="sourceLine" id="cb3-15" title="15"><span class="co">#&gt; 5    IL     216.4</span></a>
+<a class="sourceLine" id="cb3-16" title="16"><span class="co">#&gt; 6    IL     139.9</span></a></code></pre></div>
+<p>Note that intervals must be defined by their endpoints with the lower endpoint appearing in the first column. The <TT>interval()</TT> function will throw an error if it detects any instance of a lower endpoint greater than its corresponding upper endpoint. The function will also throw an error if a proposed transformation of the interval causes a lower endpoint to be greater than an upper endpoint. Intervals can also be characterized by their center and radius. It is easier to describe and characterize intervals by their endpoints, but it is easier to visualize and analyze <em>spatial</em> intervals using the center and radius. Thus interval objects must be initialized using their endpoints, but all interval-valued kriging and variogram functions automatically determine and use the center/radius form in analysis.</p>
+<p>The interval-valued kriging functions require variograms for the center and radius, while a cross-variogram for the center/radius interaction is optional. The most common way of exploring these spatial relationships is through the use of an empirical variogram, which measures pairwise differences in measurements <span class="math inline">\(z\)</span> with locations <span class="math inline">\(\mathbf{u}_\alpha\)</span> as a function of the difference in location <span class="math inline">\(\mathbf{h}\)</span>. This is defined symbolically as</p>
+<p><span class="math display">\[\begin{equation}
+\gamma(\mathbf{h}) = \frac{1}{2N(\mathbf{h})}\sum_{\alpha=1}^{N(\mathbf{h})}\left[z(\mathbf{u}_\alpha) - z(\mathbf{u}_\alpha+h)\right]^2
+\label{eqn:vario}
+\end{equation}\]</span> where <span class="math inline">\(N(\mathbf{h})\)</span> represents the number of station pairs with location difference <span class="math inline">\(\mathbf{h}\)</span> <span class="citation">(Goovaerts 1997)</span>.</p>
+<p>We define empirical variograms for the center, radius, and center/radius interaction using (1). The <TT>intvariogram()</TT> function provides wrappers to variogram functionality in the <TT>gstat</TT> package. These wrapper functions exploit the predictable structure of the interval slot in the <TT>intsp</TT> and <TT>intgrd</TT> objects to calculate the three empirical variograms simultaneously. The output of this function is an object of class <TT>intvariogram</TT>. This new S3 class distinguishes this output from traditional lists of empirical variograms.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb4-1" title="1"><span class="co"># Revert back to the standard interval</span></a>
+<a class="sourceLine" id="cb4-2" title="2"><span class="kw">interval</span>(ohtemp) &lt;-<span class="st"> </span><span class="kw">exp</span>(<span class="kw">interval</span>(ohtemp))</a>
+<a class="sourceLine" id="cb4-3" title="3">varios &lt;-<span class="st"> </span><span class="kw">intvariogram</span>(ohtemp, <span class="dt">cutoff =</span> <span class="dv">500</span>)</a>
+<a class="sourceLine" id="cb4-4" title="4"></a>
+<a class="sourceLine" id="cb4-5" title="5"><span class="kw">plot</span>(varios)</a></code></pre></div>
+<p><img src="data:image/png;base64,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" style="display: block; margin: auto;" /></p>
+<p>It seems that the radius and center/radius interaction could be appropriately modeled with spherical variograms while the center could be modeled with a linear variogram. The <TT>fit.intvariogram</TT> function provides a way to fit theoretical variograms to the three empirical variograms generated by the <TT>intvariogram</TT> function. The <TT>fit.intvariogram</TT> function uses the existing functionality of the <TT>fit.variogram</TT> function in the <TT>gstat</TT> package. The <TT>fit.intvariogram</TT> function only accepts objects of class <TT>intvariogram</TT> and is designed to be used in tandem with the <TT>intvariogram</TT> function. The <TT>intvcheck</TT> function allows for a quick evaluation of the model output from <TT>fit.intvariogram</TT>.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb5-1" title="1">varioFit &lt;-<span class="st"> </span><span class="kw">fit.intvariogram</span>(varios, <span class="dt">models =</span> gstat<span class="op">::</span><span class="kw">vgm</span>(<span class="kw">c</span>(<span class="st">&quot;Lin&quot;</span>, <span class="st">&quot;Sph&quot;</span>, <span class="st">&quot;Sph&quot;</span>)))</a>
+<a class="sourceLine" id="cb5-2" title="2"><span class="co">#&gt; Warning in gstat::fit.variogram(x_sub, model = models[[i]], ...): singular model</span></a>
+<a class="sourceLine" id="cb5-3" title="3"><span class="co">#&gt; in variogram fit</span></a>
+<a class="sourceLine" id="cb5-4" title="4">varioFit</a>
+<a class="sourceLine" id="cb5-5" title="5"><span class="co">#&gt; [[1]]</span></a>
+<a class="sourceLine" id="cb5-6" title="6"><span class="co">#&gt;   model      psill    range</span></a>
+<a class="sourceLine" id="cb5-7" title="7"><span class="co">#&gt; 1   Nug   1.003235   0.0000</span></a>
+<a class="sourceLine" id="cb5-8" title="8"><span class="co">#&gt; 2   Lin 361.958967 497.7719</span></a>
+<a class="sourceLine" id="cb5-9" title="9"><span class="co">#&gt; </span></a>
+<a class="sourceLine" id="cb5-10" title="10"><span class="co">#&gt; [[2]]</span></a>
+<a class="sourceLine" id="cb5-11" title="11"><span class="co">#&gt;   model   psill    range</span></a>
+<a class="sourceLine" id="cb5-12" title="12"><span class="co">#&gt; 1   Nug  0.0000  0.00000</span></a>
+<a class="sourceLine" id="cb5-13" title="13"><span class="co">#&gt; 2   Sph 23.1517 80.56012</span></a>
+<a class="sourceLine" id="cb5-14" title="14"><span class="co">#&gt; </span></a>
+<a class="sourceLine" id="cb5-15" title="15"><span class="co">#&gt; [[3]]</span></a>
+<a class="sourceLine" id="cb5-16" title="16"><span class="co">#&gt;   model     psill   range</span></a>
+<a class="sourceLine" id="cb5-17" title="17"><span class="co">#&gt; 1   Nug -8.460132   0.000</span></a>
+<a class="sourceLine" id="cb5-18" title="18"><span class="co">#&gt; 2   Sph 41.454114 470.397</span></a>
+<a class="sourceLine" id="cb5-19" title="19"><span class="kw">intvCheck</span>(varios, varioFit)</a></code></pre></div>
+<p><img src="data:image/png;base64,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" style="display: block; margin: auto;" /></p>
+<p>Note that for the observed data, the theoretical variogram models provide a decent fit to the data. However, the “singular model” warning reminds us that well-defined covariances cannot be recovered from linear variograms. The current interval-valued kriging models rely on the covariance equivalence of the variograms (which is calculated using <TT>variogramLine(covariance = TRUE)</TT>). A common practice in this case is to fit a spherical variogram with an arbitrary sill and range. These values are selected to create a spherical variogram that looks similar to the linear variogram within the viewing window.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb6-1" title="1"><span class="co"># Replace non-convergent variogram fit with a surrogate that </span></a>
+<a class="sourceLine" id="cb6-2" title="2"><span class="co"># contains a reasonable range and sill. </span></a>
+<a class="sourceLine" id="cb6-3" title="3">varioFit[[<span class="dv">1</span>]] &lt;-<span class="st"> </span>gstat<span class="op">::</span><span class="kw">vgm</span>(<span class="dt">psill =</span> <span class="dv">350</span>, <span class="dt">nugget =</span> <span class="fl">4.608542</span>, </a>
+<a class="sourceLine" id="cb6-4" title="4">                            <span class="dt">range =</span> <span class="dv">600</span>, <span class="dt">model =</span> <span class="st">&quot;Sph&quot;</span>)</a>
+<a class="sourceLine" id="cb6-5" title="5"></a>
+<a class="sourceLine" id="cb6-6" title="6"><span class="kw">intvCheck</span>(varios, varioFit)</a></code></pre></div>
+<p><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASAAAAEgCAMAAAAjXV6yAAAA0lBMVEUAAAAAABcAADoAAGYAOjoAOmYAOpAAOp0AZpAAZrYAgP8hMgA6AAA6ADo6AGY6OgA6OmY6OpA6ZmY6ZpA6ZrY6kLY6kNtmAABmADpmAGZmOgBmOpBmkJxmkLZmkNtmtrZmtttmtv+QOgCQOjqQOmaQZgCQZjqQkGaQkLaQtpCQttuQtv+Q29uQ2/+2ZgC2Zjq2ZpC2kDq2kGa225C227a229u22/+2///bkDrbkGbbtmbbtpDbtrbb27bb29vb////tmb/25D/27b//7b//9v///+CFE6UAAAACXBIWXMAAA7DAAAOwwHHb6hkAAAOu0lEQVR4nO1dD3/bthHlZMurNG326lTq3HWNvDZp3Zppm8Zm02aiLPH7f6Xh8IcESFBHgIQFyvd+iSkKEvj4BBwOBxBICsJBJMcmEDtIIAQkEAISCAEJhIAEQkACISCBEAws0P7nx2Ez9EOanD3ub5OLTf+shhXo6eaMBDoEIDZohp4YkIebQB8vk+T8Nbzav0uSySv4hbJk8hM7md4DLwZGzUj84SY5exiIrYky8z9u2HWv7gWvRTK9q0qQkGq3SpYs8XdGf3LtRsZJIC5AAtdiVwRMH4GmwOReCdRIHKKoW6Ayz0sCBVNFwCZQppJcLuIiECPyxeZpBVdI4YfbLuRlpw/wd6mKtpl48VD8z/HOO0JmzpT4bCOvxyjONlCALQKxP7NN8ZET7Q4XgcTFsusPqshm8AajuS6A30x+opkYCFrmn35ltUcRAAYWgRjF6QfnizgIpDUL7Fplsc542YafR/JrJgaCynz/RlxvBhRn8I7VBonqd/61W313E2gmX8pabxeomRgIMnO48en3n4CAYNEUSNS/pxtB60eXi3iXoLLm2EpQLTEQZObi7jkBRdEuEJPo7aVrm+Fug/Kru/KXqmhqAjUTA0FmnisjuLTYIPGZvLLM++/cmjHHVuzVBgr0mhGZvC5Yg1ZSEKqI143EQKhK0MXm6ZYbadGKpYkmEJMGEpeiEYZ61qME7eCu0tZmMFXGUPlBQFAXKNf9oCrRHwcJaTZI8VIUS4HKFoPl8a7yl7rDECif3GcXm92qVSHuSf8HXj29YVfmTqkuEHggzCmqJ3rjMCG9FZvecbei2P+yYL6+1hfbMst8/ZvwPIB+cuXvSe9vl0UGxTKODlUchHSBdqs155PHIlAMhGwlKA3Ud3JGDIQsNigL2DtwRASEGq2Yq5UPi+MTopg0AhIIgSkQWMPcLV4SFscnZAgkWovdatby4WdHBITqfhAgKj8IEJMfBIjKkwbE4kkXwuHYLqIxQhEQMo007/vG5AcdnxA18whIIASGQCr0FIuRjoGQ6QdFo4xEBIRMPyia5ksgBkI2RzEaxEDIdBSj6WMIxEDIDJjFEyoTiICQWcWSozcaBmIgRH4QAhIIgSGQKtKxVLEYCNUDZtmMdRCPbhkVIiBUdxRzGMiMZVwsBkJ1R3H7j0f+PwrEQKgeUdx9eR+PQDEQMiOKMH91GU8Vi4FQbdhnJmZnHYlME8cnNJgflOiH9pPwSByPHbPrDRKoW0anKxDzOXr1DQcXyJcQlaBuREIIpAYy+/AaVCAvQgEF6hXhDCGQF6GQVazPJIEEhUemPoRwIk58Boso2q83n8+LOTuwF14lyIWQceNzABz0f5KJYNRRp6GNtAbBcS6O8/BGurrjuZCDX1ydVf9k0rMJZL9QyUrKM+9KqD+forrsAXjZoD4BPCMjU5p58wMd4URI/QKy0JTVW1xevavOvarYgQAejzjsb8XzELcWxmVGpSyqftmu1BE+EcWkurqsUopXC2EkO+31gQDebsWf1p3BP3VQORi/RKNmtXyuE7CIIsweqpLKC5QKHYRHCWoP4GXJ5+w9Gbuyh7B4RpVVVqbZfqWOwCKKuW3gNSlQbVz4dIso/rlRPFm6PNQzqqqWUbNcCenAIormg2RVCSo6CeRhgw4E8NoFqpfswqxZroQMHI4o7v9rm5uXdCtAfp3V9gBehxKkVa0ehEwcjCjuvrzU5y+WrVgnfYZ2FLtVsUPVf3gHaPv3+2L3r4Yx7KbP0OGObauRThzR8YIdYanrw/IxW7H26ThcEWszb2Y0cG8enR9kKcqORwSmo5i0TkrmAklzYLUKQQJmBwgVoq+//WfdfgeOKOZQ6nzmdYWKKB4ilNk6IeFDrvvbKGLSvoSoBHUjEiYmfbDKd8poUIG8CAUUqNeDa0dqxVqJBLRBBB0kEIJSoL4jq4MjEkJUghCQQAgGC9oHQQSETD8omrl3AjEQqseko0IMhOox6agQAyHDBkGIzhPouJlfrh6E2ph4MjQFWvjaxAPjZn3gQaiVSerH0KxivrfVYdzMBx6EWpnk534MhzHSHcbNfOBBqI3J/tv3fgyHMtJBBPIiZGeSLT0ZDmmkBxfI20g3mOy+8i3jZhXz7xsGqmIehKxM0rUvw6H6Yu3jZs8NGxOp9Lqnke5La/hmfkgmngxNgZDVgDFah8bN/OBBqI2JJ0NDIHQ14OdGBITqzfyxF981EAOhuqN47MV3DcRAyFaCaDVgDRYbRKsB62i0YnGtgnd8QhS0R0ACIaiNaiz5lkuR2OgoCJkzzC4228VR+wk1RECo7gfBolhR+UHHJlQXCCK30XjSMRAyq9hst4KuTzxV7PiE6kPPk/sY1uZTiIAQNfMISCAE/QVi/SVjeCY/YscpAJdBBNJPjzrhIAAXEghBP4FYN2DyVhZrPo6+lo+RwkMWa2D4zUpshprJ6eBwDBNADcSll0Ap3zRUkOKPJjO3lxOEvkHGfs3dCrYSlf95x4odw2xyEIpLH4HE49qpIKW6A/CaD8pBKg+3sxcq7C6OIXoOwbj0EUhkLlsOMe1E200FijM/YX/Uk++53NZyeDMVjEsfgTKdlHiwQvKA55TeLzRScow9l0PJwwsUjMtgJYgj1WzAdtH2q4VAMC79bVCmkWIvShuQa8W6qvehfIBgXHq1YtAOqJaD/yD8F1zKH4xv8b6Wo1ssFTqdGd/JN0Q5CsVlOD8ol+MPaQIDNeylLOOlJSh9jzDRnUBcqLOKgARCQAIhIIEQkEAISCAEJBACEggBCYSABEJAAiEggRCQQAhIIAQkEAISCAEJhIAEQkACISCBEJBACEggBCQQAhIIAQmEwFGg/c9eo6Jpcva4v43oKZnucBPo6cZv2PjFCJR6jqv7fi8CmAJ9vEyS89fwav8uSSav4BfPkslP7GR6L9a/hls1En+4Sc4e+LfLkz9u2OeuxLI07xbJ9K4qQal6sB/moPzOLje5fnjWG3aF+TCLmHO1LBe7mD6KORCJmC0hBWokyqqjTvLyC2Kql/hWU6Ds6GsAdoAuELuxLzZPfNWGFArCdiFvY/oAf5eqqpiJFw/F/8T35QlT4rONTGdZzjZQ4CwCsT+zTfEx1LTggaALJMhn1x9UFcjgjYxP42P3O5OfaCZKaCeffr1Myi+IpTIaArEspx+e8Vb9oAmkNTNqcTWoJhmvK/Bzy/ttJkqok/0bkT6DLPmjTFYbJKrf+ddxN22mQOrBLDUD1CpQM1FCnsCNT7//BF8Q32oKJOrf043I5sdnvF9ntJagsubYSlAt0TwRd8+/oLK0C8QkenuZxPSUtQVNG5Rf3ZW/PKAhUDPRPMmV0VpabJD4TF5Z5v13cTdjtVbs1QYqyJrd2OR18bSqbkmoksmpkbXEQr95kOZi83TLjbRoxdJEE4hJA4lL0WhCPRtNCVJ+0F9LPwhuWBco1/2gKtEUqPR9ZlWWpUClhWcl6F3lL8ULc/WXv/yNNSv/hpnWT2/YnXAnVxcIPBrmFNUTTYF4Kza9y8Sqqb8smG+u9cW2zDJf/yY8BXDck6vxeNIxLPgUHaJegSoGRL0CVQyIewWqCBD5ClTHB8WkEZBACEyBwDznccdnnhv1FaiKnrtonRxsS7aTH6TBtmQ7edIajComPKAwKyOMFaaR5n1t8oN0UDOPgARCYAikQl1kpCuYfhAp04DpB1Hz1UDUG7DFgGF2hzphmAEzCpU1MNTePicL8oMQkEAI4t6INgLUA2bZLMgideNF3VHMYWSVxsUq1B1FtY8bQaIeUTzy9nLxwYwowvzWJVUxHbVhn9mQ28udBPr7QYnjcWQggRCQQAhK2swJ8uusvhSBeufwAgTy2wz7BQnkF3J9QQI5zlpI/DDwDYRG/4ii5Y7nc/aP/ynkC3YYmzISwxnpCiCLEInLI3ASVczxqy11RuhTKHEKXqLaPx45+kcUtRxU1SrmVc0q5RqbMhI9IoqNIlFVLVm/xFuyDJ1ACfKLKIoc9JIz14209UojglNEcX9rqX08h1IRUbGwK40IThHF1NjyVNUZpclcq1q2K42/imERRbt4SaG157KqoVcaD1wiiiAO32xJflUVibkqPIevdAIlCEFNIJVD5QsOdqWIMIBAJ9oJkzBbscPzg1oEcjyODI2nng/Mkm410k7HkaFOO4fK0FaQUtvO5i9MoALcobZmzNrCvTCBDpaggzm8AIH4PHLnJzVekEB+T9K9IIEIFpBACPqPrJ44qAQhIIEQ9A/anzhMP4jm3jXQf2z+xNF/dseJw7BBaqdxJ/AAiBzv0Ic92t4fGUyBFu5Gerfi69+KQIgeD0lb3h8ZzCrmfhNZ8rmMM7ISo0fU8nP7+2NDXyP950YNNTIVtJjs/tv31vdHh/5G2i5QtrS/PzoMY6QbQuy+ailZo0P/GWZWIdJ1S8kaHfr3xbYWYyylXp+YkfYDv3NLc972/shgCrSDNZBTN1OtiszZozns0fb+yGBOA+YrcdISHjrqzTytBlxD3VGk1YBrsJUgWg1Yg8UG0WrAOhqtGK2CZ4KC9ghIIAS1UY0l3+KJbHSF+qMI28V4ewVBUPeDYJUu8oM01AWCSDJ50hrMKjbbraAvRlWsQn3oeXJPiwUaoGYeAQmEoJ9ArPNmjBXlp9eL6y2QfnqKsx9IIAT+ArE+yeStrGJ8UH8Nf/k+j3yTw93qm5XYeDWTc9PhOLporrdAKd9QVAjEn5NmPjgXCzoqGStZuxVsMyr/814eO45vxwVfgcSz46kQSPVN4DUfIIRUHvtnL9QYgDiOrhvjK5C4UdmKiSkw2tYuULX4CfujHsPP5RaaIzNTvgJlukDiKQ+pCbM0Z+8XmkBywD+X49ovRCCjBHGkmj3aLtpK0OjQzwZlmkDsRWmPcq2KVTZoZGVHwLsVgzZJtWK8cPDStJSFh28nv5ZDbSwVesAZ3+V3bOVoGD8ol4MhaQKjRuylrG+lVSr9oLE1YtRZxUACISCBEJBACEggBCQQAhIIAQmEgARCQAIhIIEQkEAISCAEJBACEggBCYTg/1sd4yDTF4IUAAAAAElFTkSuQmCC" style="display: block; margin: auto;" /></p>
+<p>We understand and acknowledge the shortcomings of this variogram fitting approach as articulated in <span class="citation">(Loquin and Dubois 2010)</span>. Despite its shortcomings, this common approach to variogram fitting works well for many spatial projects. Our substitution of a spherical variogram for a linear one certainly would demand more attention in a rigorous analysis of temperatures. However, for the purposes of demonstration, this model substitution is sufficient to demonstrate the interval-valued kriging workflow.</p>
+</div>
+<div id="interval-valued-kriging-arguments" class="section level2">
+<h2>Interval-valued kriging arguments</h2>
+We are now ready to make temperature predictions on the grid using interval valued kriging. There are 17 different arguments for the intkrige function, yet all but three of these arguments have default options that allow for a quick implementation. These 17 arguments can be separated into three general categories: data, models and optimization. A brief description of each group of variables is provided below:
+<UL>
+<LI>
+<B>Data:</B> the <TT>locations</TT> and <TT>newdata</TT> arguments define all of the measurement and prediction locations.
+<LI>
+<B>Models:</B> The <TT>models</TT> and <TT>trend</TT> arguments control the type and behavior of the interval valued kriging model. The <TT>trend</TT> argument corresponds to the known mean of the interval-valued centers. When specified, this argument leads the function to use simple instead of ordinary kriging. The <TT>models</TT> argument includes the list of variogram models used to calculate the kriging weights.<br />
+
+<LI>
+<p><B>Optimization:</B> Interval-valued kriging amounts the minimizing the function <span class="math display">\[\begin{eqnarray}
+&amp;&amp;E\left[\rho^2_K\left([\hat{Z}(x^*)], [Z(x^*)]\right)\right]\nonumber\\
+&amp;=&amp;A_{11}\left[\sum_i\sum_j\lambda_i\lambda_jC^{C,C}(x_i-x_j)-2\sum_i\lambda_iC^{C,C}(x_i-x^*)\right]\nonumber\\
+&amp;+&amp;A_{22}\left[\sum_i\sum_j\left|\lambda_i\lambda_j\right|C^{R,R}(x_i-x_j)-2\sum_i\left|\lambda_i\right|C^{R,R}(x_i-x^*)\right]\nonumber\\
+&amp;+&amp;2A_{12}\left[\sum_i\sum_j\lambda_i|\lambda_i|C^{C,R}(x_i-x_j)-\sum_i|\lambda_i|C^{C,R}(x^*-x_i)-\sum_i\lambda_iC^{C,R}(x_i-x^*)\right]\label{eqn:pred-var-cov}
+\end{eqnarray}\]</span> where <span class="math inline">\(C^{C,C}, C^{R,R}, and C^{C,R}\)</span> are the covariances associated with the center, radius, and center/radius interaction. This is can be equivalently defined using the corresponding variograms. However, the current optimization relies on the use of the covariance definitions. As previously mentioned, the function assumes that the covariances exist and calculates them from the variograms using <TT>gstat::variogramLine(covariance = TRUE)</TT>.</p>
+<p>The <span class="math inline">\(A_{11}, A_{12}, \text{ and } A_{22}\)</span> parameters are used to weight the importance of different components of the covariance. These three arguments are specified with the <TT>A</TT> parameter in the <TT>intkrige</TT> function. The default option assumes no interaction between center and radius (i.e. <TT>A[3] = 0</TT>). <TT>A[3]</TT> is also <em>effectively</em> set to zero when a third variogram model is not specified.</p>
+<p>The <TT>eta, thresh, tolq, maxq, tolp, maxp,</TT> and <TT>r</TT> variables all directly relate to the Penalized Newton-Raphson technique used minimize <span class="math inline">\(E\left[\rho^2_K\left([\hat{Z}(x^*)], [Z(x^*)]\right)\right]\)</span>. The details of this optimization technique are provided in a companion paper to this package <span class="citation">(Bean, Sun, and Maguire 2019b)</span> and will not be discussed further in this vignette. These optimization parameters provide the user the necessary flexibility to adjust the optimization technique as needed to produce convergent results.</p>
+<p>These interval-valued kriging models are designed to predict hundreds, if not thousands, of locations in a single function call. Providing a separate initial guess for each prediction location quickly becomes impractical in such a context. As such, the initial guess for the kriging weights at each locations are derived from the traditional simple kriging weights obtained using only the interval centers. It is expected that the final weights will be close to this initial guess.</p>
+Once the user has selected proper optimization parameters, <TT>fast, useR,</TT> and <TT>cores</TT> variables all allow for potential speedups in the computation time. More about these arguments are found in the function documentation.
+</UL>
+</div>
+<div id="troubleshooting-optimization-concerns" class="section level2">
+<h2>Troubleshooting Optimization Concerns</h2>
+<p>Each new dataset brings with it a new set of considerations for the optimization algorithm. The R version of the models (invoked when <TT>useR = TRUE</TT>, the default) will print warnings to the screen when the optimization fails. Both the R and c++ versions will flag troublesome predictions by setting <TT>warn = 1</TT> in the list of return arguments.</p>
+Determining the right optimization parameters to ensure a successful optimization for <em>all</em> locations can be tricky, especially when faced with a large number of prediction locations. It is recommended that the model first be run on a small set of prediction using the function defaults. Then, adjust the optimization parameters as needed based on the recommended guidelines in the list at the end of the section. Once the optimization is working correctly for a subset of locations, deploy the model on all locations. Movement to the c++ version (via <TT>useR = FALSE</TT>) should only happen after the optimization parameters have been appropriately tuned. Below is a list of common solutions for various optimization issues.<br />
+
+<UL>
+<LI>
+In ordinary kriging (<TT>trend = NULL</TT>). The warning <q>left feasible region&lt;&gt; is best handled by increasing the value of <TT>r</TT> and/or increasing the value of <TT>eta</TT> to be closer to 1.
+<LI>
+In simple kriging (<TT>trend = !NULL</TT>), the warning <q>convergent, feasible solution not obtained&lt;&gt; is likely best handled by invoking the <TT>fast = TRUE</TT> option. The <TT>fast = FALSE</TT> is intended to prevent weights from converging to zero and is only relevant when the number of measurement locations is small (around 50 or less). In situations with more stations, the prevention of zero valued weights can cause a failure to converge. If this warning continues to be obtained. Consider increasing the value of <TT>eta</TT> closer to 1, or increasing the tolerance levels for the convergence criteria.
+<LI>
+The warning <q>feasible solution obtained from a non-convergent optimization step&lt;&gt; is likely best handled by lowering the value of eta, which controls the rate of imposition of the penalty parameter.
+</UL>
+</div>
+<div id="application" class="section level2">
+<h2>Application</h2>
+<p>As previously mentioned, we can accept the default arguments for the majority of parameters in the <TT>intkrige</TT> model for our predictions of Ohio temperatures. Because no closed form solution exists for these interval-valued kriging models, the computational time for fine maps can be tremendous. This is one of the reasons for the parallel processing option when the number of prediction locations is large. The parallel version of the model makes use of multiple packages included in the ``Suggests’’ field of the package description file. Once these packages are installed, the argument <TT>cores = -1</TT> will use all but one of the available cores to make predictions at the specified locations. Alternatively, the user can explicitly define the number of cores to use in parallel with <TT>n = <int></TT>. We make predictions on a 10 by 10 grid of coordinates defined using the bounding box of the Ohio river valley shape file. The setup and predictions use the following code.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb7-1" title="1"><span class="co"># Include the Ohio river basin shapefile</span></a>
+<a class="sourceLine" id="cb7-2" title="2"><span class="kw">data</span>(ohMap)</a>
+<a class="sourceLine" id="cb7-3" title="3"></a>
+<a class="sourceLine" id="cb7-4" title="4"><span class="co"># New location data preparation</span></a>
+<a class="sourceLine" id="cb7-5" title="5">lon &lt;-<span class="st"> </span><span class="kw">seq</span>(<span class="op">-</span><span class="fl">89.26637</span>, <span class="fl">-77.83937</span>, <span class="dt">length.out =</span> <span class="dv">10</span>)</a>
+<a class="sourceLine" id="cb7-6" title="6">lat &lt;-<span class="st"> </span><span class="kw">seq</span>(<span class="fl">35.31332</span>, <span class="fl">42.44983</span>, <span class="dt">length.out =</span> <span class="dv">10</span>)</a>
+<a class="sourceLine" id="cb7-7" title="7">newlocations &lt;-<span class="st"> </span><span class="kw">expand.grid</span>(lon, lat)</a>
+<a class="sourceLine" id="cb7-8" title="8"><span class="kw">colnames</span>(newlocations) &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">&quot;lon&quot;</span>, <span class="st">&quot;lat&quot;</span>)</a>
+<a class="sourceLine" id="cb7-9" title="9">sp<span class="op">::</span><span class="kw">coordinates</span>(newlocations) &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">&quot;lon&quot;</span>, <span class="st">&quot;lat&quot;</span>)</a>
+<a class="sourceLine" id="cb7-10" title="10">sp<span class="op">::</span><span class="kw">proj4string</span>(newlocations) &lt;-<span class="st"> </span>sp<span class="op">::</span><span class="kw">proj4string</span>(ohtemp)</a>
+<a class="sourceLine" id="cb7-11" title="11">sp<span class="op">::</span><span class="kw">gridded</span>(newlocations) &lt;-<span class="st"> </span><span class="ot">TRUE</span></a>
+<a class="sourceLine" id="cb7-12" title="12"></a>
+<a class="sourceLine" id="cb7-13" title="13"><span class="co"># Adjust r and theta to ensure answers remain in feasible region.</span></a>
+<a class="sourceLine" id="cb7-14" title="14">preds &lt;-<span class="st"> </span><span class="kw">intkrige</span>(ohtemp, newlocations, varioFit, </a>
+<a class="sourceLine" id="cb7-15" title="15">                  <span class="dt">A =</span> <span class="kw">c</span>(<span class="dv">1</span>, <span class="dv">1</span>, <span class="fl">0.5</span>), <span class="dt">r =</span> <span class="dv">200</span>, <span class="dt">eta =</span> <span class="fl">0.9</span>, <span class="dt">maxp =</span> <span class="dv">225</span>)</a>
+<a class="sourceLine" id="cb7-16" title="16"></a>
+<a class="sourceLine" id="cb7-17" title="17"><span class="kw">plot</span>(preds, <span class="dt">beside =</span> <span class="ot">FALSE</span>, <span class="dt">circleCol =</span> <span class="st">&quot;gray&quot;</span>) <span class="op">+</span><span class="st"> </span></a>
+<a class="sourceLine" id="cb7-18" title="18"><span class="st">  </span>latticeExtra<span class="op">::</span><span class="kw">layer</span>(<span class="kw">sp.lines</span>(ohMap, <span class="dt">col =</span> <span class="st">&quot;white&quot;</span>))</a></code></pre></div>
+<p><img src="data:image/png;base64,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" style="display: block; margin: auto;" /></p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb8-1" title="1"><span class="kw">plot</span>(preds, <span class="dt">beside =</span> <span class="ot">TRUE</span>)</a></code></pre></div>
+<p><img src="data:image/png;base64,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" style="display: block; margin: auto;" /></p>
+</div>
+<div id="analysis" class="section level2">
+<h2>Analysis</h2>
+<p>The first plot visualizes the center and radius of the interval-predictions in a single image. The reference circles in the image provide the circle sizes corresponding to the maximum and minimum radius. The numeric values of the maximum and minimum radius (rounded to three decimal places) are also given along the top of the plot.</p>
+<p>The second plot visualizes the components of the interval in a more traditional side by side plotting approach. These side by side plots make use of the <TT>gridArrange()</TT> function in the <TT>gridExtra&lt;&gt; package. Both plotting approaches use the <TT>lattice</TT> package approach to plotting. This means that the user cannot make adjustments to the plotting window using <TT>par()</TT> as they would in base R. Both plotting styles are intended to give users a quick way to visualize the spatial patterns in predictions.</p>
+<p>These default plots help us to draw some quick conclusions from the data. First, notice that the highest temperature magnitudes occur in the southern portion of the basin while the largest temperature <em>ranges</em> occur in the eastern portion of the basin. The eastern border of the basin runs through the Appalachian mountains and mountainous regions are notorious for experiencing larger night and day swings in temperature. Conversely, warmer temperatures are more likely to persist throughout the night at lower elevations, farther south. This likely explains why the southern corner of the basin has higher temperature magnitudes and smaller temperature ranges. It is also noteworthy that the smallest predicted interval radii occur along the northern border of the basin, possibly due to the moderating effect of lake Erie on extreme daily temperatures.</p>
+<p>More important than the analysis of Ohio river basin temperatures is the establishment of a pattern for exploring interval-valued spatial data. This demonstration has illustrated the use of a series of functions designed simplify and enhance interval-valued spatial analysis. We anticipate that future iterations of this package will result in an continual increase of functionality and applications.</p>
+<div id="refs" class="references">
+<div id="ref-Bean2019-int">
+<p>Bean, Brennan, Yan Sun, and Marc Maguire. 2019a. “Interval-Valued Kriging Models for Geostatistical Mapping with Uncertain Inputs.”</p>
+</div>
+<div id="ref-Bean2019-int2">
+<p>———. 2019b. “Supplement to ‘Interval-Valued Kriging Models for Geostatistical Mapping with Uncertain Inputs’.”</p>
+</div>
+<div id="ref-Bivand2008">
+<p>Bivand, Roger S, Edzer J Pebesma, Virgilio Gomez-Rubio, and Edzer Jan Pebesma. 2013. <em>Applied Spatial Data Analysis with R</em>. 2nd ed. Vol. 747248717. Springer.</p>
+</div>
+<div id="ref-DeGaetano2007">
+<p>DeGaetano, Arthur T., and Brian N. Belcher. 2007. “Spatial Interpolation of Daily Maximum and Minimum Air Temperature Based on Meteorological Model Analyses and Independent Observations.” <em>Journal of Applied Meteorology and Climatology</em> 46 (11): 1981–92. <a href="https://doi.org/10.1175/2007JAMC1536.1">https://doi.org/10.1175/2007JAMC1536.1</a>.</p>
+</div>
+<div id="ref-Goovaerts1997">
+<p>Goovaerts, Pierre. 1997. <em>Geostatistics for Natural Resources Evaluation</em>. Oxford University Press.</p>
+</div>
+<div id="ref-ggmap">
+<p>Kahle, David, and Hadley Wickham. 2013. “Ggmap: Spatial Visualization with Ggplot2.” <em>The R Journal</em> 5 (1): 144–61. <a href="https://journal.r-project.org/archive/2013-1/kahle-wickham.pdf">https://journal.r-project.org/archive/2013-1/kahle-wickham.pdf</a>.</p>
+</div>
+<div id="ref-Loquin2010">
+<p>Loquin, Kevin, and Didier Dubois. 2010. “Kriging and Epistemic Uncertainty: A Critical Discussion.” In <em>Methods for Handling Imperfect Spatial Information</em>, 269–305. Springer.</p>
+</div>
+<div id="ref-ghcn2012">
+<p>Menne, M. J., I. Durre, B. Korzeniewski, R. S. Vose, B. E. Gleason, and T. G. Houston. 2012. “Global Historical Climatology Network - Daily (Ghcn-Daily), Version 3.26.” NOAA National Climatic Data Center. <a href="http://doi.org/10.7289/V5D21VHZ">http://doi.org/10.7289/V5D21VHZ</a>.</p>
+</div>
+<div id="ref-Ohio2019">
+<p>Ohio River Basin Consortium. 2019. <a href="https://www.ohio.edu/orbcre/basin/index.html">https://www.ohio.edu/orbcre/basin/index.html</a>.</p>
+</div>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,164 @@
+---
+title: "Ladies' figure skating"
+author: "Robin K. S. Hankin"
+date: "`r Sys.Date()`"
+vignette: >
+  %\VignetteIndexEntry{figure_skating}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+# Ladies' figure skating in the 2002 Winter Olympics
+
+This script creates and analyses hyper2 object "skating" which is a
+likelihood function for the strengths of the competitors in the
+Ladies' Figure Skating at the 2002 Winter Olympics.  Dataframe
+```skating_table``` is copied from Lock and Lock (see skating.Rd for
+more details).
+
+```{r}
+library("hyper2",quietly=TRUE)
+data("skating")
+skating_table
+```		
+
+Object ```skating_table``` is structured so that each competitor is a
+row, and each judge is a column.  Function ```order_likelihood()```
+considers each row to be a race [or a judge], so we need to take a
+transpose.  The following R idiom is plausible but incorrect:
+
+
+```{r}
+skating_incorrect <- order_likelihood(t(skating_table))
+```
+
+The above is incorrect because we want the ranks, and we have the
+order.  Correct analysis follows.
+
+
+```{r}
+skating_rank <- apply(skating_table,2,order)
+head(skating_rank)
+```
+
+Column 1 of ```skating_table``` and column 1 of ```skating_rank``` are
+confusingly simular.  So consider column 2 instead, corresponding to
+judge number 2.  If ```a=skating_table[,2]``` and
+```b=skating_rank[,2]``` we have ```a=c(4,1,3,2, ...)``` and
+```b=c(2,4,3,1, ...)```.  Thus ```a``` means that hughes was judged to
+be fourth best, slutskaya was judged to be the best, kwan third best,
+cohen second best, and so on.  Conversely, ```b``` means that the best
+competitor was number two [slutskaya], the second best number was
+number four [cohen], the third best was number three [kwan], the
+fourth best number 1 [hughes], and so on.  Note that this means the
+rows of ```skating_rank``` cannot be named.
+
+
+```{r}
+skating <- order_likelihood(t(skating_rank))
+pnames(skating) <- rownames(skating_table)
+head(skating)
+```
+
+Now some data visualization.  First the MLE for the strengths:
+
+
+```{r,dpi=72}
+dotchart(maxp(skating))
+dotchart(log(maxp(skating)))
+```
+
+
+Now compare my rating with the official point-tallying method:
+
+```{r,dpi=72}
+par(pty='s')
+lik <- order(maxp(skating),decreasing=TRUE)
+plot(1:23,lik,asp=1,pch=16,xlab='official order',ylab='likelihood order')
+text(1:23,lik,asp=1,pch=16,pos=c(rep(4,19),rep(2,4)),rownames(skating_table))
+abline(0,1)
+```
+
+
+
+## Evidence for medal positions
+
+Looking at the figure, it seems that the medallists---Hughes (gold),
+Slutskya (silver), Kwan (bronze)---were considerably higher in
+strength than the rest of the field.  Here I will test the hypothesis
+that the medallists were in fact the strongest three competitors.
+Technically you need to optimize over the union of the possibilities
+that one of the three medallists did not come in the top three; but
+this is hard.  We will do something much easier but numerically
+equivalent: optimize over the union of outcomes where either Cohen or
+Suguri (who placed fourth and fifth respectively) had higher strength
+than any of the medallists.
+
+```{r}
+jj <-
+    matrix(c(
+        -1, 0, 0,   1,0,  # Hughes   < Cohen
+         0,-1, 0,   1,0,  # Slutskya < Cohen
+         0, 0,-1,   1,0,  # Kwan     < Cohen
+        
+        -1, 0, 0,   0,1,  # Hughes   < Suguri
+         0,-1, 0,   0,1,  # Slutskya < Suguri
+         0, 0,-1,   0,1), # Kwan     < Suguri
+        byrow=TRUE,ncol=5)
+
+problem_constraints <-  # fill with zeros for other competitors
+    cbind(jj,matrix(0,nrow(jj),size(skating)-ncol(jj)-1))
+
+small <-1e-3  # need a sensible start value satisfying the constraints
+start <- c(rep(2*small,3),rep(3*small,2),rep(small,17))
+
+out <- rep(0,nrow(problem_constraints))
+fullout <- list()
+
+for(i in seq_len(nrow(problem_constraints))){
+	jj <- maxp(skating, startp=start, give=TRUE,fcm=problem_constraints[i,], fcv=0)
+   fullout[[i]] <- jj
+   out[i] <- jj$value
+}
+out
+maxp(skating,give=TRUE)$value  - max(out)
+```
+
+that is, about 1 unit of support, falling short of the two units
+suggested by Edwards.  Observe that the maximum likelihood among the
+six alternative hypotheses is that of number 3, in which the
+maximization was constrained to obey ```Kwan < Cohen```.
+
+If, instead, we ask whether there is evidence that Suguri should not
+have been a medallist, we find
+
+```{r}
+maxp(skating,give=TRUE)$value  - max(out[4:5])
+```
+
+There is something odd going on:
+
+```{r}
+plot(out,ylab="log likelihood",axes=FALSE)
+axis(2)
+axis(side=1,at=1:6,srt=45,labels=c(
+"Hug<Coh", "Slu<Coh", "Kwa<Coh",
+"Hug<Sug", "Slu<Sug", "Kwa<Sug"
+))
+```
+
+In the plot above, the vertical axis shows the support.  The six
+points on the x-axis correspond to the six rows of
+```problem_constraints```; names have been abbreviated to the first
+three letters.  Thus the first three points are maximum likelihoods
+for ```Hughes < Cohen```, ```Slutskya < Cohen```, and ```Kwan <
+Cohen``` respectively.  See how the likelihoods increase from the
+first to the third point; this indicates that ```Hughes < Cohen```, is
+the least likely option, and ```Kwan < Cohen``` the most likely
+option.  This makes sense because Cohen is the weakest of the three
+medallists.  Points 4-6 are in the reverse order, and I have no
+explanation for this.  The likelihoods indicate that, if Suguri is
+*more* likely to be stronger than Hughes than to be stronger than
+Kwan, which is difficult to understand because Hughes has a higher
+estimated strength than Kwan.
+

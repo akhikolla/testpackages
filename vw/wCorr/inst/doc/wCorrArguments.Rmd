@@ -1,0 +1,278 @@
+---
+title: "wCorr Arguments"
+author: "Paul Bailey, Ahmad Emad, Ting Zhang, Qingshu Xie"
+date: '`r Sys.Date()`'
+output: pdf_document
+vignette: >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteIndexEntry{wCorr Arguments}
+  \usepackage[utf8]{inputenc}
+---
+
+
+```{r packages and data, echo=FALSE, results="hide", message=FALSE,warning=FALSE}
+require(knitr)
+require(wCorr)
+require(lattice)
+require(captioner)
+
+# set layout so a figure label appears to go with the figure
+trellis.device()
+trellis.par.set(list(layout.widths  = list(left.padding = 3, right.padding = 3),
+                     layout.heights = list(top.padding = -1, bottom.padding = 3))) 
+##load("../vignettes/sim/ML.RData")
+#load("../vignettes/sim/aggML.RData")
+#load("../vignettes/sim/fast.RData")
+#load("../vignettes/sim/speed.RData")
+
+#load("aggML.RData")
+#load("fast.RData")
+#load("speed.RData")
+load("../R/sysdata.rda")
+```
+
+```{r setup fast, echo=FALSE, results="hide", message=FALSE, warning=FALSE}
+# fast$i <- rep(1:(nrow(fast)/2),each=2)
+# mfast <- merge(subset(fast,fast),
+#                subset(fast,!fast, c("i", "est")),
+#                by="i",
+#                suffixes=c(".fast",".slow"))
+# mfast$fast <- NULL
+# mfast$absdrho <- pmax(abs(mfast$est.fast - mfast$est.slow), 1E-16)
+# aggfast <- summaryBy(absdrho ~ n + rho + type, data=mfast, FUN=mean, na.rm=TRUE)
+fmax <- max(aggfast$absdrho.mean)
+fmax10 <- ceiling(log10(fmax))
+```
+
+```{r tables and figures, echo=FALSE, results="hide", message=FALSE,warning=FALSE}
+fig_nums <- captioner()
+table_nums <- captioner(prefix = "Table")
+
+MLRMSE <- fig_nums("MLRMSE", "")
+Polychoric <- table_nums("Polychoric", "")
+Polyserial <- table_nums("Polyserial", "")
+fastMAD <- table_nums("fastMAD", "")
+speedi <- table_nums("speedi", "")
+```
+
+The wCorr package can be used to calculate Pearson, Spearman, polyserial, and polychoric correlations, in weighted or unweighted form.^[The estimation procedure used by the wCorr package for the polyserial is based on the likelihood function in by Cox, N. R. (1974), "Estimation of the Correlation between a Continuous and a Discrete Variable." *Biometrics*, **30** (1), pp 171-178. The likelihood function for polychoric is from Olsson, U. (1979) "Maximum Likelihood Estimation of the Polychoric Correlation Coefficient." *Psyhometrika*, **44** (4), pp 443-460. The likelihood used for Pearson and Spearman is written down many places. One is the "correlate" function in Stata Corp, Stata Statistical Software: Release 8. College Station, TX: Stata Corp LP, 2003.] The package implements the tetrachoric correlation as a specific case of the polychoric correlation and biserial correlation as a specific case of the polyserial correlation. When weights are used, the correlation coefficients are calculated with so called sample weights or inverse probability weights.^[Sample weights are comparable to `pweight` in Stata.]
+
+This vignette describes the use of applying two Boolean switches in the wCorr package. It describes the implications and uses simulation to show the impact of these switches on resulting correlation estimates.
+
+First, the Maximum Likelihood, or `ML` switch uses the Maximum Likelihood Estimator (MLE) when `ML=TRUE` or uses a consistent but non-MLE estimator for the nuisance parameters when `ML=FALSE`. The simulations show that using `ML=FALSE` is preferable because it speeds computation and decreases the root mean square error (RMSE) of the estimator.
+
+Second the `fast` argument gives the option to use a pure R implementation (`fast=FALSE`) or an implementation that relies on the `Rcpp` and `RcppArmadillo` packages (`fast=TRUE`). The simulations show agreement to within $10^{`r fmax10`}$, showing the implementations agree. At the same time the `fast=TRUE` option is always as fast or faster.
+
+In addition to this vignette, the *wCorr Formulas* vignette describes the statistical properties of the correlation estimators in the package and has a more complete derivation of the likelihood functions.
+
+# The `ML` switch
+The wCorr package computes correlation coefficients between two vectors of random variables that are jointly bivariate normal. We call the two vectors ***X*** and ***Y***.
+
+$$\begin{pmatrix} X \\ Y \end{pmatrix} \sim N \left[ \begin{pmatrix} \mu_x \\ \mu_y \end{pmatrix}, \boldsymbol{\Sigma} \right] $$
+
+where $N(\mathbf{A},\boldsymbol{\Sigma})$ is the bivariate normal distribution with mean ***A*** and covariance $\boldsymbol{\Sigma}$.
+
+## Computation of polyserial correlation
+
+The likelihood function for an individual observation of the polyserial correlation is^[See the *wCorr Formulas* vignette for a more complete description of the polyserial correlations' likelihood function.]
+
+$$\mathrm{Pr}\left( \rho=r, \boldsymbol{\Theta}=\boldsymbol{\theta} ; Z=z_i, M=m_i \right) = \phi(z_i) \left[ \Phi\left( \frac{\theta_{m_i+2} - r \cdot z_i}{\sqrt{1-r^2}} \right) - \Phi \left( \frac{\theta_{m_i+1} - r \cdot z_i}{\sqrt{1-r^2}} \right) \right]$$
+
+where $\rho$ is the correlation between ***X*** and ***Y***, ***Z*** is the normalized version of ***X***, and ***M*** is a discretized version of ***Y***, using $\boldsymbol{\theta}$ as cut points as described in the *wCorr Formulas* vignette. Here an *i* is used to index the observed units.
+
+The log-likelihood function ($\ell$) is then
+
+$$\ell(\rho, \boldsymbol{\Theta}=\boldsymbol{\theta};\mathbf{Z}=\mathbf{z},\mathbf{M}=\mathbf{m}) = \sum_{i=1}^n w_i \ln\left[ \mathrm{Pr}\left( \rho=r, \boldsymbol{\Theta}=\boldsymbol{\theta} ; Z=z_i, M=m_i \right) \right]$$
+
+The derivatives of $\ell$ can be written down but are not readily computed. When the `ML` argument  is set to `FALSE` (the default), the values of $\boldsymbol{\theta}$ are computed using a consistent estimator^[The value of the nuisance parameter $\boldsymbol{\theta}$ is chosen to be $\Phi^{-1}(n/N)$ where $n$ is the number of values to the left of the cut point ($\theta_i$ value) and $N$ is the number of data points overall. For the weighted cause $n$ is replaced by the sum of the weights to the left of the cut point and $N$ is replaced by the total weight of all units. See the **wCorr Formulas** vignette for a more complete description.] and a one dimensional optimization of $\rho$ is calculated using the `optimize` function in the `stats` package. When the `ML` argument is set to `TRUE`, a multi-dimensional optimization is done for $\rho$ and $\boldsymbol{\theta}$ using the `bobyqa` function in the `minqa` package.
+
+## Computation of polychoric correlation  
+For the polychoric correlation the observed data is expressed in ordinal form for both variables. Here the discretized version of ***X*** is ***P*** and the discretized version of ***Y*** remains ***M***.^[See the "wCorr Formulas" vignette for a more complete description of the polychoric correlations' likelihood function.] The likelihood function for the polychoric is
+
+$$\mathrm{Pr}\left( \rho=r, \boldsymbol{\Theta}=\boldsymbol{\theta}, \boldsymbol{\Theta}'=\boldsymbol{\theta}' ; P=p_i, M=m_i \right) = \int_{\theta_{p_i+1}'}^{\theta_{p_i+2}'}  \int_{\theta_{m_i+1}}^{\theta_{m_i+2}} \mkern-40mu  f(x,y|\rho=r) dy dx$$
+
+where $f(x,y|r)$ is the normalized bivariate normal distribution with correlation $\rho$,  $\boldsymbol{\theta}$  are the cut points used to discretize ***Y*** into ***M***, and  $\boldsymbol{\theta'}$ are the cut points used to discretize ***X*** into ***P***.
+
+The log-likelihood is then
+$$\ell(\rho, \boldsymbol{\Theta}=\boldsymbol{\theta}, \boldsymbol{\Theta}'=\boldsymbol{\theta}' ;\mathbf{P}=\mathbf{p}, \mathbf{M}=\mathbf{m}) = \sum_{i=1}^n w_i \ln\left[\mathrm{Pr}\left( \rho=r, \boldsymbol{\Theta}=\boldsymbol{\theta},\boldsymbol{\Theta}'= \boldsymbol{\theta}' ; P=p_i, M=m_i \right) \right] $$
+
+The derivatives of $\ell$ can be written down but are not readily computed. When the `ML` argument  is set to `FALSE` (the default), the values of $\boldsymbol{\theta}$ and $\boldsymbol{\theta}'$ are computed using a consistent estimator and a one dimensional optimization of $\rho$ is calculated using the `optimize` function in the `stats` package. When the `ML` argument is set to `TRUE`, a multi-dimensional optimization is done for $\rho$, $\boldsymbol{\theta}$, $\boldsymbol{\theta}'$ using the `bobyqa` function in the `minqa` package.
+
+# Simulation study
+
+To demonstrate the effect of the `ML` and `fast` switches a few simulation studies are performed to compare the similarity of the results when the switch is set to `TRUE` to the result when the switch is set to `FALSE`. This is done first for the `ML` switch and then for the `fast` switch.
+
+Finally, simulations show the implications of these switches on the speed of the computation.
+
+# General procedures of the simulation study of unweighted correlations
+
+A simulation is run several times.^[The exact number is noted for each specific simulation.] For each iteration, the following procedure is used:^[When the exact method of selecting a parameter (such as $n$) is not noted above, it is described as part of each simulation.]
+
+* select a true correlation coefficient $\rho$;
+* select the number of observations $n$;
+* generate ***X*** and ***Y*** to be bivariate normally distributed using a pseudo-Random Number Generator (RNG);
+* using a pseudo-RNG, select the number of bins for ***M*** and ***P*** ($t$ and $t'$) independently from the set \{2, 3, 4, 5\};
+* select the bin boundaries for ***M*** and ***P*** ($\boldsymbol{\theta}$ and $\boldsymbol{\theta}'$) by sorting the results of $(t-1)$ and $(t'-1)$ draws, respectively, from a normal distribution using a pseudo-RNG; 
+* confirm that at least 2 levels of each of ***M*** and ***P*** are occupied (if not, return to the previous step); and
+* calculate and record the correlation coefficients.
+
+One of a few possible statistics is then calculated. To compare two levels of a switch the Relative Mean Absolute Deviation is used
+
+$$RMAD= \frac{1}{m} \sum_{j=1}^m | r_{j, \mathtt{TRUE}} - r_{j, \mathtt{FALSE}} |  $$
+
+where there are $m$ simulations run, $r_{j, \mathtt{TRUE}}$ and $r_{j, \mathtt{FALSE}}$ are the estimated correlation coefficient for the $j$th simulated dataset when the switch is set to `TRUE` and `FALSE`, respectively. This statistic is called "relative" because it is compared to the other method of computing the statistic, not the true value.
+
+To compare either level to the true correlation coefficient the Root Mean Square Error is used
+
+$$RMSE= \sqrt{ \frac{1}{m} \sum_{j=1}^m (r_j - \rho_j)^2 }   $$
+
+where, for the $j$th simulated dataset, $r_j$ is an estimated correlation coefficient and $\rho_j$ is the value used to generate the data (***X***, ***Y***, ***M***, and ***P***).
+
+# ML switch
+
+A simulation was done using the Cartesian product (all possible combinations of) $\mathtt{ML} \in \{\mathtt{TRUE}, \mathtt{FALSE} \}$, $\rho \in \left( -0.99, -0.95, -0.90, -0.85, ..., 0.95, 0.99 \right)$, and $n \in \{10, 100, 1000\}$. Each iteration is run three times to increase the precision of the simulation. The same values of the variables are used in the computation for `ML=TRUE` as well as for `ML=FALSE`; and then the statistics are compared between the two sets of results (e.g. `ML=TRUE` and `ML=FALSE`).  
+
+\newpage
+
+**`r fig_nums("MLRMSE", display="cite")`.** *Root Mean Square Error for `ML=TRUE` and `ML=FALSE`.*  
+```{r ML RMSE plot, echo=FALSE,fig.width=7, fig.height=5.5}
+#ml <- subset(ML, type %in% c("Polychoric", "Polyserial"))
+#ml$rmse <- (ml$est - ml$rho)^2
+
+#aggml <- summaryBy(rmse ~ n + rho + type + ML, data=ml, FUN=mean, na.rm=TRUE)
+#aggml$rmse.mean <- sqrt(aggml$rmse.mean)
+#aggml$ml <- ifelse(aggml$ML==TRUE, "ML=TRUE", "ML=FALSE")
+#aggml$nt <- factor(paste("n=",aggml$n))
+xyplot(rmse.mean ~ rho|type + nt,
+       data=aggml,
+       groups=ml,
+       scales=list(y=list(log=10, cex=0.7), x = list(cex=0.7)),
+       type=c("l", "g"),
+       ylab="RMSE",
+       xlab=expression(rho),
+       auto.key=list(lines=TRUE, points=FALSE, space="right", cex=0.7),
+       par.settings=list(superpose.line=list(lwd=2), plot.line=list(lwd=2)))
+```
+
+The RMSE for these two options is so similar that the two lines cannot be distinguished for most of the plot. The exact differences are shown for Polychoric in `r table_nums("Polychoric", display="cite")` and for Polyserial in `r table_nums("Polyserial", display="cite")`. The column labeled, "RMSE difference" shows how much larger the RMSE is for `ML=TRUE` than `ML=FALSE`. Because this difference is always positive the RMSE of the `ML=FALSE` option is always lower. Because of this the `ML=TRUE` option is preferable only in situations where there is a reason to prefer MLE for some other reason.
+
+\ 
+
+**`r table_nums("Polychoric", display="cite")`.** *Relative Mean Absolute Deviation between `ML=TRUE` and `ML=FALSE` for Polychoric.*
+```{r ML RMSE table polyc, echo=FALSE}
+#ml$i <- rep(1:(nrow(ml)/2),each=2)
+#mml <- merge(subset(ml,ML),
+#               subset(ml,!ML, c("i", "est")),
+#               by="i",
+#               suffixes=c(".ml",".nonml"))
+#mml$absd <- abs(mml$est.ml - mml$est.nonml)
+#aggt1_0 <- summaryBy(absd ~ type + n + ML, data=subset(mml, #type=="Polychoric"), FUN=mean, na.rm=TRUE)
+#aggt1_0$ML <- NULL
+
+#aggt1 <- summaryBy(rmse ~ type + n + ML, data=subset(ml, type=="Polychoric"), FUN=mean, na.rm=TRUE)
+
+#aggt1$rmse.mean <- sqrt(aggt1$rmse.mean)
+mg <- merge(subset(aggt1, ML==TRUE, c("type", "n", "rmse.mean")),
+            subset(aggt1, ML==FALSE, c("type", "n", "rmse.mean")),
+            by=c("type", "n"))
+mg$rmse.mean.diff <- mg$rmse.mean.x - mg$rmse.mean.y
+mg <- merge(mg, aggt1_0, by=c("type", "n"))
+colnames(mg) <- c("Correlation type", "n", "RMSE ML=TRUE", "RMSE ML=FALSE", "RMSE difference", "RMAD")
+mg[,3:6] <- round(mg[,3:5],4)
+kable(mg)
+mg1 <- mg
+#knitr::asis_output("\\")
+```
+
+\ 
+
+**`r table_nums("Polyserial", display="cite")`.** *Relative Mean Absolute Deviation between `ML=TRUE` and `ML=FALSE` for Polyserial.*
+```{r ML RMSE table polys, echo=FALSE}
+#aggt2_0 <- summaryBy(absd ~ type + n + ML, data=subset(mml, type=="Polyserial"), FUN=mean, na.rm=TRUE)
+#aggt2_0$ML <- NULL
+
+#aggt2 <- summaryBy(rmse ~ type + n + ML, data=subset(ml, type=="Polyserial"), FUN=mean, na.rm=TRUE)
+#aggt2$rmse.mean <- sqrt(aggt2$rmse.mean)
+
+
+mg <- merge(subset(aggt2, ML==TRUE, c("n", "type", "rmse.mean")),
+            subset(aggt2, ML==FALSE, c("type", "n", "rmse.mean")),
+            by=c("type", "n"))
+mg$rmse.mean.diff <- mg$rmse.mean.x - mg$rmse.mean.y
+mg <- merge(mg, aggt2_0, by=c("type", "n"))
+colnames(mg) <- c("Correlation type", "n", "RMSE ML=TRUE", "RMSE ML=FALSE", "RMSE difference", "RMAD")
+mg[,3:6] <- round(mg[,3:5],4)
+kable(mg)
+mg2 <- mg
+```
+
+For the Polychoric, the agreement between these two methods, in terms of MSE is within `r round(mg1[1,5],3)` for $n$ of 10 and decreases to within less than `r formatC(round(mg1[2,5],4), format="f", digits=4)` for $n$ of 100 or more. Given the magnitude of these differences the faster method will be preferable.
+
+The final column in the above tables shows the RMAD which compares how similar the `ML=TRUE` and `ML=FALSE` results are to each other. Because these values are larger than 0, they indicate that there is not complete agreement between the two sets of estimates. If a user considers the MLE to be the correct estimate then they show the deviation of the `ML=FALSE` results from the correct results. 
+
+# fast switch
+
+This section examines the agreement between the pure R implementation of the function that calculates the correlation and the `Rcpp` and `RcppArmadillo` implementation, which is expected to be faster. The code can compute with either option by setting `fast=FALSE` (pure R) or `fast=TRUE` (Rcpp).
+
+A simulation was done at each level of the Cartesian product of  $\mathtt{fast} \in \{\mathtt{TRUE}, \mathtt{FALSE} \}$, \newline $\rho \in \left( -0.99, -0.95, -0.90, -0.85, ..., 0.95, 0.99 \right)$, and $n \in \{10, 100, 1000\}$. Each iteration was run 100 times. The same values of the variables are used  in the computation for `fast=TRUE` as well as for  `fast=FALSE`; and then the statistics are compared between the two sets of results.
+
+The plot below shows all differences between the `fast=TRUE` and `fast=FALSE runs` for the four types of correlations. Note that differences smaller than $10^{-16}$ are indistinguishable from 0 by the machine. Because of this, all values were shown as being at least  $10^{-16}$ so that they could all be shown on a log scale.  
+
+\ 
+
+**`r fig_nums("fastMAD", display="cite")`.** *Relative Mean Absolute Differences between `fast=TRUE` and `fast=FALSE`.*  
+```{r fast MAD plot, echo=FALSE,fig.width=7, fig.height=3.5}
+xyplot(absdrho.mean ~ rho|type,
+       data=aggfast,
+       groups=n,
+       type=c("l", "g"),
+       ylab="RMAD",
+       scales=list(y=list(log=10, cex=0.7), x=list(cex=0.7)),
+       xlab=expression(rho),
+       auto.key=list(lines=TRUE, points=FALSE, space="right", cex=0.7),
+       par.settings=list(superpose.line=list(lwd=2), plot.line=list(lwd=2))
+       )
+```
+
+The above shows that differences as a result of the `fast` argument are never expected to be larger than $10^{`r fmax10`}$ for any type or correlation type. The Spearman never shows any difference that is different from zero and the Pearson show differences just larger than the smallest observable difference when using double precision floating point values (about $1 \times 10^{-16}$). This indicates that the computation differences are completely irrelevant for these two types.
+
+For the other two types, it is unclear which one is correct and the agreement that is never more distant than  the $10^{`r fmax10`}$ level indicates that any use that requires precision of less than $10^{`r fmax10`}$ can use the `fast=TRUE` argument for faster computation.
+
+# Implications for speed
+
+To show the effect of the `ML` and `fast` switches on computation a simulation was done at each level of the Cartesian product of  $\mathtt{ML} \in \{\mathtt{TRUE}, \mathtt{FALSE} \}$, $\mathtt{fast} \in \{\mathtt{TRUE}, \mathtt{FALSE} \}$, $\rho \in \left( -0.99, -0.95, -0.90, -0.85, ..., 0.95, 0.99 \right)$, and $n \in \{10^1, 10^{1.25}, 10^{1.5}, ..., 10^7\}$. Each iteration is run 80 times when $n<10^5$ and 20 times when $n\geq 10^5$. The same values of the variables are used in the computations at all four combinations of `ML` and `fast`. A variety of correlations are chosen so that the results represent an average of possible values of $\rho$.
+
+The following plot shows the mean computing time (in seconds) versus $n$.  
+
+\ 
+
+**`r fig_nums("speedi", display="cite")`.** *Computation time comparison.*  
+```{r plot speed, echo=FALSE,fig.width=7, fig.height=3.5}
+# speed$class <- ifelse(speed$ML, "ML=T,", "ML=F,")
+# speed$class <- paste0(speed$class, ifelse(speed$fast, "fast=T", "fast=F"))
+# speed$t <- pmax(speed$t, 0.001)
+# agg <- summaryBy(t ~ n + type + class, data=speed, FUN=mean, na.rm=TRUE)
+xyplot(t.mean ~ n|type,
+       data=subset(aggSpeed, type %in% c("Polyserial", "Polychoric")),
+       type=c("l", "g"),
+       ylab="Computing Time",
+       scales=list(y=list(log=10, cex=0.7), x=list(log=10, cex=0.7)),
+       xlab="n",
+       groups=class,
+       auto.key=list(lines=TRUE, points=FALSE, space="right", cex=0.7),
+       par.settings=list(superpose.line=list(lwd=2), plot.line=list(lwd=2))
+       )
+```
+
+In all cases setting the `ML` option to `FALSE` and the `fast` option to `TRUE` speeds up--or does not slow down computation. Users wishing for the fastest computation speeds will use `ML=FALSE` and `fast=TRUE`.
+
+For the Polychoric, when $n$ is a million observations ($n=10^7$), the speed of a correlation when `fast=FALSE` is `r round(with(subset(speed, fast==FALSE & n==1e7 & type=="Polychoric"), mean(t)))` seconds and when the `fast=TRUE` it is and `r round(with(subset(speed, fast==TRUE & n==1e7 & type=="Polychoric"), mean(t)))` seconds. When `fast=TRUE`, setting `ML=FALSE` speeds computation by `r round(with(subset(speed, fast==TRUE & ML==TRUE & n==1e7 & type=="Polychoric"), mean(t)) - with(subset(speed, fast==TRUE & ML==FALSE & n==1e7 & type=="Polychoric"), mean(t)))` seconds.
+
+For the Polyserial, when $n$ is a million observations, the speed of a correlation when `ML=TRUE` is `r round(with(subset(speed, ML==TRUE & n==1e7 & type=="Polyserial"), mean(t)))` seconds and when the `ML=FALSE` it is and `r round(with(subset(speed, ML==FALSE & n==1e7 & type=="Polyserial"), mean(t)))` seconds. When `ML=FALSE`, setting `fast=TRUE` speeds computation by `r round(with(subset(speed, fast==FALSE & ML==FALSE & n==1e7 & type=="Polyserial"), mean(t)) - with(subset(speed, fast==TRUE & ML==FALSE & n==1e7 & type=="Polyserial"), mean(t)))` seconds.
+
+#Conclusion
+Overall the simulations show that the `ML` option is not more accurate but does add computation burden.
+
+The `fast=TRUE` and `fast=FALSE` option are a `Rcpp` version of the correlation code and an `R` version, respectively and agree with each other--the differences are not expected to be larger than $10^{`r fmax10`}$.
+
+Thus users wishing for fastest computation speeds and accurate results can use `ML=FALSE` and `fast=TRUE`.

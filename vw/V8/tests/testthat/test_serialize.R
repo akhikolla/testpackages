@@ -1,0 +1,25 @@
+context("serialize")
+
+test_that("Types can be serialized",{
+  ctx <- V8::v8()
+  expect_equal(ctx$eval('function I(x){return x}'), 'undefined')
+  expect_null(ctx$eval("undefined", TRUE))
+  expect_null(ctx$eval("null", TRUE))
+  expect_equal(ctx$eval("[]", TRUE), "[]")
+  expect_equal(ctx$eval('I({})', TRUE), "{}")
+  expect_equal(ctx$eval("1", TRUE), "1")
+  expect_equal(ctx$eval(1, TRUE), "1")
+  expect_equal(ctx$eval('new Uint8Array([1,2] )', TRUE), as.raw(1:2))
+  expect_equal(ctx$eval('new Uint8Array([1,2] ).buffer', TRUE), as.raw(1:2))
+  expect_error(ctx$eval('doesnotexist', TRUE), 'doesnotexist', class = "std::runtime_error")
+
+  # Similar for call to test unserializing
+  expect_null(ctx$call("I", JS('undefined')))
+  expect_null(ctx$call("I", JS('null')))
+  expect_equal(ctx$call("I", JS("[]")), list())
+  expect_equal(ctx$call("I", JS("{}")), list(x=1)[0])
+  expect_equal(ctx$call("I", JS("1")), 1)
+  expect_equal(ctx$call("I", JS('(new Uint8Array([1,2]))')), as.raw(1:2))
+  expect_equal(ctx$call('I', JS('(new Uint8Array([1,2]).buffer)')), as.raw(1:2))
+  expect_error(ctx$call('I', JS("doesnotexist")), 'doesnotexist', class = "std::runtime_error")
+})

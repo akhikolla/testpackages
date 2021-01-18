@@ -1,0 +1,175 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><title>R: cancer Vaccine phase I design with Simultaneous evaluation of...</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<link rel="stylesheet" type="text/css" href="R.css" />
+</head><body>
+
+<h2>Cancer Vaccine Phase I Design with Simultaneous Evaluation of Immunogenecity and Toxicity</h2>
+
+<h4>Description</h4>
+
+<p>This package contains the functions for implementing the <strong>visit</strong> design for
+Phase I cancer vaccine trials.
+</p>
+
+
+<h4>Background</h4>
+
+<p>Phase I clinical trials are the first step in drug development to apply a new
+drug or drug combination on humans. Typical designs of Phase I trials use
+toxicity as the primary endpoint and aim to find the maximum tolerable
+dosage. However, these designs are generally inapplicable for the development
+of cancer vaccines because the primary objectives of a cancer vaccine Phase I
+trial often include determining whether the vaccine shows biologic activity.
+</p>
+<p>The <strong>visit</strong> design allows dose escalation to simultaneously account
+for immunogenicity and toxicity. It uses lower dose levels as the reference
+for determining if the current dose level is optimal in terms of immune
+response. It also ensures subject safety by capping the toxicity rate with a
+given upper bound. These two criteria are simultaneously evaluated using an
+intuitive decision region that avoids complicated safety and immunogenicity
+trade-off elicitation from physicians.
+</p>
+<p>There are several considerations that are clinically necessary for developing
+the design algorithm. First, we assume that there is a non-decreasing
+relationship that exists between toxicity and dosage, i.e., the toxicity risk
+does not decrease as dose level increases. Second, the immune response rate
+may reach a plateau or even start to decline as the dose level increases.
+</p>
+
+
+<h4>Notation</h4>
+
+<p>For subject \(s\), let \(D_s=l\) (\(l=1,&hellip;,L\)) denote the received
+dose level, \(T_s=1\) if any DLT event is observed from the subject and
+\(0\) otherwise, \(R_s=1\) if immune response is achieved for the subject
+and \(0\) otherwise.
+</p>
+<p>Let \(&theta;^{(l)}_{ij}=P(T=i, R=j|D=l)\) for \(i,j=0,1\),
+\(&theta;^{(l)}=\{&theta;_{ij}^{(l)}:i,j=0,1\}\) and \(&Theta; =
+\{&theta;^{(l)}: l=1,&hellip;,L\}\). Furthermore, for dose level \(l\), let
+\(p^{(l)}=P(T=1|D=l)=&theta;_{10}^{(l)}+&theta;_{11}^{(l)}\) be the DLT risk,
+\(q^{(l)}=P(R=1|D=l)=&theta;_{01}^{(l)}+&theta;_{11}^{(l)}\) be the immune
+response probability, and
+\(r^{(l)}=&theta;_{00}^{(l)}&theta;_{11}^{(l)}/&theta;_{01}^{(l)}&theta;_{10}^{(l)}\)
+be the odds ratio. Let \(n_{ij}^{(l)}\) be the observed number of subjects
+with \(T=i\) and \(R=j\) at dose level \(l\),
+\(n^{(l)}=\{n_{ij}^{(l)}:i,j=0,1\}\) and \(H\) denote all the data
+observed by the time the current analysis is conducted.
+</p>
+
+
+<h4>Dose escalation algorithm</h4>
+
+<p>The dose escalation algorithm is based on the posterior probability
+distribution of \(&pi;(p^{(l)}, q^{(l)}|H)\), where \(p^{(l)}\) and
+\(q^{(l)}\) represent the DLT risk and immune response rate, respectively,
+of the current dose level \(l\), and \(H\) denotes the cumulative data at
+the time of interim analysis.
+</p>
+<p>Let \(p_l\) denote the lower boundary of DLT risk below which the dose is
+considered absolutely safe, \(p_u\) denote the upper boundary of DLT risk
+above which the dose is considered toxic. <strong>visit</strong> implements a sequential
+identification approach based on conditional probabilities derived from
+\(&pi;(p^{(l)}, q^{(l)}|H)\). Let \(C_1, C_2, C_3\) be fixed cut-off
+values in \([0,1]\). The steps are as follows:
+</p>
+
+<dl>
+<dt>Step 1.</dt><dd><p>If \(Prob(p^{(l)} &gt; p_U|H) &gt; C_1\), then the current dose level is
+considered to be <strong>too toxic</strong>. The trial should be stopped and the next lower
+dose level should be reported as the recommended dose.</p>
+</dd>
+<dt>Step 2.</dt><dd><p>\(Prob(q^{(l)} &le;q q_L| p^{(l)} &le;q p_U, H) &gt; C_2\), then the
+current dose level is considered to be <strong>no more effective than its lower dose</strong>
+levels. The trial should be stopped and the next lower dose level should be
+reported as the recommended dose.</p>
+</dd>
+<dt>Step 3.</dt><dd><p>If \(Prob(p^{(l)} &le;q p_L| p^{(l)} &le;q p_U, q^{(l)} &gt;
+q_L, H) &gt; C_3\), then the current dose level is considered to be <strong>safe and
+effective</strong>. The trial will escalate to dose level \(l+1\).</p>
+</dd>
+<dt>Step 4.</dt><dd><p>The current dose level is considered to be <strong>uncertain</strong>. The
+trial should continue to treat more patients at dose level \(l\).</p>
+</dd>
+</dl>
+
+<p>The values of should be chosen \(C_1, C_2, C_3\) prior to study initiation
+and reflect the considerations of the investigators and patients. These
+thresholds should also give reasonable overall study operating
+characteristics.
+</p>
+<p>We can see that, based on the posterior distribution of \(&pi;(p^{(l)},
+q^{(l)}|H)\), the currently dose level is in one of the four regions:
+<strong>1: too toxic</strong>, <strong>2: no more effective than its lower dose</strong>,
+<strong>3: safe and effective</strong>, and <strong>4: uncertain</strong>. These regions are termed
+as a Decision Map.
+</p>
+
+
+<h4>Probability models</h4>
+
+<p><strong>visit</strong> provides several options for the probability models that can
+be considered for Bayesian inference. The models are non-decreasing with
+respect to the dose-toxicity relationship and avoid monotonic assumptions for
+the dose-immune response curve.
+</p>
+
+
+<h3>Non-parametric model</h3>
+
+<p>As one of the simplest models, we posit
+no assumptions on the dose-toxicity or dose-immune response relationships and
+assume the outcome data \(n_{00}, n_{01}, n_{10}, n_{11}\) follow a
+multinomial distribution.
+</p>
+
+
+
+<h3>Non-parametric+ model</h3>
+
+<p>This is the simplified
+<strong>non-parametric</strong> model with the odds ratios \(r=1\). </p>
+
+
+
+<h3>Partially parametric model</h3>
+
+<p>Compared to non-parametric models, a
+parametric model may allow the incorporation of dose-toxicity, dose-efficacy,
+and toxicity-efficacy relationships in dose escalation. In the context of
+evaluating cancer vaccines, however, it is difficult to posit assumptions on
+the dose-efficacy relationship, since the immune response rate may even
+decrease as the dose level increases. On the other hand, it remains
+reasonable to assume that the dose-toxicity curve is non-decreasing.
+Therefore, we propose a partially parametric model that only makes
+assumptions about dose-toxicities but leaves the dose-immune response
+relationship unspecified.
+</p>
+<p>Specifically, we construct the dose-toxicity model as: </p>
+<p style="text-align: center;">\( \log p^{(l)}=
+e^&alpha; \log &tau;^{(l)}. \)</p>
+<p> The \(&tau;^{(l)}\)'s are deterministic design
+parameters reflecting the expectation of the DLT risk at dose level \(l\)
+with \(&tau;^{(l)} &gt; &tau;^{(l')}\) for \(l&gt; l'\).
+</p>
+<p>For the immune response and the odds ratio, we assume \(q^{(l)}\) and
+\(r^{(l)}\) at different dose levels are independent a priori.
+</p>
+
+
+
+<h3>Partially parametric+ model</h3>
+
+<p>This is the simplified
+<strong>partially parametric</strong> model with the odds ratios \(r=1\).</p>
+
+
+
+<h4>References</h4>
+
+<p>Wang, C., Rosner, G. L., &amp; Roden, R. B. (2019). A Bayesian design for phase I cancer
+therapeutic vaccine trials. Statistics in medicine, 38(7), 1170-1189.
+</p>
+
+
+</body></html>

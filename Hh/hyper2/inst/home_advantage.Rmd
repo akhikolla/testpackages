@@ -1,0 +1,155 @@
+---
+title: "Quantifying the home ground advantage"
+author: "Robin K. S. Hankin"
+date: "`r Sys.Date()`"
+vignette: >
+  %\VignetteIndexEntry{home_ground_advantage}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+Here I analyse a small synthetic dataset for home ground advantage.
+
+
+First load the package:
+```{r}
+library(hyper2)
+```
+
+
+Now generate the dataset:
+
+
+```{r}
+home_games_won <- matrix(c(
+    NA, 16, 12, 11,
+    19, NA, 19, 16,
+    17, 12, NA, 11,
+    11, 12, 12, NA),
+    nrow=4,ncol=4,byrow=TRUE)
+
+away_games_won <- matrix(c(
+    NA, 05, 02, 02,
+    02, NA, 10, 02,
+    00, 04, NA, 07,
+    02, 06, 04, NA),
+    nrow=4,ncol=4,byrow=TRUE)
+
+teams <- LETTERS[1:4]
+rownames(home_games_won) <- teams
+colnames(home_games_won) <- teams
+rownames(away_games_won) <- teams
+colnames(away_games_won) <- teams
+
+home_games_won
+away_games_won
+```
+
+Thus ```home_games_won[1,2] == 16``` means A played at home against B
+and won 16 times; ```home_games_won[2,1] == 19``` means B played at
+home against A and won 19 times.  Also, ```away_games_won[1,2] == 5```
+means A played away against B and won 5 times, and
+```away_games_won[2,1] == 2``` means B played away against A and won 2
+times.  Alternatively, A played B 16+19+5+2=45 times; A played at home
+16+2=18 times and won 16 times and lost 2 times; and B played at home
+19+5=24 times and won 19 times and lost 5 times.
+
+We will create a hyper2 object with the teams and home ground advantage term:
+
+```{r}
+H <- hyper2(pnames=c(teams,"home"))
+```
+
+
+First include the home games won:
+
+```{r}
+for(i in seq_len(nrow(home_games_won))){
+  for(j in seq_len(ncol(home_games_won))){
+    if(i != j){  # diagonal means a team plays itself, meaningless
+      game_winner <- teams[i]
+      game_loser  <- teams[j]
+      no_of_matches <- home_games_won[i,j] # won with home strength helping
+      H[c(game_winner,           "home")] %<>% inc(no_of_matches)  # won with home strength helping
+      H[c(game_winner,game_loser,"home")] %<>% dec(no_of_matches)
+    }
+  }
+}
+```
+
+Now away games won:
+
+```{r}
+for(i in seq_len(nrow(away_games_won))){
+  for(j in seq_len(ncol(away_games_won))){
+    if(i != j){
+      game_winner <- teams[i]
+      game_loser  <- teams[j]
+      no_of_matches <- away_games_won[i,j] # won without the benefit of home strength
+      H[c(game_winner                  )] %<>% inc(no_of_matches)  # won without home ground helping...
+      H[c(game_winner,game_loser,"home")] %<>% dec(no_of_matches)  # home strength nevertheless on denominator
+    }
+  }
+}
+```
+
+Thus
+
+```{r}
+H
+```
+
+Visually:
+
+
+```{r}
+dotchart(maxp(H))
+```
+  
+Now a likelihood ratio for the hypothesis that home strength (or home
+advantage) is zero.  First define a function ```f()``` that maximises
+the likelihood subject to the home strength being *less than* its
+argument:
+
+
+```{r}
+small <- 1e-4
+f <- function(home){
+  maxp(H,startp=rep((1-small)/4,4),give=TRUE,fcm=t(rep(1,4)),fcv=1-home)$value
+}
+```
+
+See how the ```fcm``` and ```fcv``` constraints make the sum of
+a,b,c,d, greater than ```1-home```.  Thus 'home' [which is the fillup
+value, $p_\mathrm<{home}=1-(p_A+p_B+p_C+p_D)$] is constrained to be
+less than argument ```home```.  Using this function, the likelihood
+ratio test is straightforward:
+
+```{r}
+Lambda <- -2*(f(2e-4)-maxp(H,give=TRUE)$value)
+Lambda
+```
+
+Under the null, Wilks's theorem gives us that Lambda is distributed as
+a chi-square with 1 degree of freedom (clearly rejected).  However, it
+is always interesting to plot likelihood functions.  To plot a profile
+likelihood we can constrain the home to be greater than a particular
+value:
+
+```{r}
+g <- function(home){
+  maxp(H,startp=rep(small/4,4),give=TRUE,fcm=-t(rep(1,4)),fcv=home-1)$value
+}
+```
+
+
+```{r}
+home_strength <- seq(from=0.2,to=0.6,length=30)
+support <- pmin(sapply(home_strength,f),sapply(home_strength,g))
+plot(home_strength,support-max(support),
+     xlab="home strength",ylab="support",main="profile likelihood for home advantage")
+abline(h=c(0,-2))
+```
+
+The figure give a support interval between about 0.3 and 0.5 for home
+ground advantage.

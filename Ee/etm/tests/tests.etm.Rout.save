@@ -1,0 +1,637 @@
+
+R version 3.6.3 (2020-02-29) -- "Holding the Windsock"
+Copyright (C) 2020 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> require(etm)
+> 
+> ## Print with a bit less precision to avoid lots of notes in the comparison
+> old <- options(digits = 4)
+> 
+> ### Simple test
+> 
+> time <- id <- 1:10
+> from <- rep(0, 10)
+> to <- rep(1, 10)
+> 
+> data1 <- data.frame(id, from, to, time)
+> tra1 <- matrix(FALSE, 2, 2)
+> tra1[1, 2] <- TRUE
+> 
+> etm1 <- etm(data1, c("0", "1"), tra1, NULL, 0)
+> 
+> all.equal(as.vector(trprob(etm1, "0 0")), cumprod((10:1 - 1) / (10:1)))
+[1] TRUE
+> 
+> etm1$cov["0 0", "0 0", ]
+    1     2     3     4     5     6     7     8     9    10 
+0.009 0.016 0.021 0.024 0.025 0.024 0.021 0.016 0.009 0.000 
+> 
+> all.equal(etm1$cov["0 0", "0 0",], trcov(etm1, "0 0"))
+[1] TRUE
+> 
+> ### A simple test from AHR's author, where the first time is censored
+> if (!require(survival)) {
++     stop("This test requires the survival package")
++ }
+> 
+> data <- data.frame(id=1:10, time=1:10, from=0, to=1, status=TRUE)
+> 
+> tra <- matrix(FALSE, nrow=2, ncol=2)
+> tra[1, 2] <- TRUE
+> 
+> data$to[1] <- "cens"
+> data$status[1] <- FALSE
+> 
+> fit.km <- survfit(Surv(time, status) ~ 1, data=data)
+> fit.etm <- etm(data, c("0","1"), tra, "cens", s=0, t="last", covariance=FALSE)
+> 
+> all.equal(fit.km$surv[data$status], fit.etm$est[1,1,], check.attributes = FALSE)
+[1] TRUE
+> 
+> data$to[2] <- "cens"
+> data$status[2] <- FALSE
+> 
+> fit.km <- survfit(Surv(time, status) ~ 1, data=data)
+> fit.etm <- etm(data, c("0","1"), tra, "cens", s=0, t="last", covariance=FALSE)
+> 
+> all.equal(fit.km$surv[data$status], fit.etm$est[1,1,], check.attributes = FALSE)
+[1] TRUE
+> 
+> ### a bit more complicated
+> 
+> time <- id <- 1:10
+> from <- rep(0, 10)
+> to <- rep(c(1, 2), 5)
+> data2 <- data.frame(id, from, to, time)
+> 
+> tra2 <- matrix(FALSE, 3, 3)
+> tra2[1, 2:3] <- TRUE
+> 
+> etm2 <- etm(data2, c("0", "1", "2"), tra2, NULL, 0)
+> 
+> aa <- table(time, to)
+> 
+> cif1 <- cumsum(aa[, 1] / 10)
+> cif2 <- cumsum(aa[, 2] / 10)
+> surv <- cumprod((10:1 - 1) / (10:1))
+> 
+> all.equal(trprob(etm2, "0 1"), cif1)
+[1] TRUE
+> all.equal(trprob(etm2, "0 2"), cif2)
+[1] TRUE
+> all.equal(as.vector(trprob(etm2, "0 0")), surv)
+[1] TRUE
+> 
+> ## a test on id
+> data2$id <- letters[1:10]
+> 
+> etm3 <- etm(data2, c("0", "1", "2"), tra2, NULL, 0)
+> 
+> all.equal(trprob(etm2, "0 1"), trprob(etm3, "0 1"))
+[1] TRUE
+> all.equal(trprob(etm2, "0 2"), trprob(etm3, "0 2"))
+[1] TRUE
+> all.equal(trprob(etm2, "0 0"), trprob(etm3, "0 0"))
+[1] TRUE
+> 
+> 
+> ### Test on sir.cont
+> 
+> data(sir.cont)
+> 
+> ## Modification for patients entering and leaving a state
+> ## at the same date
+> ## Change on ventilation status is considered
+> ## to happen before end of hospital stay
+> sir.cont <- sir.cont[order(sir.cont$id, sir.cont$time), ]
+> for (i in 2:nrow(sir.cont)) {
++     if (sir.cont$id[i]==sir.cont$id[i-1]) {
++         if (sir.cont$time[i]==sir.cont$time[i-1]) {
++             sir.cont$time[i-1] <- sir.cont$time[i-1] - 0.5
++         }
++     }
++ }
+> 
+> ### Computation of the transition probabilities
+> ## Possible transitions.
+> tra <- matrix(ncol=3,nrow=3,FALSE)
+> tra[1, 2:3] <- TRUE
+> tra[2, c(1, 3)] <- TRUE
+> 
+> ## etm
+> prob.sir <- etm(sir.cont, c("0", "1", "2"), tra, "cens", 1)
+> 
+> prob.sir
+Multistate model with 2 transient state(s)
+ and 1 absorbing state(s)
+
+Possible transitions:
+ from to
+    0  1
+    0  2
+    1  0
+    1  2
+
+Estimate of P(1, 183)
+  0 1 2
+0 0 0 1
+1 0 0 1
+2 0 0 1
+
+> 
+> summ.sir <- summary(prob.sir)
+> all.equal(summ.sir[['0 1']]$P, as.vector(trprob(prob.sir, "0 1")))
+[1] TRUE
+> subset(summ.sir[[3]],time<183) # issue with precision on different architectures
+          P  time       var   lower  upper n.risk n.event
+1.5  0.0000   1.5 0.000e+00 0.00000 0.0000    394       0
+2    0.1187   2.0 2.641e-04 0.08683 0.1505    396      47
+2.5  0.1187   2.5 2.641e-04 0.08683 0.1505    364       0
+3    0.2454   3.0 4.465e-04 0.20398 0.2868    365      54
+3.5  0.2454   3.5 4.465e-04 0.20398 0.2868    328       0
+4    0.3806   4.0 5.416e-04 0.33501 0.4262    331      62
+4.5  0.3806   4.5 5.416e-04 0.33501 0.4262    280       0
+5    0.4792   5.0 5.480e-04 0.43333 0.5251    283      48
+5.5  0.4792   5.5 5.480e-04 0.43333 0.5251    248       0
+6    0.5693   6.0 5.141e-04 0.52482 0.6137    249      47
+7    0.6350   7.0 4.665e-04 0.59266 0.6773    212      36
+8    0.6795   8.0 4.202e-04 0.63931 0.7197    195      27
+8.5  0.6795   8.5 4.202e-04 0.63931 0.7197    172       0
+9    0.7325   9.0 3.580e-04 0.69541 0.7696    173      34
+10   0.7647  10.0 3.141e-04 0.72992 0.7994    148      21
+10.5 0.7647  10.5 3.141e-04 0.72992 0.7994    135       0
+11   0.7895  11.0 2.790e-04 0.75674 0.8222    136      18
+12   0.8138  12.0 2.420e-04 0.78330 0.8443    129      18
+12.5 0.8138  12.5 2.420e-04 0.78330 0.8443    117       0
+13   0.8294  13.0 2.182e-04 0.80045 0.8584    118      13
+14   0.8452  14.0 1.938e-04 0.81789 0.8725    115      14
+15   0.8625  15.0 1.670e-04 0.83714 0.8878    106      15
+16   0.8723  16.0 1.522e-04 0.84807 0.8964     93       9
+17   0.8852  17.0 1.330e-04 0.86256 0.9078     86      12
+17.5 0.8852  17.5 1.330e-04 0.86256 0.9078     77       0
+18   0.8960  18.0 1.168e-04 0.87484 0.9172     76       9
+19   0.9029  19.0 1.070e-04 0.88261 0.9232     71       7
+20   0.9125  20.0 9.367e-05 0.89356 0.9315     64      10
+21   0.9161  21.0 8.878e-05 0.89768 0.9346     57       4
+22   0.9226  22.0 7.996e-05 0.90504 0.9401     55       6
+23   0.9261  23.0 7.537e-05 0.90904 0.9431     51       4
+23.5 0.9261  23.5 7.537e-05 0.90904 0.9431     49       0
+24   0.9354  24.0 6.292e-05 0.91982 0.9509     50       9
+25   0.9385  25.0 5.878e-05 0.92352 0.9536     42       3
+26   0.9429  26.0 5.326e-05 0.92863 0.9572     39       5
+27   0.9477  27.0 4.749e-05 0.93417 0.9612     35       6
+27.5 0.9477  27.5 4.749e-05 0.93417 0.9612     29       0
+28   0.9531  28.0 4.093e-05 0.94059 0.9657     30       5
+29   0.9567  29.0 3.668e-05 0.94485 0.9686     31       4
+30   0.9592  30.0 3.384e-05 0.94779 0.9706     28       3
+30.5 0.9592  30.5 3.384e-05 0.94779 0.9706     29       0
+31   0.9642  31.0 2.821e-05 0.95383 0.9746     30       6
+32   0.9649  32.0 2.752e-05 0.95458 0.9751     25       1
+33   0.9669  33.0 2.533e-05 0.95708 0.9768     24       2
+34   0.9685  34.0 2.368e-05 0.95900 0.9781     26       2
+35   0.9697  35.0 2.252e-05 0.96036 0.9790     28       2
+36   0.9702  36.0 2.194e-05 0.96104 0.9794     26       1
+37   0.9718  37.0 2.043e-05 0.96290 0.9806     26       2
+38   0.9739  38.0 1.831e-05 0.96555 0.9823     25       4
+38.5 0.9739  38.5 1.831e-05 0.96555 0.9823     21       0
+39   0.9760  39.0 1.643e-05 0.96802 0.9839     23       3
+40   0.9769  40.0 1.558e-05 0.96918 0.9847     19       1
+41   0.9774  41.0 1.512e-05 0.96981 0.9851     22       1
+42   0.9779  42.0 1.476e-05 0.97032 0.9854     22       0
+43   0.9798  43.0 1.308e-05 0.97271 0.9869     22       3
+44   0.9803  44.0 1.265e-05 0.97333 0.9873     21       1
+45   0.9817  45.0 1.157e-05 0.97499 0.9883     19       1
+46   0.9822  46.0 1.116e-05 0.97561 0.9887     17       1
+47   0.9831  47.0 1.037e-05 0.97683 0.9895     18       2
+48   0.9836  48.0 9.987e-06 0.97743 0.9898     17       1
+49   0.9841  49.0 9.669e-06 0.97796 0.9901     17       0
+50   0.9845  50.0 9.297e-06 0.97856 0.9905     17       1
+50.5 0.9845  50.5 9.297e-06 0.97856 0.9905     16       0
+51   0.9860  51.0 8.214e-06 0.98037 0.9916     17       3
+52   0.9870  52.0 7.513e-06 0.98159 0.9923     14       2
+53   0.9879  53.0 6.875e-06 0.98276 0.9930     12       1
+54   0.9889  54.0 6.214e-06 0.98397 0.9937     12       2
+55   0.9903  55.0 5.254e-06 0.98581 0.9948     10       3
+56   0.9913  56.0 4.667e-06 0.98703 0.9955      6       1
+57   0.9917  57.0 4.364e-06 0.98765 0.9958      5       1
+58   0.9922  58.0 4.064e-06 0.98828 0.9962      4       1
+59   0.9927  59.0 3.769e-06 0.98891 0.9965      3       1
+60   0.9932  60.0 3.488e-06 0.98953 0.9969      3       1
+62   0.9937  62.0 3.230e-06 0.99016 0.9972      2       0
+63   0.9942  63.0 2.956e-06 0.99079 0.9975      2       1
+68   0.9942  68.0 2.956e-06 0.99079 0.9975      1       0
+70   0.9946  70.0 2.694e-06 0.99143 0.9979      2       1
+78   0.9951  78.0 2.442e-06 0.99207 0.9982      1       0
+80   0.9951  80.0 2.442e-06 0.99207 0.9982      1       0
+85   0.9966  85.0 1.695e-06 0.99404 0.9991      2       0
+89   0.9966  89.0 1.695e-06 0.99404 0.9991      2       0
+90   0.9966  90.0 1.695e-06 0.99404 0.9991      1       0
+95   0.9971  95.0 1.448e-06 0.99472 0.9994      2       0
+100  0.9976 100.0 1.203e-06 0.99542 0.9997      3       0
+101  0.9981 101.0 9.592e-07 0.99613 1.0000      3       1
+108  0.9985 108.0 7.169e-07 0.99688 1.0000      2       1
+113  0.9990 113.0 4.764e-07 0.99767 1.0000      1       0
+116  0.9990 116.0 4.764e-07 0.99767 1.0000      1       0
+124  0.9990 124.0 4.764e-07 0.99767 1.0000      2       0
+164  0.9990 164.0 4.764e-07 0.99767 1.0000      0       0
+> 
+> ## gonna play a bit with the state names
+> dd <- sir.cont
+> dd$from <- ifelse(dd$from == 0, "initial state", "ventilation")
+> dd$to <- as.character(dd$to)
+> for (i in seq_len(nrow(dd))) {
++     dd$to[i] <- switch(dd$to[i],
++                     "0" = "initial state",
++                     "1" = "ventilation",
++                     "2" = "end of story",
++                     "cens" = "cens"
++                     )
++ }
+> 
+> test <- etm(dd, c("initial state", "ventilation", "end of story"), tra, "cens", 1)
+> 
+> all.equal(test$est["initial state", "initial state", ],
++           prob.sir$est["0", "0", ])
+[1] TRUE
+> all.equal(trprob(test, "initial state initial state"), trprob(prob.sir, "0 0"))
+[1] TRUE
+> all.equal(trprob(test, "initial state ventilation"), trprob(prob.sir, "0 1"))
+[1] TRUE
+> all.equal(trprob(test, "initial state end of story"), trprob(prob.sir, "0 2"))
+[1] TRUE
+> 
+> all.equal(trcov(test, "initial state end of story"), trcov(prob.sir, "0 2"))
+[1] TRUE
+> 
+> aa <- summary(test)
+> all.equal(summ.sir[[6]], aa[[6]])
+[1] TRUE
+> all.equal(summ.sir[[4]], aa[[4]])
+[1] TRUE
+> 
+> ### Test on abortion data
+> 
+> data(abortion)
+> 
+> from <- rep(0, nrow(abortion))
+> to <- abortion$cause
+> entry <- abortion$entry
+> exit <- abortion$exit
+> id <- 1:nrow(abortion)
+> data <- data.frame(id, from, to, entry, exit, group = abortion$group)
+> 
+> ## Computation of the CIFs
+> tra <- matrix(FALSE, 4, 4)
+> tra[1, 2:4] <- TRUE
+> 
+> cif.control <- etm(data[data$group == 0, ], c("0", "1", "2", "3"),
++                         tra, NULL, 0)
+> cif.exposed <- etm(data[data$group == 1, ], c("0", "1", "2", "3"),
++                         tra, NULL, 0)
+> 
+> all.equal(trprob(cif.control, "0 1"), cif.control$est["0", "1", ])
+[1] TRUE
+> all.equal(trcov(cif.control, c("0 1", "0 2")), cif.control$cov["0 1", "0 2", ])
+[1] TRUE
+> 
+> trprob(cif.control, "0 1")
+       6        7        8        9       10       11       12       13 
+0.000000 0.007401 0.014881 0.026509 0.033208 0.037694 0.037694 0.038955 
+      14       17       19       21       24       25       26       30 
+0.040159 0.040159 0.040159 0.040159 0.040159 0.040159 0.040159 0.040159 
+      31       32       33       34       35       36       37       38 
+0.040159 0.040159 0.040159 0.040159 0.040159 0.040159 0.040159 0.040159 
+      39       40       41       42       43 
+0.040159 0.040159 0.040159 0.040159 0.040159 
+> trprob(cif.control, "0 2")
+       6        7        8        9       10       11       12       13 
+0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 
+      14       17       19       21       24       25       26       30 
+0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.003657 
+      31       32       33       34       35       36       37       38 
+0.006371 0.008175 0.013543 0.023317 0.031260 0.053197 0.084529 0.179163 
+      39       40       41       42       43 
+0.322016 0.563121 0.742227 0.793893 0.799059 
+> trprob(cif.control, "0 0")
+       6        7        8        9       10       11       12       13 
+0.965812 0.932508 0.887628 0.862433 0.838989 0.822538 0.813099 0.810578 
+      14       17       19       21       24       25       26       30 
+0.806964 0.805874 0.803810 0.802804 0.801837 0.800883 0.799937 0.796280 
+      31       32       33       34       35       36       37       38 
+0.793565 0.791762 0.786394 0.776620 0.768677 0.745862 0.714531 0.619897 
+      39       40       41       42       43 
+0.477043 0.235938 0.056832 0.005167 0.000000 
+> 
+> trcov(cif.control, "0 1")
+        6         7         8         9        10        11        12        13 
+0.000e+00 2.719e-05 4.533e-05 6.665e-05 7.698e-05 8.304e-05 8.304e-05 8.444e-05 
+       14        17        19        21        24        25        26        30 
+8.571e-05 8.571e-05 8.571e-05 8.571e-05 8.571e-05 8.571e-05 8.571e-05 8.571e-05 
+       31        32        33        34        35        36        37        38 
+8.571e-05 8.571e-05 8.571e-05 8.571e-05 8.571e-05 8.571e-05 8.571e-05 8.571e-05 
+       39        40        41        42        43 
+8.571e-05 8.571e-05 8.571e-05 8.571e-05 8.571e-05 
+> trcov(cif.control, "0 2")
+        6         7         8         9        10        11        12        13 
+0.000e+00 0.000e+00 0.000e+00 0.000e+00 0.000e+00 0.000e+00 0.000e+00 0.000e+00 
+       14        17        19        21        24        25        26        30 
+0.000e+00 0.000e+00 0.000e+00 0.000e+00 0.000e+00 0.000e+00 0.000e+00 3.338e-06 
+       31        32        33        34        35        36        37        38 
+5.784e-06 7.401e-06 1.216e-05 2.072e-05 2.758e-05 4.619e-05 7.202e-05 1.461e-04 
+       39        40        41        42        43 
+2.470e-04 3.880e-04 4.702e-04 4.903e-04 4.922e-04 
+> trcov(cif.control, "0 0")
+        6         7         8         9        10        11        12        13 
+2.822e-04 3.821e-04 4.527e-04 4.748e-04 4.875e-04 4.927e-04 4.941e-04 4.942e-04 
+       14        17        19        21        24        25        26        30 
+4.941e-04 4.940e-04 4.936e-04 4.933e-04 4.931e-04 4.928e-04 4.926e-04 4.914e-04 
+       31        32        33        34        35        36        37        38 
+4.905e-04 4.899e-04 4.880e-04 4.846e-04 4.816e-04 4.729e-04 4.601e-04 4.176e-04 
+       39        40        41        42        43 
+3.425e-04 1.865e-04 4.797e-05 4.441e-06 0.000e+00 
+> 
+> aa <- summary(cif.control)
+> aa$"0 1"
+          P time       var    lower   upper n.risk n.event
+6  0.000000    6 0.000e+00 0.000000 0.00000    117       0
+7  0.007401    7 2.719e-05 0.000000 0.01762    261       2
+8  0.014881    8 4.533e-05 0.001685 0.02808    374       3
+9  0.026509    9 6.665e-05 0.010508 0.04251    458       6
+10 0.033208   10 7.698e-05 0.016011 0.05040    515       4
+11 0.037694   11 8.304e-05 0.019834 0.05555    561       3
+12 0.037694   12 8.304e-05 0.019834 0.05555    610       0
+13 0.038955   13 8.444e-05 0.020944 0.05697    645       1
+14 0.040159   14 8.571e-05 0.022014 0.05830    673       1
+17 0.040159   17 8.571e-05 0.022014 0.05830    740       0
+19 0.040159   19 8.571e-05 0.022014 0.05830    781       0
+21 0.040159   21 8.571e-05 0.022014 0.05830    799       0
+24 0.040159   24 8.571e-05 0.022014 0.05830    830       0
+25 0.040159   25 8.571e-05 0.022014 0.05830    841       0
+26 0.040159   26 8.571e-05 0.022014 0.05830    846       0
+30 0.040159   30 8.571e-05 0.022014 0.05830    875       0
+31 0.040159   31 8.571e-05 0.022014 0.05830    880       0
+32 0.040159   32 8.571e-05 0.022014 0.05830    880       0
+33 0.040159   33 8.571e-05 0.022014 0.05830    885       0
+34 0.040159   34 8.571e-05 0.022014 0.05830    885       0
+35 0.040159   35 8.571e-05 0.022014 0.05830    880       0
+36 0.040159   36 8.571e-05 0.022014 0.05830    876       0
+37 0.040159   37 8.571e-05 0.022014 0.05830    857       0
+38 0.040159   38 8.571e-05 0.022014 0.05830    823       0
+39 0.040159   39 8.571e-05 0.022014 0.05830    716       0
+40 0.040159   40 8.571e-05 0.022014 0.05830    554       0
+41 0.040159   41 8.571e-05 0.022014 0.05830    274       0
+42 0.040159   42 8.571e-05 0.022014 0.05830     66       0
+43 0.040159   43 8.571e-05 0.022014 0.05830      6       0
+> all.equal(aa$"0 1"$P, as.vector(trprob(cif.control, "0 1")))
+[1] TRUE
+> 
+> ### test on los data
+> 
+> data(los.data) # in package changeLOS
+> 
+> ## putting los.data in the long format (see changeLOS)
+> my.observ <- prepare.los.data(x=los.data)
+> 
+> tra <- matrix(FALSE, 4, 4)
+> tra[1, 2:4] <- TRUE
+> tra[2, 3:4] <- TRUE
+> 
+> tr.prob <- etm(my.observ, c("0","1","2","3"), tra, NULL, 0)
+> 
+> tr.prob
+Multistate model with 2 transient state(s)
+ and 2 absorbing state(s)
+
+Possible transitions:
+ from to
+    0  1
+    0  2
+    0  3
+    1  2
+    1  3
+
+Estimate of P(0, 82)
+  0 1      2      3
+0 0 0 0.7474 0.2526
+1 0 0 0.7073 0.2927
+2 0 0 1.0000 0.0000
+3 0 0 0.0000 1.0000
+
+> summary(tr.prob)
+Transition 0 0 
+        P time       var     lower    upper n.risk n.event
+ 0.882275    3 1.374e-04 0.8593018 0.905248    756       0
+ 0.112434   15 1.320e-04 0.0899155 0.134952     90       0
+ 0.031746   27 4.066e-05 0.0192484 0.044244     26       0
+ 0.006614   41 8.690e-06 0.0008359 0.012392      5       0
+ 0.002646   61 3.490e-06 0.0000000 0.006307      3       0
+ 0.000000   82 0.000e+00 0.0000000 0.000000      1       0
+
+Transition 0 1 
+        P time       var     lower   upper n.risk n.event
+ 0.017196    3 2.235e-05 0.0079289 0.02646    756      13
+ 0.063492   15 7.865e-05 0.0461099 0.08087     90       0
+ 0.030423   27 3.902e-05 0.0181805 0.04267     26       1
+ 0.015873   41 2.066e-05 0.0069637 0.02478      5       0
+ 0.005291   61 6.962e-06 0.0001197 0.01046      3       0
+ 0.000000   82 0.000e+00 0.0000000 0.00000      1       0
+
+Transition 0 2 
+       P time       var   lower  upper n.risk n.event
+ 0.08466    3 0.0001025 0.06481 0.1045    756      64
+ 0.62302   15 0.0003107 0.58847 0.6576     90       4
+ 0.69841   27 0.0002786 0.66570 0.7311     26       1
+ 0.72751   41 0.0002622 0.69578 0.7593      5       0
+ 0.74074   61 0.0002540 0.70950 0.7720      3       1
+ 0.74735   82 0.0002498 0.71638 0.7783      1       1
+
+Transition 0 3 
+       P time       var    lower   upper n.risk n.event
+ 0.01587    3 2.066e-05 0.006964 0.02478    756      12
+ 0.20106   15 2.125e-04 0.172489 0.22963     90       1
+ 0.23942   27 2.409e-04 0.208999 0.26984     26       0
+ 0.25000   41 2.480e-04 0.219133 0.28087      5       0
+ 0.25132   61 2.489e-04 0.220402 0.28224      3       0
+ 0.25265   82 2.498e-04 0.221671 0.28362      1       0
+
+Transition 1 1 
+       P time       var   lower   upper n.risk n.event
+ 1.00000    3 0.000e+00 1.00000 1.00000      0       0
+ 0.38661   15 2.358e-03 0.29143 0.48179     51       0
+ 0.12119   27 7.842e-04 0.06630 0.17607     23       0
+ 0.04593   41 2.405e-04 0.01554 0.07633     14       0
+ 0.01531   61 6.579e-05 0.00000 0.03121      4       0
+ 0.00000   82 0.000e+00 0.00000 0.00000      0       0
+
+Transition 1 2 
+      P time      var  lower  upper n.risk n.event
+ 0.0000    3 0.000000 0.0000 0.0000      0       0
+ 0.4107   15 0.002590 0.3110 0.5104     51       2
+ 0.6082   27 0.002254 0.5151 0.7012     23       1
+ 0.6652   41 0.002064 0.5761 0.7542     14       2
+ 0.6920   61 0.002000 0.6043 0.7796      4       0
+ 0.7073   82 0.001984 0.6200 0.7946      0       0
+
+Transition 1 3 
+      P time      var  lower  upper n.risk n.event
+ 0.0000    3 0.000000 0.0000 0.0000      0       0
+ 0.2027   15 0.001784 0.1199 0.2855     51       1
+ 0.2706   27 0.001968 0.1837 0.3576     23       0
+ 0.2889   41 0.001982 0.2016 0.3761     14       0
+ 0.2927   61 0.001984 0.2054 0.3800      4       0
+ 0.2927   82 0.001984 0.2054 0.3800      0       0
+
+> 
+> cLOS <- etm::clos(tr.prob, aw = TRUE)
+> 
+> cLOS
+The expected change in length of stay is:
+1.975 
+
+Alternative weighting:
+
+Expected change in LOS with weight.1: 2.097 
+Expected change in LOS with weight.other: 1.951 
+> 
+> 
+> ### Tests on pseudo values
+> t_pseudo <- closPseudo(my.observ, c("0","1","2","3"), tra, NULL,
++                        formula = ~ 1, aw = TRUE)
+> 
+> cLOS$e.phi == t_pseudo$theta[, "e.phi"]
+     [,1]
+[1,] TRUE
+> cLOS$e.phi.weights.1 == t_pseudo$theta[, "e.phi.weights.1"]
+     [,1]
+[1,] TRUE
+> cLOS$e.phi.weights.other == t_pseudo$theta[, "e.phi.weights.other"]
+     [,1]
+[1,] TRUE
+> 
+> mean(t_pseudo$pseudoData$ps.e.phi)
+[1] 1.968
+> 
+> ### tests on etmprep
+> 
+> ### creation of fake data in the wild format, following an illness-death model
+> ## transition times
+> tdisease <- c(3, 4, 3, 6, 8, 9)
+> tdeath <- c(6, 9, 8, 6, 8, 9)
+> 
+> ## transition status
+> stat.disease <- c(1, 1, 1, 0, 0, 0)
+> stat.death <- c(1, 1, 1, 1, 1, 0)
+> 
+> ## a covariate that we want to keep in the new data
+> set.seed(1313)
+> cova <- rbinom(6, 1, 0.5)
+> 
+> dat <- data.frame(tdisease, tdeath,
++                   stat.disease, stat.death,
++                   cova)
+> 
+> ## Possible transitions
+> tra <- matrix(FALSE, 3, 3)
+> tra[1, 2:3] <- TRUE
+> tra[2, 3] <- TRUE
+> 
+> ## data preparation
+> newdat <- etmprep(c(NA, "tdisease", "tdeath"),
++                   c(NA, "stat.disease", "stat.death"),
++                   data = dat, tra = tra,
++                   cens.name = "cens", keep = "cova")
+> 
+> newdat
+  id entry exit from   to cova
+1  1     0    3    0    1    1
+2  1     3    6    1    2    1
+3  2     0    4    0    1    0
+4  2     4    9    1    2    0
+5  3     0    3    0    1    1
+6  3     3    8    1    2    1
+7  4     0    6    0    2    0
+8  5     0    8    0    2    1
+9  6     0    9    0 cens    1
+> 
+> ref <- data.frame(id = c(1, 1, 2, 2, 3, 3, 4, 5, 6),
++                   entry = c(0, 3, 0, 4, 0, 3, 0, 0, 0),
++                   exit = c(3, 6, 4, 9, 3, 8, 6, 8, 9),
++                   from = c(0, 1, 0, 1, 0, 1, 0, 0, 0),
++                   to = c(rep(c(1, 2), 3), 2, 2, "cens"),
++                   cova = c(1, 1, 0, 0, 1, 1, 0, 1, 1))
+> ref$from <- factor(as.character(ref$from), levels = c("0", "1", "2", "cens"))
+> ref$to <- factor(as.character(ref$to), levels = c("0", "1", "2", "cens"))
+> 
+> all.equal(ref, newdat)
+[1] TRUE
+> 
+> 
+> ######################################
+> ### Test the stratified calls
+> ######################################
+> 
+> if (require("kmi", quietly = TRUE)) {
++     library(etm)
++ 
++     data(icu.pneu)
++     my.icu.pneu <- icu.pneu
++ 
++     my.icu.pneu <- my.icu.pneu[order(my.icu.pneu$id, my.icu.pneu$start), ]
++     masque <- diff(my.icu.pneu$id)
++ 
++     my.icu.pneu$from <- 0
++     my.icu.pneu$from[c(1, masque) == 0] <- 1
++ 
++     my.icu.pneu$to2 <- my.icu.pneu$event
++     my.icu.pneu$to2[my.icu.pneu$status == 0] <- "cens"
++     my.icu.pneu$to2[c(masque, 1) == 0] <- 1
++ 
++ 
++     my.icu.pneu$to <- ifelse(my.icu.pneu$to2 %in% c(2, 3), 2,
++                              my.icu.pneu$to2)
++ 
++     my.icu.pneu <- my.icu.pneu[, c("id", "start", "stop", "from", "to",
++                                    "to2", "age", "sex")]
++     names(my.icu.pneu)[c(2, 3)] <- c("entry", "exit")
++ 
++     bouh_strat <- etm(my.icu.pneu, c("0", "1", "2"), tra_ill(), "cens", 0, strata = "sex")
++ 
++     bouh_female <- etm(my.icu.pneu[my.icu.pneu$sex == "F", ],
++                        c("0", "1", "2"), tra_ill(), "cens", 0)
++ 
++     all(bouh_strat[[1]]$est == bouh_female$est)
++ 
++     ## Test the summary
++     the_summary <- summary(bouh_strat)
++     the_summary
++ 
++     ## Test trprob
++     all(trprob(bouh_strat, "0 1")[[1]] == trprob(bouh_female, "0 1"))
++     all(trprob(bouh_strat, "0 1", c(0, 5, 10, 15))[[1]] == trprob(bouh_female, "0 1", c(0, 5, 10, 15)))
++ 
++     ## Test trcov
++     all(trcov(bouh_strat, "0 1")[[1]] == trcov(bouh_female, "0 1"))
++     all(trcov(bouh_strat, c("0 1", "0 2"))[[1]] == trcov(bouh_female, c("0 1", "0 2")))
++     all(trcov(bouh_strat, "0 1", c(0, 5, 10, 15))[[1]] == trcov(bouh_female, "0 1", c(0, 5, 10, 15)))
++ } else {
++     print("These tests require the kmi package")
++ }
+[1] TRUE
+> 
+> options(old)
+> 

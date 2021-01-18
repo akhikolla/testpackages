@@ -1,0 +1,393 @@
+---
+title: "2. Marker-based Evaluations"
+author: "Robin Wellmann"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+bibliography: references.bib
+vignette: >
+  %\VignetteIndexEntry{2. Marker-based Evaluations}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+Marker-based evaluations are an alternative or addition to pedigree based methods.
+Pedigree based methods enable to estimate the expectations of population specific and individual specific parameters. The realized values, however, deviate from these expectations due to mendelian segregation. In an increasing number of breeds pedigree based methods are being replaced or combined with marker based methods to overcome this limitation.
+In any case, the goal is to select animals for breeding in a way that accelerates genetic gain, restricts the rate of inbreeding, and maintains genetic originality of the breed. 
+
+All genomic evaluations included in this package are based on haplotype segments. Every individual has two haplotypes: a paternal and a maternal one. A haplotype segment is usually present in many individuals because the individuals have a common ancestor from which the segment originates. It is, however, also possible that two segments are identical by chance. Of course, the likelihood for being identical by chance is the smaller the more markers are included in the segments. Therefor, a part of a chromosome is considered a segment only if it contains at least `minSNP>=20` consecutive markers. 
+
+If a segment is in a region with low recombination rate or high marker density, however, then two segments could be identical even though they originate from an ancestor who lived long time before breed separation. Therefor, segments must have a minimum length which may be measured in centiMorgan (`unitL="cM"`) or Mega base pairs (`unitL="Mb"`). The minimum length of a segment is often defined as `minL=2.0` Mb.
+
+The proportion of the genome captured by a segment is usually obtained from it's length in Mega base pairs (`unitP="Mb"`) as the length of the segment divided by the length of the genome.
+
+This section covers the following evaluations based on marker data:
+
+
+-	[Data Preparation](#data-preparation)
+    - [Genotype File Format](#genotype-file-format)
+    - [Marker Map Format](#marker-map-format)
+- [Example Data Set](#example-data-set)
+-	[Individual Specific Parameters](#individual-specific-parameters)
+    - [Inbreeding Coefficients](#inbreeding-coefficients)
+    - [Kinship](#kinship)
+    - [Genetic Distances](#genetic-distances)
+    - [Haplotype Frequencies](#haplotype-frequencies)
+    - [Breed Composition](#breed-composition)
+    - [Kinship at Native Segments](#kinship-at-native-segments)
+-	[Population Specific Parameters](#population-specific-parameters)
+    - [Genetic Diversity](#genetic-diversity)
+    - [Kinship and Diversity at Native Segments](#kinship-and-diversity-at-native-segments)
+- [Multi-Breed Specific Parameters](#multi-breed-specific-parameters)
+    - [Kinships Within and Between Breeds](#kinships-within-and-between-breeds)
+    - [Genetic Distances Between Breeds](#genetic-distances-between-breeds)
+    - [Prioritizing Breeds for Conservation](#prioritizing-breeds-for-conservation)
+
+
+
+
+Note that the calculation of breeding values is not included as there already exist R packages for this purpose. 
+
+[1]: https://www.jstatsoft.org/article/view/v033i02/v33i02.pdf
+[2]: https://www.vsni.co.uk/downloads/asreml/release2/doc/asreml-R.pdf
+
+### Data Preparation
+
+#### Genotype File Format
+
+In all genotype files, markers must be in rows and individuals in columns. This enables to process one marker at a time without the need to have the whole file in memory. For all functions included in this package 
+
+  - there is one file for each chromosome,
+  - genotypes must be phased and imputed, 
+  - each file has a header and no row names,
+  - cells are separated by blank spaces,
+  - the number of rows is equal to the number of markers from the respective chromosome,
+  - the markers are in the same order as in the map,
+  - there can be some extra columns on the left hand side containing no genotype data, 
+  - the text within columns must have no white spaces,
+  - the first rows may contain some comments,
+  - the alleles of an individual are separated by a character, e.g. A/B, 0/1, A|B, A B, or 0 1, 
+  - the same two symbols must be used for all markers,
+  - the IDs of the individuals are used as column names and must have no white spaces,
+  - if the blank space is used as separator (i.e.  A B, or 0 1), then the ID of each individual must be repeated in the header, so that the number of column names is equal to the number of columns.
+
+Example 1:
+
+```{}
+Note that the marker names are ignored when the file is processed.
+I id 6415 6415 2636 2636
+M ARS-BFGL-NGS-16466 0 0 1 0 
+M ARS-BFGL-NGS-98142 0 1 0 1
+M ARS-BFGL-NGS-114208 0 0 1 0
+```
+
+Example 2:
+
+```{}
+There can be some comments in the first lines
+and some extra columns on the left hand side.
+Column1 Column2 Column3 6415 2636
+M NA dfdf 0/0 1/0
+X NA sdfg 0/1 0/1
+N NA fgjh 0/0 1/0
+```
+
+#### Marker Map Format
+
+For all functions reading from genotype files, a marker map must be provided in argument `map`. This is a data frame or data table with columns including 
+
+`Name`: marker name 
+
+`Chr`: chromosome number, and possibly 
+
+`Mb`: position on the chromosome in Mega base pairs, and 
+
+`cM`: position in centiMorgan. 
+
+The order of the markers must be the same as in the genotype files.
+
+### Example Data Set
+All evaluations are demonstrated at the example of cattle data contained in the package. Breed names, years of birth, simulated breeding values, simulated sexes, and herds are provided in data frame `Cattle`.
+
+```{r}
+library("optiSel")
+data(Cattle)
+phen <- Cattle
+head(phen)
+```
+
+The data frame contains information on `r length(unique(phen$Breed))` breeds:
+```{r}
+table(phen$Breed)
+```
+
+The "Angler" is an endangered German cattle breed, which had been upgraded with Red Holstein (also called "Rotbunt"). The Rotbunt cattle are a subpopulation of the "Holstein" breed. The "Fleckvieh" or Simmental breed is unrelated to the Angler.
+
+The marker map is:
+
+```{r}
+data(map)
+head(map)
+```
+
+This small example data set contains only genotypes from the first parts of the first two chromosomes:
+
+```{r}
+tapply(map$Mb, map$Chr, max)
+```
+
+Consequently the results obtained for specific individuals will be rather inaccurate. The genotypes are included in the following files:
+
+```{r}
+dir     <- system.file("extdata", package="optiSel")
+GTfiles <- file.path(dir, paste("Chr", unique(map$Chr), ".phased", sep=""))
+```
+
+### Individual Specific Parameters
+
+#### Inbreeding Coefficients
+
+The inbreeding coefficient of an individual is the probability that two alleles chosen at random from the maternal and paternal haplotypes belong to identical segments. It is calculated as the proportion of the genome included in runs of homozygosity (ROH). This parameter estimates the extent to which the individual may suffer from inbreeding depression and predicts the homogeneity of its offspring. It can be calculated with
+
+```{r, results="hide"}
+Animal <- segInbreeding(GTfiles, map, minSNP=20, minL=1.0)
+```
+```{r}
+head(Animal)
+```
+
+
+#### Kinship
+
+The segment based kinship between two individuals is the probability that two alleles randomly chosen from both individuals belong to segments which are identical in both individuals. A matrix containing the kinship between all pairs of individuals can be computed with function [segIBD][segIBD]:
+
+```{r, results="hide"}
+sKin <- segIBD(GTfiles, map, minSNP=20, minL=1.0)
+```
+```{r}
+sKin[1:3,1:3]
+```
+
+The R code below displays the kinship between the female with ID `Angler2` and all genotyped Angler males with breeding value larger than 2.0.
+
+```{r}
+Males  <- phen$Indiv[phen$Sex=="male" & phen$Breed=="Angler" & phen$BV>2.0]
+sKin[Males, "Angler2", drop=FALSE]
+```
+
+In general, the males that have lowest kinship with the female should be favoured for mating. In this case, however, all kinships are low, so this criterion can be neglected.
+
+#### Genetic Distances
+
+There are several possibilities to compute a dissimilarity matrix from a similarity matrix. One possibility which seems especially suitable for multidimensional scaling is to define the dissimilarity of individuals $i$ and $j$ as 
+$$D_{ij}=(-log(b + (1-b)f_{ij}))^a,$$ 
+whereby the term $b + (1-b)f_{ij}$ adjusts the kinship between individuals $i$ and $j$ for non-detectable ancestral inbreeding, the function $g(x)=(-log(x))^a$ maps the adjusted kinships from the interval [0,1] to positive real numbers, and parameter $a$ may be chosen such that the stress value is minmized. This can be done with function [sim2dis][sim2dis], whereby `b=baseF`:
+
+```{r}
+D     <- sim2dis(sKin, a=6.0, baseF=0.03, method=1)
+color <- c(Angler="red", Rotbunt="green", Fleckvieh="blue", Holstein="black")
+col   <- color[phen[rownames(D), "Breed"]]
+Res   <- cmdscale(D)
+plot(Res, pch=18, col=col, main="Multidimensional Scaling", cex=0.5, xlab="",ylab="", asp=1)
+```
+
+
+#### Haplotype Frequencies
+
+Artificial selection and the substantial genetic drift in populations with small effective sizes have increased the frequencies of various haplotype segments in commercial breeds. Although these segments may contribute to the economic value of a breed, their presences in an endangered breed decreases the conservation value of the breed because they are so common in the species that their conservation does not need to be subsidized. 
+
+For individuals with genetic contributions from several breeds, each marker belongs to a haplotype segment that originates from a specific breed. Gene flow is usually from commercial breeds to the endangered breeds but not vice-versa. Thus, if a sufficiently long segment from an endangered breed can also be found in a commercial breed, then it can be concluded that the segment is not native in the endangered breed. Instead, the segment is assigned to the breed in which it has maximum frequency. This can be done with function [haplofreq][haplofreq].
+
+
+Below, the frequency of each segment from haplotype 2 of Angler bull "Angler1" in Rotbunt cattle is plotted with function [plot][plot.HaploFreq] (red area). 
+
+```{r, fig.width = 5, results="hide"}
+Haplo <- haplofreq(GTfiles, phen, map, thisBreed="Angler", refBreeds="Rotbunt", minL=1.0)
+plot(Haplo, ID="Angler1", hap=2)
+```
+
+It can be concluded that the first chromosome originates from Rotbunt cattle or from a closely related breed. In contrast, the second chromosome does not originate from Rotbunt cattle.
+
+This evaluation can be done simulateneously for several reference breeds. Below, the frequencies of each Angler haplotype segment within Rotbunt, Holstein, and Fleckvieh are computed, the results are combined into the single R object `Haplo` with function [freqlist][freqlist], and plotted with function [plot][plot.HaploFreq].
+The red area shows the frequency of each haplotype segment in Rotbunt cattle, whereas the black line shows the *maximum* frequency the segment has in one of the evaluated reference breeds.
+
+
+```{r, fig.width = 5, results="hide"}
+Haplo <- freqlist(
+  haplofreq(GTfiles, phen, map, thisBreed="Angler", refBreeds="Rotbunt", minL=1.0),
+  haplofreq(GTfiles, phen, map, thisBreed="Angler", refBreeds="Holstein", minL=1.0),
+  haplofreq(GTfiles, phen, map, thisBreed="Angler", refBreeds="Fleckvieh", minL=1.0)
+  )
+
+plot(Haplo, ID=1, hap=2, refBreed="Rotbunt")
+```
+
+Hence, most segments from Chromosome 2 have very low frequency in other breeds, so they can be classified to be native for Angler.
+
+The classification of haplotype segments can be done with a single call to function [haplofreq][haplofreq]. In this case, argument `refBreeds` is either the vector with breeds to be used as reference breeds, or the default `refBreeds="others"` is used, in which case all breeds with genotypes are used as reference breeds, except `thisBreed`.
+
+```{r, results="hide"}
+Haplo <- haplofreq(GTfiles, phen, map, thisBreed="Angler", refBreeds="others", minL=2.5)
+```
+The result is a list. Component `freq` is a matrix containing the maximum frequency each haplotype segment has in one of the reference breeds.
+
+```{r}
+Haplo$freq[1:10,1:3]
+```
+
+Component `match` is a matrix containing for each segment the first letter of the name of the breed in which the segment has maximum frequency. If the frequency of the segment is smaller than `ubFreq=0.01` in all reference breeds, then the segment is classified to be native and coded as `1`.
+
+```{r}
+Haplo$match[1:10,1:3]
+```
+
+If individuals are genotyped for many markers, then the working memory could become a limitation. This can be avoided by writing the results to files. Results will be written to files if argument `w.dir` is defined as the name of a directory. In this case function [haplofreq][haplofreq] returns a data frame with file names:
+
+```{r, results="hide"}
+wdir  <- file.path(tempdir(), "HaplotypeEval")
+wfile <- haplofreq(GTfiles, phen, map, thisBreed="Angler", minL=1.0, w.dir=wdir)
+```
+
+
+#### Breed Composition
+
+Mating decisions should not only depend on the breeding value of the male and the kinship between male and female, but also on the genetic contribution of the male from foreign breeds. Many endangered breeds have been graded up with commercial high-yielding breeds. These increasing contributions from other breeds displace the original genetic background of the endangered breed, decrease the genetic contribution from native ancestors, and reduce the conservation value of the breed. The breed composition of individuals can be estimated with function [segBreedComp][segBreedComp].
+
+```{r}
+Comp  <- segBreedComp(Haplo$match, map)
+head(Comp[,-1])
+```
+
+The average breed composition of Angler cattle is
+
+```{r}
+Average <- apply(Comp[,-1],2,mean)
+round(Average, 3)
+```
+
+Since Red Holstein is a subpopulation of Holstein cattle, their contributions should be added. Thus, the average contribution of Angler cattle from Holstein is `r round(Average["R"]+Average["H"],3)`, the contribution from Fleckvieh is only `r round(Average["F"],3)`, and the native contribution is `r round(Average["native"],3)`. This is in good accordance with pedigree-based results
+
+#### Kinship at Native Segments
+
+Since animals with high native contributions tend to be related, the inbreeding level could increase considerably when introgressed genetic material is removed from the population. This could be avoided by restricting the increase in kinship at native haplotype segments in the population. Matrix `sKinatN$of` containing the kinships of individuals at native haplotype segments can be calculated from the results of function [segIBDatN][segIBDatN]:
+
+```{r, results="hide"}
+sKinatN <- segIBDatN(GTfiles, phen, map, thisBreed="Angler", minL=1.0)
+```
+
+```{r}
+sKinatN$of <- sKinatN$Q1/sKinatN$Q2
+sKinatN$of["Angler2", "Angler4"]
+```
+
+
+
+### Population Specific Parameters
+
+
+
+#### Genetic Diversity
+
+
+The genetic diversity of a population is the probability that two alleles chosen at random from the population do not belong to identical segments. It is one minus the average segment based kinship of the individuals. Thus, it can be computed as
+
+```{r}
+keep <- phen$Indiv[phen$Breed=="Angler"]
+1 - mean(sKin[keep, keep])
+```
+
+The diversity of this population is high due to historic introgression with other breeds.
+
+#### Kinship and Diversity at Native Segments
+
+The kinship at native segments in the population is the conditional probability that two alleles chosen at random from the population belong to identical segments, given that the segments originate from native founders. The kinship at native segments is
+
+```{r}
+sKinatN$mean
+```
+
+The genetic diversity at native segments is one minus the kinship at native segments. Thus, it can be calculated as
+
+```{r}
+1 - sKinatN$mean
+```
+
+The diversity at native segments is high. This could have several reasons:
+
+- breeds that have been used for introgression are missing in the data set, so contributions from these breeds were wrongly classified as native and contribute to the diversity at native segments,
+
+- the minimum lentgh of haplotype segments is too high or the marker density is too low, so that short introgressed segments cannot be classified to be non-native.
+
+- the diversity at native segments is indeed high.
+
+In this case, an introgressed breed, the Norwegian Red, is missing in the data set. A high diversity at native segments is important if a goal of the breeding program is to remove introgressed genetic material from the population. Without maintenance of a high diversity at native segments, inbreeding coefficients will soon rise to an unreasonable level.
+
+### Multi-Breed Specific Parameters
+
+Most evaluations for multiple breeds with segment based methods require high density marker genotypes that enable the detection of short haplotype segments that originate from common ancestors who lived before breed separation. Hence, the examples shown below are only illustrative.
+
+#### Kinships Within and Between Breeds
+Average segment based kinships between and within breeds can be computed with function [opticomp][opticomp]:
+
+```{r, results="hide"}
+sKin  <- segIBD(GTfiles, map, minSNP=20, minL=1.0)
+```
+```{r}
+CoreSet <- opticomp(sKin, phen)
+round(CoreSet$f, 3)
+```
+
+It can be seen that inbreeding is lowest in Angler cattle and highest in Rotbunt cattle. The kinship between Holstein and Rotbunt is almost as high as the kinships within the breeds, so both breeds are closely related. In contrast, Fleckvieh is only distantly related to all other breeds included in the data set.
+
+#### Genetic Distances Between Breeds
+
+Genetic distances between breeds can be computed from the kinships between breeds. There are various possibilities to define genetic distances and the method of choice depends on the intended use. The distance between two breed $i$, $j$, defined as
+$$\Delta_{bl} = \sqrt{\frac{f_{bb}+f_{ll}}{2}-f_{bl}}$$
+can be considered an estimate of the expected differences in population means for a neutral polygenic trait [@Wellmann2014]. It can be obtained as
+
+```{r}
+round(CoreSet$Dist, 3)
+```
+
+
+#### Prioritizing Breeds for Conservation
+Since resources available for conservation are limited, prioritizing breeds for conservation is of high importance to halt the erosion of genetic diversity observed in livestock species. This requires to estimate  conservation values of breeds. 
+
+In the core set approach, a hypothetical subdivided population is considered, consisting of individuals from various breeds. This population is called the core set.
+The contributions of each breed to the core set are determined such that the diversity of the core set is maximized. The conservation value of a particular breed measures how much the diversity decreases if the breed is removed from the core set.
+
+Function [opticomp][opticomp] can be used to compute the contributions of the breeds to a core set with maximum diversity.
+
+```{r}
+CoreSet <- opticomp(sKin, phen)
+CoreSet$bc
+```
+The Rotbunt cattle have only a small contribution to the core set, as their genes are already present in Angler and Holstein cattle. For this core set the diversity is
+
+```{r}
+CoreSet$value
+```
+
+Removing the Angler cattle from the core set 
+
+```{r}
+CoreSet <- opticomp(sKin, phen, ub=c(Angler=0))
+CoreSet$bc
+```
+
+increases the Rotbunt and Holstein contributions, and decreases the diversity of the core set:
+
+```{r}
+CoreSet$value
+```
+
+### References
+
+[segIBD]:         https://rdrr.io/cran/optiSel/man/segIBD.html
+[segInbreeding]:  https://rdrr.io/cran/optiSel/man/segInbreeding.html
+[haplofreq]:      https://rdrr.io/cran/optiSel/man/haplofreq.html
+[freqlist]:       https://rdrr.io/cran/optiSel/man/freqlist.html
+[plot.HaploFreq]: https://rdrr.io/cran/optiSel/man/plot.HaploFreq.html
+[segBreedComp]:   https://rdrr.io/cran/optiSel/man/segBreedComp.html
+[segIBDatN]:      https://rdrr.io/cran/optiSel/man/segIBDatN.html
+[opticomp]:       https://rdrr.io/cran/optiSel/man/opticomp.html
+[sim2dis]:        https://rdrr.io/cran/optiSel/man/sim2dis.html

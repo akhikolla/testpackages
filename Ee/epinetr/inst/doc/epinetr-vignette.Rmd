@@ -1,0 +1,760 @@
+---
+title: "Using the epinetr package"
+author: "Dion Detterer, Paul Kwan, Cedric Gondro"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{Using the epinetr package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+```{r echo=FALSE}
+knitr::opts_chunk$set(dev.args = list(png = list(type = "cairo")))
+```
+
+# Introduction
+
+*epinetr* is a forward-time genetic simulation package that includes the ability to construct epistatic networks of arbitrary complexity. Applications for *epinetr* include the testing of methods for the detection and selection of epistasis, as well as assessing the impact of epistasis on prediction and the extent to which epistasis is captured by additive models, all under varying degrees of epistatic complexity.
+
+There are four broad steps in the workflow:
+
+1. Construct the initial population with necessary parameters
+1. Attach additive effects to the population
+1. Attach an epistatic network to the population and visualise the network
+1. Run a forward-time simulation of the population and plot the simulation run
+
+In Section 1, we look at the various ways of constructing a population in *epinetr*. In Section 2, we briefly discuss how to attach additive effects to a population before diving into the options for constructing epistatic networks. Section 3 shows how *epinetr* calculates the components of each individual's phenotype, and how to recreate that calculation. Finally, in section 5, we demonstrate how to run the simulation.
+
+As a preview, here's an example workflow:
+
+```{r message=FALSE, fig.width=5, fig.asp=1, fig.align='center', fig.cap="An epistatic network generated between 50 QTLs."}
+library(epinetr)
+
+# Build a population of size 1000, with 50 QTLs, broad-sense heritability of 0.6,
+# narrow-sense heritability of 0.4 and overall trait variance of 50.
+pop <- Population(popSize = 1000, map = map100snp, alleleFrequencies = runif(100),
+                  QTL = 50, broadH2 = 0.6, narrowh2 = 0.4, traitVar = 50)
+
+# Attach additive effects
+pop <- addEffects(pop)
+
+# Attach an epistatic network
+pop <- attachEpiNet(pop)
+
+# Plot the network
+plot(getEpiNet(pop))
+```
+
+```{r}
+# Inspect initial phenotypic components
+head(getComponents(pop))
+```
+
+```{r message=FALSE, fig.width=7, fig.height=4, fig.align='center', fig.cap="A graphical representation of a simulation run across 250 generations."}
+# Run a simulation across 250 generations
+pop <- runSim(pop, generations = 250, selection = "ranking")
+
+# Plot the simulation run
+plot(pop)
+```
+
+```{r}
+# Get the allele frequencies
+af <- getAlleleFreqRun(pop)
+
+# Get the phased genotypes of the resulting population
+geno <- getPhased(pop)
+
+# Get a subset of the resulting population
+ID <- getComponents(pop)$ID
+ID <- sample(ID, 50)
+pop2 <- getSubPop(pop, ID)
+```
+
+# Constructing the initial population
+
+Constructing the initial population is done via the *Population* function. The only data you will absolutely need is a *map*, either via a variant call format (VCF) file or directly via a data frame.
+
+If you are directly supplying a map data frame, the first column should list the single nucleotide polymorphism (SNP) IDs, the second column should list the chromosome IDs for each SNP and the third column should list the position of each SNP on its chromosome in base pairs.
+
+For example:
+
+```{r}
+head(map100snp)
+```
+
+```{r}
+nrow(map100snp)
+```
+
+```{r}
+length(unique(map100snp[, 2]))
+```
+
+There are 100 SNPs across 22 chromosomes in this map data frame.
+
+Given this map, we can now construct a population. We'll generate 200 individuals using allele frequencies selected from a uniform distribution, we'll select 20 QTLs at random and we'll give the phenotypic trait under examination a variance of 40, a broad-sense heritability of 0.9 and a narrow-sense heritability of 0.6.
+
+```{r message=FALSE}
+pop <- Population(popSize = 200, map = map100snp, QTL = 20,
+                  alleleFrequencies = runif(100),
+                  broadH2 = 0.9, narrowh2 = 0.6, traitVar = 40)
+pop
+```
+We can fall back on the built-in defaults for *broadH2*, *narrowh2* and *traitVar* of 0.5, 0.3 and 1, respectively:
+
+```{r message=FALSE}
+pop <- Population(popSize = 200, map = map100snp, QTL = 20,
+                  alleleFrequencies = runif(100))
+pop
+```
+We can also specify the QTLs by listing their SNP IDs:
+
+```{r message=FALSE}
+pop <- Population(popSize = 200, map = map100snp,
+                  QTL = c(62, 55, 92, 74, 11, 38),
+                  alleleFrequencies = runif(100),
+                  broadH2 = 0.9, narrowh2 = 0.6, traitVar = 40)
+pop
+```
+
+(Note that the QTLs will be displayed only if there are no more than 100 QTLs, so as not to flood the screen.)
+
+A full list of QTLs can also be displayed like so:
+
+```{r}
+getQTL(pop)
+```
+
+Note that any map supplied to the constructor will be sorted, first by chromosome and then by base pair position.
+
+## Constructing a population using a genotype matrix
+
+For greater control, we can supply a matrix of phased biallelic genotypes to the constructor, either directly or via a VCF file using the *vcf* parameter. (Using a VCF file will also supply a map.)
+
+If given directly, the matrix should be in individual-major format, with each allele coded with either a 0 or a 1 and no unknown values. For example, `geno100snp` is a genotype matrix of 100 SNPs across 500 individuals. It's already in the necessary format, which uses one individual per row and two columns per SNP.
+
+```{r}
+dim(geno100snp)
+```
+
+Examining the first 5 SNPs for the first individual we find the following:
+
+```{r}
+geno100snp[1, 1:10]
+```
+
+That is, SNP 1 is heterozygous with genotype 1|0, SNPs 2-4 are homozygous with genotype 1|1 and SNP 5 is homozygous with genotype 0|0.
+
+We can supply a phased genotype matrix to the constructor like so:
+
+```{r message=FALSE}
+pop <- Population(popSize = nrow(geno100snp), map = map100snp, QTL = 20,
+                  genotypes = geno100snp,
+                  broadH2 = 0.9, narrowh2 = 0.6, traitVar = 40)
+```
+
+Supplying a phased genotype matrix allows us to directly specify the initial genotypes in the population. (The assumption is that the first allele for each SNP is inherited from the sire and the second allele for each SNP is inherited from the dam.) If we supply a population size to the constructor that does not match the number of rows in the genotype matrix, the genotypes will be used only to suggest allele frequencies for newly generated genotypes.
+
+If we wish to use the genotypes to suggest allele frequencies while still maintaining the population size, we can set the *literal* flag to `FALSE`.
+
+```{r message=FALSE}
+pop <- Population(popSize = nrow(geno100snp), map = map100snp, QTL = 20,
+                  genotypes = geno100snp, literal = FALSE,
+                  broadH2 = 0.9, narrowh2 = 0.6, traitVar = 40)
+```
+
+## Modifying an existing population
+
+The *Population* constructor can also be used to modify an existing population. We can, for example, adjust the heritability:
+
+```{r message=FALSE}
+pop <- Population(pop, broadH2 = 0.7, traitVar = 30)
+pop
+```
+We can also adjust the population size; this will necessarily generate a new set of genotypes based on the same allele frequencies:
+
+```{r message=FALSE}
+pop <- Population(pop, popSize = 800)
+pop
+```
+Similarly, we can adjust the allele frequencies, which will necessarily also generate a new set of genotypes:
+
+```{r message=FALSE}
+pop <- Population(pop, alleleFrequencies = runif(100))
+pop
+```
+Where possible, the population features are preserved while adjusting only the parameters specified.
+
+# Attaching effects to the population
+
+Because we have specified a non-zero narrow-sense heritability for our population, we now need to attach additive effects. This is done using the *addEffects* function.
+
+```{r message=FALSE}
+pop <- addEffects(pop)
+pop
+```
+As expected, 60% of the phenotypic variance is attributable to additive effects.
+
+By default, effects are selected from a normal distribution; we can, however, supply a
+different distribution function.
+
+```{r message=FALSE}
+pop <- addEffects(pop, distrib = runif)
+```
+
+Alternatively, we can supply our own additive effects for the QTLs.
+
+```{r message=FALSE}
+effects <- c( 1.2,  1.5, -0.3, -1.4,  0.8,
+              2.4,  0.2, -0.8, -0.4,  0.8,
+             -0.2, -1.4,  1.4,  0.2, -0.9,
+              0.4, -0.8,  0.0, -1.1, -1.3)
+pop <- addEffects(pop, effects = effects)
+getAddCoefs(pop)
+```
+Note that the additive effects are scaled so as to guarantee the initial narrow-sense
+heritability. This is evident by adjusting the narrow-sense heritability within the population:
+
+```{r message=FALSE}
+pop <- Population(pop, narrowh2 = 0.4)
+getAddCoefs(pop)
+```
+## Attaching an epistatic network to the population
+
+If broad-sense heritability is higher than narrow-sense heritability in the population, you will need to attach epistatic effects. The simplest way to do this is to use the *attachEpiNet* function with the default arguments, supplying only the population. This will generate a random epistatic network with the QTLs as nodes.
+
+```{r message=FALSE}
+pop <- attachEpiNet(pop)
+pop
+```
+
+Note that the epistatic variance is as expected and the additive variance has been
+preserved.
+
+We can visualise the network that was generated by using the *getEpiNet* function to retrieve the network before plotting it.
+
+```{r fig.width=5, fig.asp=1, fig.align='center', fig.cap="A random epistatic network generated between 20 QTLs."}
+epinet <- getEpiNet(pop)
+plot(epinet)
+```
+
+We can use the *scaleFree* flag to generate a network using the Barabasi-Albert model^[[Barabasi AL, Albert R, "Emergence of scaling in random networks," _Science_ 286(5439): 509-12, 15 October 1999.](https://barabasi.com/f/67.pdf)].
+
+```{r message=FALSE, fig.width=5, fig.asp=1, fig.align='center', fig.cap="An epistatic network generated using the Barabasi-Albert model between 20 QTLs."}
+pop <- attachEpiNet(pop, scaleFree = TRUE)
+plot(getEpiNet(pop))
+```
+
+The Barabasi-Albert model for constructing networks assumes a connected graph that then adds a node at a time, with the probability that an existing node is connected to the new node given by $\frac{d_i}{\sum_{j} d_j}$, where $d_i$ is the degree of node $i$. In *epinetr*, nodes are added in a random order (by shuffling the initial list) so as to ensure that no bias is introduced due to the initial ordering of nodes.
+
+The "random" network model in *epinetr* acts as a control case: it uses the same algorithm as the Barabasi-Albert model but gives a uniform probability of connection to all existing nodes. This ensures that there are the same number of interactions in both cases.
+
+If we want a number of QTLs to only have additive effects applied, we can use the *additive* argument, giving the number of QTLs not to be included in the epistatic network.
+
+```{r message=FALSE, fig.width=5, fig.asp=1, fig.align='center', fig.cap="An epistatic network where 7 QTLs have no epistatic effects."}
+pop <- attachEpiNet(pop, scaleFree = TRUE, additive = 7)
+plot(getEpiNet(pop))
+```
+The minimum number of interactions per QTL can be given with the *m* argument.
+
+```{r message=FALSE, fig.width=5, fig.asp=1, fig.align='center', fig.cap="An epistatic network with a minimum of 2 interactions per epistatic QTL."}
+pop <- attachEpiNet(pop, scaleFree = TRUE, additive = 7, m = 2)
+plot(getEpiNet(pop))
+```
+There are three points to note with the *m* argument. The first point is that *m* specifically refers to the number of interactions and not the order of the interactions (which can be set with the *k* parameter; see below). The second point is that it has no impact on QTLs designated as additive-only. The third point is that a minimal connected graph is initially constructed prior to *m* being strictly applied. (This means that you may still see some QTLs with fewer than *m* interactions due to the value of *k*.)
+
+We can also include higher-order interactions using the *k* argument, which accepts a vector specifying the orders of interaction to include:
+
+```{r message=FALSE, fig.width=5, fig.asp=1, fig.align='center', fig.cap="An epistatic network featuring 2-way to 7-way interactions"}
+pop <- attachEpiNet(pop, scaleFree = TRUE, additive = 7, m = 2, k=2:7)
+plot(getEpiNet(pop))
+```
+In cases where $m > 1$, any initial minimal connected graph is created by selecting $n$ nodes such that $n$ is the smallest integer satisfying the equation $\binom{n - 1}{k - 1} \ge m$. (In the default case of pairwise interactions, this reduces to $n \ge m + 1$.)
+
+Where $k > 2$ we have extended the Barabasi-Albert model such that the *attachEpiNet* function adds interactions in order of increasing complexity: first, the function adds all 2-way interactions, then all 3-way interactions, *etcetera*. The important point to note is that, for networks generated using the Barabasi-Albert model, probabilities of connectedness are based on all previous interactions; for example, 3-way interactions are based on all previously established 2- and 3-way interactions. In this way, networks generated using the Barabasi-Albert model with multiple orders of interaction "layer up", such that the degrees from lower-order interactions contribute to the preferential attachment for higher-order interactions.
+
+All auto-generated networks are highly connected. More diffuse networks can, however, be manually generated, as detailed in the next section.
+
+## Supplying a user-defined network
+
+Internally, the network is stored as an incidence matrix, where the *i*th row corresponds to the *i*th QTL and the *j*th column corresponds to the *j*th interaction.
+
+We can inspect the complete set of interactions using the *getIncMatrix* function.
+
+```{r}
+inc <- getIncMatrix(pop)
+dim(inc)
+```
+
+There are currently `r ncol(inc)` interactions in the population. Let's examine the first five.
+
+```{r echo=1}
+inc[, 1:5]
+inci <- which(inc[, 1:5] == 1)
+incs <- rowSums(inc[, 1:5])
+incm <- which(incs == max(incs))
+```
+Here we can see that the first interaction is between QTL `r inci[1]` and QTL `r inci[2]`, and that QTL `r incm[1]` is included in `r max(incs)` of the first 5 interactions.
+
+We can define our own network in the same way. `rincmat100snp` is an example of a user-defined incidence matrix, giving 19 interactions across 20 QTLs:
+
+```{r}
+rincmat100snp
+```
+
+We can attach an epistatic network based on this incidence matrix to our population using the *incmat* argument:
+
+```{r message=FALSE}
+pop <- attachEpiNet(pop, incmat = rincmat100snp)
+```
+
+Let's visualise the subsequent network:
+
+```{r, fig.width=5, fig.asp=1, fig.align='center', fig.cap="An epistatic network derived from a user-defined incidence matrix."}
+plot(getEpiNet(pop))
+```
+
+As per the interaction matrix, 4 of the 20 QTLs are not part of any interactions. (Rows 3, 7, 12 and 20 only contain 0s.)
+
+We can create a 3-way interaction by modifying the matrix such that QTL 20 is included in the first interaction:
+
+```{r message=FALSE}
+# Include the 20th QTL in the first interaction
+mm <- rincmat100snp
+mm[20, 1] <- 1
+pop <- attachEpiNet(pop, incmat = mm)
+```
+
+Again, let's visualise the subsequent network.
+
+```{r, fig.width=5, fig.asp=1, fig.align='center', fig.cap="A user-defined epistatic network featuring a single 3-way interaction."}
+plot(getEpiNet(pop))
+```
+
+The network now includes a single 3-way interaction.
+
+## Creating purely epistatic QTLs
+
+As already shown, it is possible to create purely additive QTLs; similarly, it is also possible to create purely epistatic QTLs. This involves specifying the additive coefficients explicitly, where at least one coefficient is 0; for example:
+
+```{r message=FALSE}
+# 20 coefficients, 3 of which are 0
+coefs <- sample(c(rep(0, 3), rnorm(17)), 20)
+pop <- addEffects(pop, effects = coefs)
+getAddCoefs(pop)
+```
+
+```{r, echo=FALSE}
+foo <- which(getAddCoefs(pop) == 0)
+```
+
+We can see here that QTLs `r foo[1]`, `r foo[2]` and `r foo[3]` all have additive coefficients of 0, making them purely epistatic (since the population includes epistatic interactions).
+
+If we wish to have both purely additive and purely epistatic QTLs in our model, we can explicitly give the SNP IDs of the QTLs we want to be purely additive to *attachEpiNet*.
+
+Suppose we have 15 QTLs overall. For the sake of simplicity, we’ll make the 15 QTLs the first 15 SNPs in the map:
+
+```{r message=FALSE}
+pop <- Population(pop, QTL = 1:15)
+```
+
+Let’s make the first 5 QTLs additive-only by giving their SNP IDs to the additive parameter of *attachEpiNet*:
+
+```{r message=FALSE}
+pop <- attachEpiNet(pop, additive = 1:5)
+```
+
+As we can see in the incidence matrix, the first 5 of the 15 QTLs have no epistatic effects:
+
+```{r}
+getIncMatrix(pop)
+```
+
+Now, we can plot the network in order to visualise the incidence matrix:
+
+```{r, fig.width=5, fig.asp=1, fig.align='center', fig.cap="The epistatic network generated with the first 5 of the 15 QTLs being purely additive."}
+plot(getEpiNet(pop))
+```
+
+Let’s make QTLs 6-10 epistatic-only by explicitly giving their coefficients as 0 to *addEffects*:
+
+```{r message=FALSE}
+coefs <- rnorm(15)
+coefs[6:10] <- 0
+pop <- addEffects(pop, effects = coefs)
+getAddCoefs(pop)
+```
+
+We now have a population where 5 of the QTLs are purely additive, 5 are purely epistatic and 5 are both additive and epistatic.
+
+# Calculating effects
+
+Now that we've seen how *epinetr* builds epistatic networks, it's time to turn our attention to the effects generated by these networks.
+
+Each QTL can, of course, only have one of three genotypes per individual: the homozygous genotype coded 0|0, the heterozygous genotype and the homozygous genotype coded 1|1. For an interaction consisting of $k$ QTLs, this corresponds to $3^k$ possible genotypes within the interaction overall, and for this reason, *epinetr* assigns a set of $3^k$ potential epistatic effects drawn from a normal distribution to each interaction.
+
+Let's create a new population with 20 QTLs, additive effects and an epistatic network consisting solely of 3-way interactions:
+
+```{r message=FALSE}
+pop <- Population(popSize = 200, map = map100snp, QTL = 20,
+                  alleleFrequencies = runif(100),
+                  broadH2 = 0.9, narrowh2 = 0.6, traitVar = 40)
+pop <- addEffects(pop)
+pop <- attachEpiNet(pop, k = 3)
+```
+
+We can plot the network in order to visualise these 3-way interactions:
+
+```{r, fig.width=5, fig.asp=1, fig.align='center', fig.cap="An epistatic network consisting of 3-way interactions."}
+plot(getEpiNet(pop))
+```
+
+Let's determine which QTLs are part of the first interaction:
+
+```{r}
+qtls <- which(getIncMatrix(pop)[, 1] > 0)
+qtls
+```
+
+The possible effects for this interaction can be found using *getInteraction*:
+
+```{r}
+interaction1 <- getInteraction(pop, 1) # Return first interaction array
+interaction1
+```
+
+As expected, this is a $3^3$ array of possible effects: the first dimension maps to QTL `r qtls[1]`, the second dimension maps to QTL `r qtls[2]` and the third dimension maps to QTL `r qtls[3]`. Along each dimension, the first index maps to the homozygous genotype coded 0|0, the second index maps to the heterozygous genotype and the third index maps to the homozygous genotype coded 1|1.
+
+Suppose for a particular individual QTL `r qtls[1]` has the heterozygous genotype. The possible effects for the interaction are thus given by the following:
+
+```{r}
+interaction1[2, , ]
+```
+
+Furthermore, suppose that QTL `r qtls[2]` has the homozygous genotype coded 0|0. The possible effects for the interaction are now further constrained to the following:
+
+```{r}
+interaction1[2, 1, ]
+```
+
+Finally, suppose that QTL `r qtls[3]` has the homozygous genotype coded 1|1. We now have all we need in order to know the effect of this interaction on the phenotype:
+
+```{r}
+interaction1[2, 1, 3]
+```
+
+Thus the contribution of this particular interaction to this individual's overall phenotype is `r interaction1[2, 1, 3]`. (An offset, however, has yet to be applied: see the next section for details.)
+
+## Inspecting additive, epistatic and environmental components
+
+Once any necessary additive and epistatic effects are attached to our population, we can inspect the phenotypic components of each individual, using the *getComponents* function:
+
+```{r}
+components <- getComponents(pop)
+head(components)
+```
+
+Inspecting the additive component, we can see its mean and variance are as expected:
+
+```{r}
+mean(components$Additive)
+```
+
+```{r}
+var(components$Additive)
+```
+
+Similarly for the epistatic and environmental components:
+
+```{r}
+mean(components$Epistatic)
+```
+
+```{r}
+var(components$Epistatic)
+```
+
+```{r}
+mean(components$Environmental)
+```
+
+```{r}
+var(components$Environmental)
+```
+
+The means are (effectively) 0 because the components are zero-centred using fixed offsets applied to the additive and epistatic components that are preserved across generations. (Only the initial generation's environmental component is zero-centred.) We can retrieve these offsets with the *getAddOffset* and *getEpiOffset* functions, respectively:
+
+```{r}
+getAddOffset(pop)
+```
+
+```{r}
+getEpiOffset(pop)
+```
+
+For the overall phenotypic value, we find the following:
+
+```{r}
+mean(components$Phenotype)
+```
+
+```{r}
+var(components$Phenotype)
+```
+
+This approximation of the specified variance is due to a small amount of co-variance between components:
+
+```{r}
+cov(components$Additive, components$Epistatic)
+cov(components$Additive, components$Environmental)
+cov(components$Environmental, components$Epistatic)
+```
+
+However:
+
+```{r}
+cor(components$Additive, components$Epistatic)
+```
+
+*epinetr* attempts to minimise these co-variances by selecting from within the random distributions for the environmental and epistatic components such that co-variances are minimal, given computational constraints. In particular, the epistatic component is optimised using a genetic algorithm.
+
+## Deriving additive and epistatic components
+
+We are now in a position to derive the additive component for the population. First, we'll retrieve the population's unphased genotypes using the *getGeno* function:
+
+```{r}
+geno <- getGeno(pop)
+```
+
+Alternatively, we could use the *getHaplo* function, which returns a list of the two haplotype matrices within the population; we would then need to sum the two haplotypes together.
+
+Next, we'll select only the QTLs within the genotypes:
+
+```{r}
+geno <- geno[, getQTL(pop)$Index]
+```
+
+Finally, we'll multiply the genotypes by the additive coefficients and apply the offset:
+
+```{r}
+additive <- geno %*% getAddCoefs(pop) + getAddOffset(pop)
+additive[1:5]
+```
+
+Compare with the additive component for the first five individuals given by *getComponents*:
+
+```{r}
+getComponents(pop)$Additive[1:5]
+```
+
+The function *getEpistasis* returns a matrix:
+
+```{r}
+head(getEpistasis(pop))
+```
+
+The rows in this matrix are the individuals; the columns are the contributions of each interaction to the overall epistatic component. By summing the rows and applying the epistatic offset to each value, we can derive the contribution of epistasis to each individual's phenotype:
+
+```{r}
+epistatic <- rowSums(getEpistasis(pop)) + getEpiOffset(pop)
+epistatic[1:5]
+```
+
+We can similarly compare this result with the epistatic component for the first five individuals given by *getComponents*:
+
+```{r}
+getComponents(pop)$Epistatic[1:5]
+```
+
+We can thus easily derive both the additive and epistatic components for each individual. This can be further replicated for individuals not in the population.
+
+Suppose you have a matrix of genotypes (`geno2`) for five individuals not in the population:
+
+```{r include=FALSE}
+geno2 <- matrix(sample(0:2, 100*5, replace = TRUE, prob = c(0.25, 0.5, 0.25)), 5, 100)
+```
+
+```{r}
+geno2 <- geno2[, getQTL(pop)$Index]
+geno2
+```
+
+We can find their additive components using the following code:
+
+```{r}
+additive2 <- geno2 %*% getAddCoefs(pop) + getAddOffset(pop)
+additive2[1:5]
+```
+
+Similarly, we can find their epistatic components using the following code:
+
+```{r}
+epistatic2 <- rowSums(getEpistasis(pop, geno = geno2)) + getEpiOffset(pop)
+epistatic2
+```
+
+Note that this is achieved via the optional *geno* argument in the *getEpistasis* function.
+
+# Running the simulation
+
+In order to run the simulation, we need to use the *runSim* function.
+
+```{r message=FALSE}
+popRun <- runSim(pop, generations = 150)
+```
+
+The above command will iterate through 150 generations, with generation 1 being the initial generation supplied.
+
+There are several optional arguments that can be supplied to the simulator to alter selection, recombination and mutation across generations:
+
+* *selection* determines whether random selection (the default) is employed or linear ranking selection is used (by supplying the string "ranking");
+* *truncSire* and *truncDam* give the proportion of sires and dams, respectively, to include in selection, when sorted by descending phenotype (defaulting to 1);
+* *burnIn* determines how many initial generations will use random selection with no truncation  (defaulting to 0);
+* *roundsSire* and *roundsDam* give the maximum number of generations for sires and dams, respectively, to survive within the population, assuming there are enough offspring generated to fill the population (defaulting to 1);
+* *litterDist* is a vector of probabilities for the size of each litter, starting with a litter size of 0 (defaulting to `c(0, 0, 1)`, i.e. each litter will always contain two offspring);
+* *breedSire* is the maximum number of times a sire can breed within a single generation (defaulting to 10);
+* *mutation* is the rate of mutation for each SNP;
+* *recombination* is a vector of probabilities specifying the rate of recombination between consecutive SNPs in the *map* (obviously excepting consecutive SNPs on different chromosomes);
+* *allGenoFileName* is a string giving the file name to optionally output the genotypes from all generations.
+
+Each mating pair produces a number of full-sibling offspring by sampling once from the litter-size probability mass function given by *litterDist*. The vector can be of arbitrary length, such that in order to specify the possibility of up to $n$ full-sibling offspring per mating pair, a vector of length $n + 1$ must be supplied.
+
+Linear ranking selection is a form of weighted stochastic selection: if the individuals in a population of size $n$ are each given a rank $r$ based on descending order of phenotypic value (i.e. the individual with the highest phenotypic value is given the rank $r_1 = 1$ while the individual with the lowest phenotypic value is given the rank $r_n = n$), the probability of an individual $i$ being selected for mating is given by:
+
+\[P(i \textrm{ is selected}) = \frac{2(n - r_i + 1)}{n(n + 1)}\]
+
+For a population of 10, we have the following probabilities of selection for the highest-to-lowest ranked individuals:
+
+```{r}
+n <- 10
+pmf <- 2 * (n - 1:n + 1) / (n * (n + 1))
+pmf
+```
+
+```{r echo=FALSE, fig.width=4, fig.asp=1, fig.align='center', fig.cap="Probability mass function for linear ranking selection on a population of 10 individuals."}
+df = data.frame(Individual=as.character(1:n), Probability=pmf)
+ggplot2::ggplot(data = df, ggplot2::aes(x=reorder(Individual, -Probability), y=Probability)) + ggplot2::geom_bar(stat="identity") + ggplot2::xlab("Ranked individuals") + ggplot2::ylab("Selection probability")
+```
+
+*epinetr* performs selection by first splitting the population into male and female sub-populations. Next, if the round is outside any initial burn-in period, each sub-population is truncated to a proportion of its original size per the values of *truncSire* and *truncDam*, respectively.
+
+When linear ranking selection is used, females are then exhaustively sampled, without replacement, for each mating pair using their linear ranking probabilities, as given above; males are sampled for each mating pair using their linear ranking probabilities but with replacement, where they are each only replaced a maximum number of times as specified by *breedSire*. Random selection occurs in the same manner, but all probabilities are uniform. During any initial burn-in period, random selection is enforced.
+
+Finally, each mating pair produces a number of full-sibling offspring by sampling once from the litter-size probability mass function given by *litterDist* (with the default guaranteeing two full-sibling offspring per mating pair). Half-siblings occur when sires can mate more than once per round (as given by *breedSire*) or sires or dams survive beyond one round (as given by *roundsSire* and *roundsDam*, respectively). Note that in order to maintain the population size, of the sires and dams earmarked as reaching the end of their breeding lifespan, the youngest may be kept in the population to the next round if there is a shortfall of offspring: this can also result in the appearance of half-siblings.
+
+We can perform different simulation runs on the same population as follows:
+
+```{r message=FALSE}
+popRunRank <- runSim(pop, generations = 150, selection = "ranking")
+popRunBurnIn <- runSim(pop, generations = 150, burnIn = 50,
+                       selection = "ranking",
+                       truncSire = 0.25, truncDam = 0.25,
+                       roundsSire = 5, roundsDam = 5,
+                       litterDist = c(0.1, 0.3, 0.4, 0.2),
+                       breedSire = 7)
+```
+
+To visually compare these runs, we can plot them:
+
+```{r fig.width=7, fig.height=4, fig.align='center', fig.cap="A graphical representation of a simulation run using the default parameters."}
+plot(popRun)
+```
+
+```{r fig.width=7, fig.height=4, fig.align='center', fig.cap="A graphical representation of a simulation run using linear ranking selection."}
+plot(popRunRank)
+```
+
+```{r fig.width=7, fig.height=4, fig.align='center', fig.cap="A graphical representation of a simulation run using ranking selection and a burn-in period of the first 50 generations."}
+plot(popRunBurnIn)
+```
+
+Using the *allGenoFileName* argument in *runSim* allows the simulator to write a serialised file containing all the genotypes generated during the run. To retrieve such a file, we use the *loadGeno* function:
+
+```{r echo=FALSE}
+allGenoFileName <- system.file("extdata", "geno.epi", package = "epinetr")
+geno <- loadGeno(allGenoFileName)
+```
+
+```{r eval=FALSE}
+popRun <- runSim(pop, generations = 150, allGenoFileName = "geno.epi")
+geno <- loadGeno("geno.epi")
+```
+
+This object is a matrix in the same phased format as the genotype matrices supplied to the constructor.
+
+```{r}
+geno[1:5, 1:8]
+```
+
+To begin retrieving data from a simulation run, we can use the *getPedigree* function to return the pedigree data frame for the population across the entire run. For example:
+
+```{r}
+ped <- getPedigree(popRun)
+ped[512:517, ]
+```
+
+Note that the originating round is included in the pedigree of each individual.
+
+The *getAlleleFreqRun* function returns the allele frequencies for each SNP per generation. For example:
+
+```{r}
+qtl <- getQTL(popRun)$Index
+af <- getAlleleFreqRun(popRun)
+af[, qtl[1]]
+```
+
+The *getPhased* function returns the phased genotype matrix for the current population:
+
+```{r}
+geno <- getPhased(popRun)
+geno[1:6, 1:10]
+```
+
+Alternatively, the *getGeno* function returns the unphased genotype matrix for the current population:
+
+```{r}
+geno <- getGeno(popRun)
+geno[1:6, 1:5]
+```
+
+Finally, we can create a new subpopulation based on the current population by specifying the IDs to use:
+
+```{r}
+ID <- getComponents(popRun)$ID
+ID <- sample(ID, 50)
+popRun2 <- getSubPop(popRun, ID)
+```
+
+## Using the pedigree dropper
+
+Finally, we can use a pedigree data frame to determine selection, with the data frame giving IDs for each individual as well as its sire and dam IDs. Such a data frame can be retrieved from a previous simulation run using the *getPedigree* function on the resulting population, or we can instead use a new data frame like so:
+
+```{r include=FALSE}
+pedData <- getPedigree(popRun)
+pedData <- pedData[,1:3]
+```
+
+```{r}
+pedData[201:210, ]
+```
+
+To use this "pedigree dropper", we call *runSim* with the *pedigree* argument:
+
+```{r message=FALSE}
+popRunPed <- runSim(pop, pedigree = pedData)
+```
+
+The pedigree dropper first sorts the pedigree into the implicit number of generations, then runs the simulation using selection according to the given data frame. (Note that if you're using pedigree data from a previous run, the number of generations reported by the pedigree dropper may be different from the number of iterations of the simulator that produced the pedigree.)
+
+As usual, we can plot the resulting run:
+
+```{r fig.width=7, fig.height=4, fig.align='center', fig.cap="A graphical representation of a simulation run using a pedigree data frame."}
+plot(popRunPed)
+```
+
+# Conclusion
+
+The *epinetr* package is a flexible suite of functions designed to allow for the analysis of epistasis under a multitude of conditions, with complex interactions being a core component of the simulation. This vignette is intended as an overview of the package, with as much detail as possible included. That said, the help pages for each function will provide further detail.

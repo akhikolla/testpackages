@@ -1,0 +1,81 @@
+---
+title: "Intro to exuber"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Intro to exuber}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message=FALSE
+)
+options(cli.width = 80)
+```
+
+```{r echo=FALSE, message=FALSE}
+library(exuber)
+```
+
+For our analysis we are going to use the `datasets::EuStockMarkets` dataset, which contains the daily closing prices of four major European stock indices: Germany DAX, Switzerland SMI, France CAC, and UK FTSE (see `?EuStockMarkets`). The data are sampled in business time, i.e., weekends and holidays are omitted. In this particular exercise we want to focus on weekly observations. To do so we aggregate to a weekly frequency and reduce the number of observations from 1860 to 372. 
+
+```{r dataset}
+stocks <- aggregate(EuStockMarkets, nfrequency = 52, mean)
+```
+
+## Estimation
+
+We estimate the above series using the recursive Augmented Dickey-Fuller test with 1 lag.
+
+```{r estimation}
+est_stocks <- radf(stocks, lag = 1)
+```
+
+## Analysis
+
+The summary will print the test statistic and the critical values for 10%, 5% and 1% significance level. The package provides simulated critical values for up to 600 observations, so we use them by omitting the `cv` argument in the `summary` function. 
+
+```{r summary}
+summary(est_stocks)
+```
+
+It seems that all stocks exhibit exuberant behaviour but we can also verify it using `diagnostics()`. This function is particularly useful when we deal a large number of series.
+
+```{r diagnostics}
+diagnostics(est_stocks)
+```
+
+
+If we need to know the exact period of exuberance we can do so with the function `datestamp()`. `datestamp()` works in a similar manner with `summary()` and `diagnostics()`. The user still has to specify the critical values, however we can still utilize the package's critical values by leaving the cv-argument blank.
+
+```{r datestamp}
+# Minimum duration of an explosive period 
+rot = psy_ds(stocks) # log(n) ~ rule of thumb
+
+dstamp_stocks <- datestamp(est_stocks, min_duration = rot)
+dstamp_stocks
+```
+We can extract the datestamp as a dummy variable 1 = Exuberance, 0 = No exuberance.
+
+```{r datestamp-dummy}
+dummy <- attr(dstamp_stocks, "dummy")
+tail(dummy)
+```
+
+## Plotting
+
+The `autoplot` function returns a faceted ggplot2 object for all the series that reject the null hypothesis at 5% significance level.
+
+```{r plot-radf, fig.width = 9}
+autoplot(est_stocks)
+```
+
+Finally, we can plot just the periods the periods of exuberance. Plotting datestamp object is particularly useful when we have a lot of series, and we are interested to identify explosive patterns in all of them.
+
+```{r plot-datestaemp, fig.width = 7, fig.height=2}
+datestamp(est_stocks) %>% 
+  autoplot()
+```

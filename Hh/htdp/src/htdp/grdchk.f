@@ -1,0 +1,24 @@
+
+****************************************************
+      SUBROUTINE GRDCHK (POSX, POSY, GRDLX, GRDUX,
+     1             GRDLY, GRDUY, INSIDE)
+
+C
+C ROUTINE CHECKS IF THE POINT HAVING COORDINATES (POSX, POSY)
+C IS WITHIN THE REGION SPANNED BY THE GRID
+C
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+      IMPLICIT INTEGER(4) (I-N)
+      LOGICAL INSIDE
+
+      INSIDE = .TRUE.
+
+      IF (POSX .LT. GRDLX .OR. POSX .GT. GRDUX) THEN
+         INSIDE = .FALSE.
+      ENDIF
+      IF (POSY .LT. GRDLY .OR. POSY .GT. GRDUY) THEN
+         INSIDE = .FALSE.
+      ENDIF
+
+      RETURN
+      END

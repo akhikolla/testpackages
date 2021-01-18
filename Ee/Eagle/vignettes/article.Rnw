@@ -1,0 +1,1048 @@
+\documentclass[article, nojss]{jss}
+
+
+
+%% -- LaTeX packages and custom commands ---------------------------------------
+
+%% recommended packages
+\usepackage{thumbpdf,lmodern}
+
+
+%% new custom commands
+\newcommand{\class}[1]{`\code{#1}'}
+\newcommand{\fct}[1]{\code{#1()}}
+
+%% New commands ... 
+\newcommand{\bwidetildea}{\widetilde{\bm{a}}}
+\newcommand{\bu}{\bm{u}}
+\newcommand{\be}{\bm{e}}
+\newcommand{\btau}{\bm{\tau}}
+\newcommand{\ba}{\bm{a}}
+\newcommand{\bzero}{\bm{0}}
+\newcommand{\bI}{\bm{I}}
+\newcommand{\bX}{\bm{X}}
+\newcommand{\by}{\bm{y}}
+\newcommand{\bZ}{\bm{Z}}
+\newcommand{\bM}{\bm{M}}
+\newcommand{\bmm}{\bm{m}}
+\newcommand{\bG}{\bm{G}}
+
+
+%% used for removing spaces in subfigure references. 
+\makeatletter
+\def\RemoveSpaces#1{\zap@space#1 \@empty}
+\makeatother
+
+
+
+
+\usepackage{bm}
+
+%% -- Article metainformation (author, title, ...) -----------------------------
+
+%% - \author{} with primary affiliation
+%% - \Plainauthor{} without affiliations
+%% - Separate authors by \And or \AND (in \author) or by comma (in \Plainauthor).
+%% - \AND starts a new line, \And does not.
+\author{Andrew W.  George\\Commonwealth Scientific\\and Industrial Research\\Organisation 
+   \And Arunas Verbyla\\Commonwealth Scientific\\and Industrial Research\\Organisation
+   \And Joshua Bowden\\Commonwealth Scientific\\and Industrial Research\\Organisation
+  }
+\Plainauthor{Andrew W. George, Arunas Verbyla, Joshua Bowden}
+
+%% - \title{} in title case
+%% - \Plaintitle{} without LaTeX markup (if any)
+%% - \Shorttitle{} with LaTeX markup (if any), used as running title
+\title{
+Eagle: an \proglang{R} package for multi-locus association mapping on a genome-wide scale}
+\Plaintitle{Eagle: an R package for multi-locus association mapping on a genome-wide scale}
+\Shorttitle{Eagle for multi-locus association mapping}
+
+%\VignetteIndexEntry{Eagle_vignette}
+%\VignetteEngine{knitr::knitr}
+\usepackage[utf8]{inputenc}
+
+
+
+
+%% - \Abstract{} almost as usual
+\Abstract{
+\pkg{Eagle} is an \proglang{R} package for multi-locus association mapping on a genome-wide scale. 
+It is unlike other multi-locus packages in that it is easy-to-use for \proglang{R} users 
+and non-users alike. It has two modes of use, command line and GUI. \pkg{Eagle} is fully documented 
+and has its own supporting website, \url{http://eagle.r-forge.r-project.org/index.html}. \pkg{Eagle} is a 
+significant improvement over the method-of-choice, single-locus association mapping.  It has greater power to 
+detect SNP-trait associations, does not suffer from multiple testing issues, and 
+there is no need for significance thresholds. 
+It is based on model selection, linear mixed models, and a clever idea on how random effects  can be used to identify SNP-trait associations. 
+Through an example with real mouse data, we demonstrate \pkg{Eagle}'s ability to bring clarity and  increased insight to single-locus findings. 
+Initially, we see \pkg{Eagle} complimenting single-locus analyses. However, over time, we hope the community will make, increasingly, 
+multi-locus association mapping their method-of-choice for the analysis of genome-wide association study data. 
+}
+
+%% - \Keywords{} with LaTeX markup, at least one required
+%% - \Plainkeywords{} without LaTeX markup (if necessary)
+%% - Should be comma-separated and in sentence case.
+\Keywords{association mapping, linear mixed model, model selection, genome-wide association study}
+
+
+%% - \Address{} of at least one author
+%% - May contain affiliations for each author
+%%   (in extra lines, separated by \emph{and}\\).
+%% - May contain multiple authors for the same affiliation
+%%   (in the same first line, separated by comma).
+\Address{
+  Andrew W. George\\
+  Data61\\
+  Commonwealth Scientific and Industrial Research Organisiation\\
+  Brisbane, QLD 4102, Australia\\
+  E-mail: \email{Andrew.George@csiro.au}\\
+  }
+
+
+\begin{document}
+
+
+%% -- Introduction -------------------------------------------------------------
+
+%% - In principle "as usual".
+%% - But should typically have some discussion of both _software_ and _methods_.
+%% - Use \proglang{}, \pkg{}, and \code{} markup throughout the manuscript.
+%% - If such markup is in (sub)section titles, a plain text version has to be
+%%   added as well.
+%% - All software mentioned should be properly \cite-d.
+%% - All abbreviations should be introduced.
+%% - Unless the expansions of abbreviations are proper names (like "Journal
+%%   of Statistical Software" above) they should be in sentence case (like
+%%   "generalized linear models" below).
+
+\section[Introduction]{Introduction} 
+\label{sec:intro}
+
+
+The \pkg{Eagle} package was developed to meet a shared need in animal, plant, and human  
+genetics. 
+It was built to make  
+ multi-locus association mapping easy. 
+Multi-locus association mapping is more powerful, statistically, than single-locus 
+association mapping \cite{wang2016improving,zhang2019applications}. By being able to model 
+the association between multiple single nucleotide polymorphisms (SNPs) and a trait
+simultaneously, multi-locus association mapping better captures the hidden reality of heritable
+traits with complex genetic architectures. Yet, multi-locus association mapping is 
+rarely used in practice. Many of the current software implementations are not easy to use, 
+can produce results that can be difficult to interpret, are driven by high-level statistical theory
+making their inner statistical workings mysterious to  non-statisticians, and tend to be computationally ineffecient. \pkg{Eagle} does not suffer from these limitations. 
+
+%%The Eagle package has 
+ %%been built with the purpose of making  
+%% multi-locus association mapping the method of choice. 
+
+Genome-wide association studies (GWASs) have become an important resource for
+unlocking the genetic secrets of heritable traits. They are 
+a "first step" on the road to revealing the genes active for a trait. Their data are analysed 
+with association mapping methods. The goal of association mapping is to find the SNPs 
+in strongest association with a trait. These are the SNPs closest to the active genes. However,
+before these SNPs can be found, there are a number of challenges association mapping 
+must overcome. Modern-day GWASs can
+collect genotypes on millions or even tens of millions of SNPs but comparatively, GWAS have 
+small sample sizes in the hundreds or thousands of individuals. This is a challenge, statistically, 
+for association mapping. Another statistical challenge is that an association is created between 
+a SNP and trait when the SNP is in close proximity to an active gene. However, familial 
+relatedness, population structure, and environmental effects can also cause a SNP to be 
+associated with a trait. To avoid spurious findings, these competing sources of association 
+need to be accounted for by the association mapping method. 
+
+
+
+The method-of-choice when analysing GWAS data is to fit a separate linear mixed model (LMM) for each SNP  \cite{yu2006unified,zhao2007arabidopsis}. The LMM framework is well suited to handling multiple sources of association. Here, a SNP is treated as a fixed effect whose statistical significance is a measure of the strength of association between the SNP and trait. The model includes a random effect for familial relatedness. It may also include other fixed effects for environmental factors and population structure. 
+To a statistician, fitting a separate model for each SNP may seem strange. Surely, it would be better to use, say, variable selection techniques to find the SNP of interest? This is true but it 
+quickly becomes intractable, computationally. This practice is also abetted by several highly efficient and well developed software packages, purpose built for the analysis of GWAS data. Such software includes  \pkg{PLINK} \cite{purcell2007plink}, \pkg{TASSEL} \cite{bradbury2007tassel}, 
+and \pkg{GAPIT} \cite{lipka2012gapit}. Still, by analysing each SNP separately, a single-locus model is wrongly assumed. 
+Also, how best to control the type 1 error rate is an issue. SNP data are correlated, with a dependence structure that changes along a genome. Adjusting significance thresholds for multiple testing, appropriately, is non-trivial. 
+Multi-locus association mapping does not suffer from the afore mentioned issues. 
+
+Over the past decade, there has been a growing assortment of \proglang{R} packages for 
+multi-locus association mapping. Early \proglang{R} packages, \pkg{bigRR} 
+ \cite{shen2013novel}, 
+\pkg{LMM-Lasso} \cite{rakitsch2013lasso},
+and \pkg{glmnet} \cite{Friedman2010glmnet},  were focused on regularisation techniques but the interpretation of results 
+is difficult.  The \proglang{R} package \pkg{MLMM}  \cite{segura2012efficient} avoided this difficulty by treating association mapping as a model selection problem.   \pkg{FarmCPU} \cite{liu2016iterative} and its much 
+faster cousin \pkg{BLINK} \cite{huang2019blink}  implement a two model strategy where results are passed back and 
+forth between the two models. The first model measures the strength of a SNP-trait association
+on a SNP-by-SNP basis. 
+The second model, with the help of results from the first model, 
+identify "important" pseudo quantitative trait nucleotides (pseudo-QTNs). 
+These pseudo-QTNs are then fed  back into the first model and the fitting process repeated 
+for improved measures of association. 
+\pkg{MRMLM} \cite{wang2016improving} and \pkg{FASTmrEMMA} \cite{wen2018methodological} also make use of two models but in a staged approach. 
+ In the first stage, the strength of association between a SNP and trait 
+is measured for each SNP separately. Here, a SNP is treated as a 
+random effect. Those SNPs which are deemed significant, according to some threshold, 
+are moved to the second-stage. 
+A single multi-locus model is then formed from those SNPs which were  identified in the 
+first stage and fitted to the data. It is true to say that software availability is not the 
+cause for the lack of mainstream acceptance of  multi-locus association mapping.
+
+
+In this paper , we present \pkg{Eagle}, an \proglang{R} package for multi-locus association mapping. We created our package to be as fast as single-locus association mapping, to be easy to use even for non-R users, and to give easily interpretable results. Methodologically, it is only a little more complicated than single-locus methods. The "best" LMM is built iteratively. At each iteration, the SNP in strongest association with a trait is identified from the random effects part of the model and moved to the fixed effects part of the model. This process is simple yet ingenious. It simultaneously identifies those regions of the genome that house genes influencing a trait while also accounting for all other SNP-trait associations.
+
+\pkg{Eagle} is not like other multi-locus \proglang{R} packages. \proglang{R}, by default, comes with single-threaded math libraries. By replacing these libraries with their multi-threaded counterparts, certain linear algebra operations become parallelised, implicitly. The \pkg{Eagle} package has been structured, purposely, to make extensive use of these implicitly parallelised operations. In the parts of \pkg{Eagle} where this has not been possible, we have instead written \proglang{C++}  
+routines and parallelised the code explicitly through openMP \cite{dagum}. 
+ \pkg{Eagle} differs though most from other multi-locus \proglang{R} packages in its ease-of-use for non-R users. Considerable effort has been invested in making \pkg{Eagle} equally useable to \proglang{R} and non-R users. The \pkg{Eagle}  package comes with a browser-based graphical user interface (GUI). A user need only issue a single \proglang{R} command, \code{OpenGUI()}, to harness the full functionality of \pkg{Eagle}. \pkg{Eagle} has its own website 
+ (\url{http://eagle.r-forge.r-project.org/index.html}) with instructions on how to install a multi-threaded version of \proglang{R}, quick start guide, tutorials, videos, and answers to frequently asked questions. Users can experiment with \pkg{Eagle}, prior to installing the package, by analysing a test data set 
+ on our public server (\url{http://eagle.r-forge.r-project.org/demo.html}).
+
+
+
+
+
+
+
+
+%% -- Manuscript ---------------------------------------------------------------
+
+%% - In principle "as usual" again.
+%% - When using equations (e.g., {equation}, {eqnarray}, {align}, etc.
+%%   avoid empty lines before and after the equation (which would signal a new
+%%   paragraph.
+%% - When describing longer chunks of code that are _not_ meant for execution
+%%   (e.g., a function synopsis or list of arguments), the environment {Code}
+%%   is recommended. Alternatively, a plain {verbatim} can also be used.
+%%   (For executed code see the next section.)
+
+\section{Methodology}
+\label{sec:methodology}
+
+\pkg{Eagle} implements a recently developed method for multi-locus association mapping 
+\cite{george2020eagle}. It is based on LMMs.  Below, some notation, the model, how the dimensionality of the model can be reduced, and the Eagle algorithm is described. For consistency, the same notation as \cite{george2020eagle} is used.
+
+
+
+
+
+\subsection{Notation}
+Suppose genotypes are collected on $L$ loci from $n_g$ individuals/lines/strains. The genotypes are coded as 
+-1, 0, and 1 corresponding to SNP genotypes AA, AB, and BB, respectively. Ideally, missing genotypes are imputed 
+prior to analysis. If not, missing genotypes  are set to 0 by \pkg{Eagle}. 
+Let 
+ $\bM^{(n_g \; \times \; L)} = [\bmm_1 \bmm_2 \ldots \bmm_L]$ be the matrix of SNP genotype data
+ where the vector $\bmm_j^{(n_g \; \times \; 1)}$ contains the genotypes -1, 0, and 1 for the $j$th SNP. Furthermore, 
+ let $\by^{(n \; \times \;1)}$ contain the  quantitative trait data. Here, $n$ can be 
+ larger than $n_g$ if multiple measurements, as is common in plant studies, are recorded on the same line/strain.
+ 
+ The model is built iteratively. At each iteration, a SNP is selected and moved from the random effects to the fixed effects. 
+ Suppose $s$ iterations of the model building process have been performed. Let $S = \{ S_1, S_2, \ldots, S_s\}$ be a 
+ set of ordinal numbers.  The number $S_k$ corresponds to the $S_k$th SNP in the marker map that was selected 
+ in the $k$th iteration of the model building process.  For example, if $S= \{101, 12, 1143 \}$, then the 101th, 12th, and 
+ 1143th SNP in the marker map were selected in the first, second, and third model selection iterations, respectively. 
+ 
+ 
+
+\subsection{Multi-locus model}  The standard LMM for association mapping is
+\begin{equation}
+\label{eq1}
+\by = \bX \btau + \bZ \bu_g + \be
+\end{equation}
+where $\bX^{(n \; \times \; p)}$ and $\bZ^{( n \; \times \; n_g)}$ are known design matrices, 
+$n$ is the number of observations, $n_g$ is the number of individuals/lines/strains/ with $n_g \leq n$,  
+$\btau^{(p \; \times \; 1)}$ is a vector with $p$ fixed effects parameters including the intercept,  and 
+$\bu_g^{(n_g \; \times \; 1)}$ is a vector containing the 
+genetic effects. The residuals, $\be^{(n \; \times \;1)}$,   are assumed to 
+follow a normal distribution with mean 0 and covariance matrix 
+$\sigma^2_e \bI^{(n \; \times \; n)}$ where $\sigma^2_e$ is an unknown residual variance. 
+
+
+In the standard LMM, the genetic effects, $\bu_g^{(n_g \; \times \; 1)}$, is a random term that accounts for 
+familial relatedness \cite{yu2006unified, zhao2007arabidopsis}. It is 
+assumed to follow a  $N(\bzero, \sigma^2_g \bG^{(n \; \times \; n)})$ where
+$\bG$ is a relationship matrix and  $\sigma^2_g$ is the unknown 
+genetic variance.  The relationship matrix is calculated from pedigree records or from SNP data.
+\pkg{Eagle} though models $\bu_g$ differently and this is where the innovation lies. In 
+the standard model , $\bu_g$ measures relatedness between individuals but 
+\pkg{Eagle} instead measures relatedness between SNP. 
+
+The genetic effects are modelled as 
+\begin{equation}
+\label{eq2}
+\bu_g = \sum_{k=1}^s  \bmm_{S_k} a_{S_k} +\bM_{-S} \ba_{-S}
+\end{equation}
+where  $\bmm_{S_k}^{(n_g \; \times \; 1)}$ is the vector of genotypes  for the  $k$th selected SNP,
+$a_{S_k}$ is the additive effect of the $k$th selected SNP, 
+$\bM_{-S}^{(b \; \times \; L-s)}$ is the matrix of  SNP genotypes 
+with the data for the SNPs in $S$ removed, and 
+$\ba_{-S}^{(L-s \; \times  \; 1)}$ is a random effect whose distribution is 
+$\ba_{-S} \sim N(\bzero, \sigma_a^2 \bI^{(L-s \; \times \;  L-s)})$.  The first term on the left hand side are the 
+fixed effects. The second term  are the random effects. 
+The fixed effects measure the additive effect of the $S$ already-selected SNPs on the trait.
+The random effects measure the association between all other $L-s$ SNPs and trait, simultaneously. 
+Here, SNPs are assumed to be uncorrelated to reduce model complexity, making the analysis more manageable. 
+Also, for a working model, it is not uncommon to assume SNP effects are pairwise uncorrelated. Such an assumption 
+has long been made for marker-assisted selection with ridge regression  \cite{whittaker2000marker}. 
+
+
+\subsection{Dimension reduction}
+In modern genome-wide association studies, the number of loci, $L$, can be very large, sometimes in the 
+tens of millions. This creates a problem, computationally, when fitting (\ref{eq2}) as the vector $\ba_{-S}$ contains 
+a large number of elements.  Fortunately, the dimensionality of (\ref{eq2}) can be reduced by orders of magnitude. 
+
+The goal is to form an equivalent model for (\ref{eq2}) of lower dimension but where the equivalent model has the same variance. 
+The variance structure of  $\bu_g^{(n_g \times 1)}$  is the $n_g \times n_g$ matrix 
+$ \sigma_a^2  \bM_{-S}   \bM_{-S}^T$. Here, the only unknown is the variance $ \sigma_a^2$.
+By taking the matrix square root,  
+$$
+\bZ_e = (\bM_{-S} \bM_{-S}^T)^{1/2}
+$$
+an equivalent, dimension-reduced, model for $\bu_g$ is 
+\begin{equation}
+\label{eq3}
+\bu_g = \sum_{k=1}^s  \bmm_{S_k} a_{S_k} +\bZ_e  \ba^*
+\end{equation}
+where $\ba^*$ is a random effect with only $n_g$ elements and distributed as 
+$N(\bzero,  \sigma_a^2 \bI^{(n_g \times n_g)} )$.  
+
+The \pkg{Eagle} algorithm requires estimates of $\ba$ and its variance to identify the SNP in strongest 
+association with the trait.  These can be recovered from the fitting of the dimension reduced model \cite{verbyla2012rwgaim,verbyla2014whole}
+since 
+\begin{equation}
+\label{eq4}
+\bwidetildea = \left [ \bM_{-S}^T (\bM_{-S} \bM_{-S}^T)^{-1/2} \right ] \bwidetildea^*
+\end{equation}
+and its variance matrix is
+\begin{equation}
+\label{eq5}
+\textrm{var}(\bwidetildea) = \bM_{-S}^T (\bM_{-S} \bM_{-S}^T)^{-1/2} \textrm{var}(\bwidetildea^*) (\bM_{-S} \bM_{-S}^T)^{-1/2} \bM_{-S}
+\end{equation}
+Only the diagonal elements of the variance matrix are needed which simplifies its calculation. 
+
+
+
+
+\subsection{The Eagle algorithm}  
+\label{subsec:alg}
+
+\pkg{Eagle} treats association mapping as a model selection problem. The model is built iteratively, via forward selection. 
+At each iteration, from the current model, a new model is formed. 
+This is done by selecting a SNP from the random effects and moving 
+it to the fixed effects. The SNP is selected based on a score statistic. 
+The reasoning behind moving effects from random to fixed is if there are major 
+SNP-trait associations, then at first, they are contained in the genetic background of the model. 
+This gives opportunity for the genetic background to act as a SNP selection mechanism. Major SNP-trait associations are identifiable as outliers when compared to background effects.
+
+
+Suppose $s$ iterations of the model building process have been performed. The current model 
+is of the form (\ref{eq1}) and (\ref{eq3}). The vector of genetic effects $\bu_g$ has  $s$ fixed effects for the $s$ discovered
+SNP-trait associations. The model has been fitted and parameter estimates obtained via maximum likelihood. 
+The vector of random effects  $\tilde{\ba}^*$ and its variance $var(\tilde{\ba}^*)$ are then computed \cite{robinson91}.
+
+The following steps are performed for the $(s+1)$th iteration of the model building process.
+
+%%t_j^2 = \frac{ \widetilde{a} _j^2}{\textrm{var}(\widetilde{a}_j)} aa dfdf adf
+
+{\bf Step 1:  SNP selection.}  A SNP is selected from the random effects based on the maximum score statistic 
+$$
+t_j^2 = \frac{ \widetilde{a} _j^2}{\textrm{var}(\widetilde{a}_j)} 
+$$
+where $j$ refers to the $j$th SNP in the marker map, 
+the $j$  index is over all SNPs except the $s$ SNPs already selected,
+$\widetilde{a} _j^2$  is a scalar value formed from the square of the 
+ best linear unbiased predictor of the $j$th SNP's random effect, and   $\textrm{var}(\widetilde{a}_j)$ is its variance. 
+ These values are recovered from 
+$\widetilde{a}^*$ 
+and $\textrm{var}(\widetilde{a}^*)$, which were obtained from the fitting of the current model, and 
+equations (\ref{eq4}) and (\ref{eq5}). 
+By choosing the SNP with the maximum score statistic, we are selecting the SNP which is in strongest association with the trait, from amongst 
+those SNP whose association 
+is being modelled by the random effects. 
+
+
+{\bf Step 2: model building and fitting.}
+A new dimension-reduced model is built, according to (\ref{eq1}) and (\ref{eq3}), from 
+ the trait data $\by$, and known matrices $\bX$, $\bZ$, and $\bM_{-S}$. Here, $S$ is the set of indexes 
+ of the $s$ previously selected SNP and the additional SNP found in the previous step. The model is 
+ fitted to the data and parameters estimated via maximum likelihood. 
+ 
+ 
+
+ {\bf Step 3: model selection.} The importance of the $(s+1)$th selected SNP is determined via the extended Bayes information criteria  
+ (extBIC, \cite{chen2008extended}). The extBIC is a model selection measure that takes into account the number of 
+ parameters and the complexity of the model space.  If the extBIC increases, then the 
+ new model is accepted and the iterative model building process  continues. 
+  
+ Upon completion, $S$ is the set of indexes of the SNP in strongest and measurable association with the trait. 
+Each SNP identifies a different part of the genome housing genes that are influencing the trait. 
+
+
+\section{The Eagle package}
+\subsection{Overview}
+\pkg{Eagle} is an \proglang{R} package for the genome-wide analysis of association data. It can handle data 
+collected from inbred or outbred study populations. The populations can be of arbitrary and unknown complexity. 
+The data can be larger than the memory capacity of the computer. 
+Since \pkg{Eagle} is framed within a LMM paradigm, it is best
+suited to the analysis of data on continuous normally distributed
+traits. LMMs though can also tolerate non-normal data \cite{schielzeth2020robustness}. A flow chart of the analysis pipeline for \pkg{Eagle} is shown in Figure \ref{fig:flowchart}. 
+The package contains functions for opening the GUI, inputing the data, performing genome-wide analyses, 
+and for summarising and visualising the results. 
+Non-R users need only be familiar with a single function \fct{OpenGUI} that opens the GUI. 
+%% A flow chart of the analysis pipeline for \pkg{Eagle} is shown in Figure 1. 
+
+
+\begin{figure}[th]
+\centerline{\includegraphics[width=15cm, height=8cm]{flowchart.png}}
+\caption{A flow chart of the analysis pipeline for \pkg{Eagle}. Each green box corresponds to a separate page of the GUI.  }
+\label{fig:flowchart}
+\end{figure}
+
+
+
+
+\subsection{Installation}
+\pkg{Eagle} is available on CRAN. As such, it can be installed in the usual way. 
+\pkg{Eagle} though has been designed to make extensive use of implicit parallelisation. 
+Many of the vector, matrix, and linear algebra operations in \proglang{R} link directly to the API's of 
+BLAS (Basic Linear Algebra Subroutines, see \cite{blackford2002updated}) and LAPACK 
+(Linear Algebra Package, 
+see \cite{anderson1999lapack}). \proglang{R}, by default, comes with single-threaded versions of these libraries. If these libraries are replaced by their 
+multi-threaded counterparts, such as MKL and openBLAS, parts of \proglang{R} become multi-threaded, implicitly. 
+Detailed instructions for converting R to multi-threaded computation are available on the Eagle website 
+(\url{http://eagle.r-forge.r-project.org/instruction.html}).
+
+
+
+\subsection{Data input}
+There are, potentially, four different types of data required by \pkg{Eagle} for input. 
+These are 
+the phenotypic data,  the genotypic data, the marker map, and the Z matrix. 
+Whether all four are needed is dependent upon the study design 
+and format of the  genotypic
+ data.  Each input data type is discussed below. 
+ 
+  
+ 
+ The phenotypic data consists of observations on one or more traits and any explanatory variables. 
+ A trait may have a single observation per individual/line/strain or, as is common in plant studies,  may have repeat observations.
+ The data are arranged into columns.  
+  The first row 
+ contains the column headings. The observations can be space or comma separated. 
+ Missing trait and/or explanatory variable values are allowed.  
+  The data are read into 
+ \pkg{Eagle} with the function \fct{ReadPheno}.  
+ 
+ 
+ The genotypic data are the genotypes observed on the individuals/lines/strains from the SNPs.  Since association studies can collect genotypes on 
+ thousands of individuals across millions of SNPS, these data can be extremely large. Fortunately, \pkg{Eagle} can handle data beyond a computer's 
+ memory capacity. 
+  \pkg{Eagle} will accept genotypic data that are 
+in variant call format, space delimited ASCII format (the default), or PLINK ped format. 
+ The data are read with the 
+function \fct{ReadMarker}.  The argument  \code{type} , which has the value \code{"vcf"}, \code{"text"}, or \code{"PLINK"},  specifies the type of data being read.  The argument \code{availmemGb} tells \pkg{Eagle} how much memory, in gigabytes, are available. 
+  The order of the SNPs in the input file must correspond to their map order. 
+Ideally, missing genotypes are imputed prior to input but some missing genotypic data can be tolerated. 
+
+The marker map consists of the names and locations of the SNPs. The map is specified via three columns of data. 
+The first column contains the SNP labels. The second has the names of the chromosomes 
+upon which the SNPs residue. The third column has their chromosomal positions. 
+The data are space separated with the first row being the column names. 
+The SNPs are in map order.  Missing values are not allowed. 
+The data are read with the function \fct{ReadMap}.  If the genotypic data are in variant call format, a separate marker map file is not needed.
+A variant call format file contains not only the SNP genotypes but also marker map information. 
+
+
+The Z matrix is needed only if a trait has repeat observations. It is an incidence matrix. As such, it contains 
+ zeroes and ones only. 
+The number of rows in the matrix equals the number of rows of phenotypic data. 
+The number of columns equals the number of rows of genotypic data. The 
+data are space separated. The function  \fct{ReadZmat} reads the data. 
+
+
+
+
+\subsection{Controlling the type 1 error rate}
+\label{subsec:type1}
+
+All association mapping methods commit type 1 errors. For some, the type 1 
+error rate is controlled explicitly. For others, it is implicit to the internal 
+workings of the methodology. In \pkg{Eagle}, the conservativeness of the model building 
+process is managed explicitly via the parameter $\lambda$. The parameter $\lambda$ 
+is part of the extBIC. It ranges from zero to one. 
+The conservativeness of the extBIC increases with increasing $\lambda$. 
+Although it is possible to set $\lambda$ analytically, the desired type 1 error rate is not 
+part of the calculation. Instead, an empirical approach is adopted in \pkg{Eagle}. 
+
+A permutation approach is implemented in the function \fct{FPR4AM}. It finds the 
+type 1 error rate for discrete 
+values of $\lambda$. If $n_{perm}$ permutations are performed 
+and their are $n_\lambda$ discrete values of $\lambda$ being considered, potentially this means 
+$n_{perm} \times n_\lambda$ genome-wide analyses are required. For large data sets, this quickly becomes computationally intractable. Fortunately, even though 
+the trait data $\by$ changes across replicates, the SNP and explanatory variable data remains the same. 
+This means, for a permutation,  only those parts of the \pkg{Eagle} algorithm impacted by a change in $\by$ 
+need recalculation. Also, through vectorisation, the type 1 error rates corresponding to all $n_\lambda$ discrete values of $\lambda$ can be calculated simultaneously, for each permutation. 
+
+In the example below, the run time for \fct{FPR4AM} was 36 seconds and for the analysis it was 20 seconds but the run times 
+are situation specific. Having to run \fct{FPR4AM} can more than double the computational cost of an analysis but being able to control the type 1 error 
+more than compensates for this cost. 
+
+\subsection{Association mapping analysis}
+\label{subsec:am}
+
+
+One of the most important functions in the package, from a user's perspective, is \fct{AM}. 
+This function implements the methodology presented in Section 
+\ref{sec:methodology}. It is the function that performs association mapping. The function has 12 arguments.  The important arguments are as follows. 
+The trait and fixed effects are specified via the arguments \code{trait} and \code{fformula}, respectively. The data are passed to \fct{AM} through the arguments
+ \code{pheno}, \code{geno},  \code{map},  and if required, \code{Zmat}.  The number of threads, for parallel computation, is set with \code{ncpu}. 
+ The type 1 error rate  is controlled with \code{lambda}.  It's value is found by running \fct{FPR4AM}. 
+ 
+
+ As an example, suppose the phenotypic data, SNP data, and marker map have been read with the functions described above and stored in data objects \code{phenoObj}, 
+\code{genoObj}, and  \code{mapObj}, respectively. The trait name is 'y'. The explanatory variables of interest are 'cov1' and 'cov2' and the fixed effects part of (\ref{eq1}) has the form \code{cov1 + cov2 + cov1*cov2} where \code{cov1*cov2} is an interaction term. Let the $\lambda$ value that gives a type 1 error rate of 0.05 be 0.78 and it was found with \fct{FPR4AM}. Then, the function call that performs the analysis is
+\begin{Code}
+R> AM(trait = "y", fformula = "cov1 + cov2 + cov1*cov2", geno = genoObj, 
++     pheno = phenoObj, map = mapObj, ncpu = 8,  lambda = 0.78)
+\end{Code}
+The number of threads for parallel computation has been set to 8. After running the function, the SNPs closest to the genes underlying 'y' are reported. Each SNP identifies a different region of interest on the genome.
+
+\subsection{Results}
+
+
+Additional analysis information is obtained with the function \fct{SummaryAM}. 
+Three tables are generated. They are a table of summary information, 
+a findings table, and an effects table. The summary table 
+ contains information on items such as the number of cpu that were available, 
+ number of samples, the fixed effects formula, 
+number of significant SNP-trait associations, and the $\lambda$ value at which the analysis was 
+performed. The findings table lists the names, chromosomes, and positions of those SNPs that were found to be in association with the trait. 
+The effects table has the effect sizes, degrees of freedom, Wald statistic values, and 
+p-values of the fixed effects in the model, including the SNPs that were identified 
+as being in association with the trait. 
+
+
+\subsection{Visualisation} 
+ \fct{PlotAM} is a interactive function for viewing the strength of association along a 
+chromosome or genome. This is done on an iteration-by-iteration basis. 
+It is useful for better understanding how a model is built, how SNP-trait association varies 
+within a region, and how the strength of association for SNPs changes over the model building 
+process. 
+
+The function has the form \code{PlotAM(AMobj=NULL,itnum=1,chr="All",type="Manhattan")}.
+An example of its use is given in the Example section. 
+
+ 
+  
+
+\subsection{Browser-based GUI}
+
+To release users from the requirement of having to know  \proglang{R}, a GUI was built. 
+Here, a user need only know how to load the package with \code{library(Eagle)} and start the GUI with \code{OpenGUI()}. 
+After running \code{OpenGUI()} , a browser automatically opens to the GUI's home page. By clicking on the tabs in the navigation bar at the top of a
+page, a user can access pages for reading the input data, for performing  analyses, and for summarising/visualising results. 
+
+
+
+
+\subsection{Help}
+
+Detailed help files are available for each of the functions in the package. These help files include many worked examples. Help on a function is accessed in the usual way, with the \fct{library} function. With the GUI, every page contains a help banner that gives a summary of the functionality contained within the page. Single 
+sentence help descriptions also appear as the mouse cursor hovers over different parts of a page. 
+External to the package, an email address  \email{eaglehelp@csiro.au} has been set up to answer any queries . Also, help is available via the 
+website \url{http://eagle.r-forge.r-project.org/index.html}. 
+
+
+
+\section{Example}
+
+Here, the steps for performing association mapping with \pkg{Eagle} are presented. Both modes-of-use are given. That is, via function statements issued 
+at the \proglang{R} command line and via the GUI. For each function statement, a screenshot of its matching GUI page is shown where applicable. 
+ The example is for the analysis of a mouse data set. As stated previously, the goal of association mapping is to find the SNPs in strongest 
+ association with the genes underlying a heritable trait. 
+ The data are real. 
+ They were collected  from a 
+large GWAS  in outbred mice \cite{nicod2016genome}.
+Many different traits were measured but our focus is on  high-density lipoprotein (Bioch.HDL). 
+We chose this trait because from previous analyses, a number of genomic regions of interest across multiple chromosomes have been reported. 
+In the original 
+study \cite{nicod2016genome}, this trait was found to be influenced by the explanatory variables for sex (Sex), batch number (Batch), and 
+average weight (Weight.Average). These same variables are treated as explanatory 
+variables in our analysis.  Even though large data sets are not a problem for \pkg{Eagle}, we wanted the example data to be easily accessible to \proglang{R}. 
+ A way of doing this 
+is to host the data on GitHub (\url{https://github.com/geo047/Example_Data}) . GitHub has a file size limit of 10 megabytes, which made it 
+necessary to base the example on a subset of the original data. 
+
+
+
+
+
+
+\subsection{Creating the input files}
+
+Three input files were created. These are the files phenoex.dat with the phenotypic data, genoex.dat with the genotypic data, and mapex.dat 
+with the maker map.  In the original study, data were collected from 1887 outbred mice on a large number of traits and SNPs. As such, this data set was too large 
+to house on GitHub. So the study size was reduced to 800 randomly selected mice. Our focus was restricted to the analysis of a single trait, Bioch.HDL. 
+The genotypic data was reduced to  the genotypes from  70484 SNPs. 
+The SNPs were selected from every 5th locus of the original set where loci with a minor allele frequency of 
+less than 1\% have been removed along with loci on the sex chromosome. 
+
+
+The phenotypic data in phenoex.dat is space separated and arranged into 801 rows and four columns. 
+The rows correspond to data on different mice. The columns contain data on Bioch.HDL and the explanatory variables Sex, Batch, and Weight.Average.
+The first row has the column names. 
+
+The genotypic data in genoex.dat has 800 rows and 70484 columns. The data are space separated.
+The columns are not named, nor are there missing values. Each row contains the genome-wide data for a mouse. 
+Each column contains the genotypes for a SNP. 
+Rows in the two files are assumed to be ordered such that the same row in each file corresponds to data 
+collected on the same mouse.  The columns are in marker map order. 
+A  numeric coding of 0, 1, and 2 was used for the SNP genotypes, AA, AB, and BB, respectively. 
+
+
+The marker map in mapex.dat is space separated and has 70485 rows and three columns. The first row is the column names. 
+The rows contain map information on the SNPs. The rows are ordered according to a SNP's map order. The first column has the names of the SNPs. The 
+second column contains the chromosome names  upon which the SNPs reside. The third column have the chromosome positions of the SNPs. 
+ It is assumed that the row
+order of the SNPs in this file  matches  the column order in genoex.dat. 
+
+
+The input files are downloaded and uncompressed from GitHub with the \proglang{R} commands
+\begin{CodeChunk}
+\begin{CodeInput}
+R> DIR <- "https://raw.githubusercontent.com/geo047/Example_Data/master/"
+R> download.file(paste0(DIR, "mapex.dat"))
+R> download.file(paste0(DIR, "phenoex.dat"))
+R> download.file(paste0(DIR, "genoex.dat.zip"))
+R> unzip("genoex.dat.zip")
+\end{CodeInput}
+\end{CodeChunk}
+
+
+
+
+\subsection{Single-locus association mapping}
+
+We begin by analysing these data in the "usual" way, with single-locus association mapping.  
+As stated previously, for a single-locus analysis, a separate LMM is fitted to the data for each SNP. 
+The statistical significance of a SNP, when treated as a fixed effect, is a measure of the strength of association between the SNP and trait. 
+The data were analysed with the \proglang{R} package GAPIT \cite{wang2018gapit}. The process was to read in the phenotypic and genotypic information with \fct{read.table}, 
+convert the explanatory variables into a useable form  with \code{covObj <- model.matrix( ~Sex+Batch+Weight.Average, phenoObj)},  and perform the 
+analysis with the \fct{GAPIT} function with the argument \code{model="MLM"} for single-locus association mapping with LMMs. 
+
+\begin{figure}[t]
+\centerline{\includegraphics[width=16cm, height=9cm]{GAPIT.png}}
+\caption{\small Manhattan plot for the single-locus analysis of the example data. Each point is the strength of association between a SNP and trait. Results 
+are shown for the entire genome. The red horizontal line is the 5\% genome-wide significance threshold, calculated via a Bonferroni correction. The 
+blue dashed horizontal lines are the locations of the findings from \pkg{Eagle}.  The order in which \pkg{Eagle} found these findings is given below the blue line. 
+Where single-locus association mapping found only a single region of interest, because of \pkg{Eagle}'s increased statistical power, \pkg{Eagle} found 
+five regions of interest.}
+\label{fig:single}
+\end{figure}
+
+The single-locus analysis results are shown in the Manhattan plot in Figure \ref{fig:single}.  The positions of the SNPs on the genome are on the x-axis and the  significance scores  $(-log_{10}(\textrm{\it p-value}))$ of the SNPs are on the y-axis. We would conclude from this analysis that there is a single region of interest on 
+chromosome 5.  In fact, with \pkg{Eagle}, there are five regions of interest for this trait. These are on 
+chromosomes 1, 5, 6, and 10. The region on chromosome 5 is obvious. The regions on 1 and 6 we might have suspected but lacked the power 
+under a single-locus analysis to confirm. However, the region on chromosome 10 is only revealed after the effects of the other regions have been 
+accounted for. Also, it is not at all obvious from a single-locus analysis that we are dealing with two closely linked regions on chromosome 
+5.  
+
+The \pkg{Eagle} analysis is now presented. 
+
+\subsection{Reading in the data}
+
+The function statements for reading the phenotype and map input files are simple. Only the file names need specifying. This is also true if
+using the GUI. By default, the two input files are assumed 
+space separated. If comma or tab separated,  an additional argument is need in the function statement. For comma separated files,    \code{sep=","}. For 
+tab separated files,  \code{sep="\textbackslash t"}. The GUI has a checkbox for choosing if the file is space or comma separated. A tab separated option 
+is not yet available. 
+ 
+
+The function statements for reading the two input files are 
+\begin{CodeChunk}
+\begin{CodeInput}
+R>  phenoObj <- ReadPheno("phenoex.dat")
+R>  mapObj <- ReadMap("mapex.dat")
+\end{CodeInput}
+\end{CodeChunk}
+Both the \code{phenoObj} and \code{mapObj} are data frame objects. 
+
+
+
+\begin{figure}[t]
+\centerline{\includegraphics[width=15cm, height=8cm]{ReadPhenoMap.pdf}}
+\caption{Screenshots of the GUI pages after the phenotypic data (left) and marker map (right) have been uploaded. 
+Any output from the underlying functions is shown in the right-half of a page.}
+\label{fig:ReadPhenoMap}
+\end{figure}
+
+
+Screenshots of the corresponding GUI pages are shown in Figure \ref{fig:ReadPhenoMap}. 
+The screenshots were taken after the relevant information had been entered and the  files uploaded. The output from uploading a file
+is printed in the right-half of the  GUI page. These are the same outputs that appear when running the function statements from the  command line. 
+
+
+The function statement for reading the SNP data differs from the two previous input statements. 
+Besides the file name, additional arguments are required. The file type needs specifying. Here, since the marker data are 
+in a space delimited text file, the \code{type="text"} argument is included in the function statement.  Other allowable formats 
+are variant call format (\code{type="vcf"}) and PLINK ped (\code{type="PLINK"}). 
+Text files give the user the freedom to select their own coding scheme but how these codes map to the SNP genotypes need specifying. 
+In this example, 
+the file contains the codes  0, 1, and 2 for SNP genotypes AA, AB, and BB, respectively. This means the function statement includes the arguments 
+ \code{AA=0}, \code{AB=1}, and \code{BB=2}.  Also, it is good practice to set the amount of available memory, in gigabytes, with  the
+ \code{availmemGb} argument. The default is to assume 16 gigabytes of memory. 
+
+The \code{ReadMarker} function statement for this example is 
+\begin{CodeChunk}
+\begin{CodeInput}
+R>  genoObj <- ReadMarker("genoex.dat",  type="text", 
++                          AA=0, AB=1, BB=2, availmemGb=8)           
+\end{CodeInput}
+\end{CodeChunk}
+
+
+A screenshot of the corresponding GUI page after uploading the file is shown in Figure \ref{fig:ReadMarkerAnalysis}. 
+The output from running the statement is the same as the output shown in the right-half of the GUI page. 
+Unlike the other input functions,  \fct{ReadMarker}  does not read the data into memory. 
+ Instead, the marker data ,and its transpose, are stored on disk in a binary form. By not holding the genotype data in memory, it gives \pkg{Eagle} the 
+ability to analyse marker data larger than the memory capacity of a computer.  The object returned by \fct{ReadMarker} is a list object that holds 
+elements containing information on the dimensions of the marker data, the name and location 
+of the reformatted marker data, and the number of phenotypic samples. 
+
+
+
+
+
+\subsection{Controlling the type 1 error and performing the analysis}
+
+
+%%The data are analysed with the function \fct{AM}.  The conservativeness of the analysis is controlled by setting  the argument \code{lambda} to a suitable value. 
+%%Its default value is one, its most conservative setting. 
+%%However, it is possible to find a value of \code{lambda} for a desired type 1 error rate. This is done via permutation, as implemented in  
+%%the function \fct{FPR4AM} (see Section \ref{subsec:type1} for details).
+
+To find the value of \code{lambda} that will give a 5\% type 1 error rate for the analysis, we ran the function  \fct{FPR4AM} . For its arguments, 
+ we specified the desired type 1 error rate (\code{falseposrate=0.05}), the number of permutations (\code{numreps=100}), 
+  the trait name \linebreak
+   (\code{trait="Bioch.HDL"}), the fixed effects part of the model   (\code{fformula="Sex+Batch+Weight.Average"}), 
+ the phenotypic data (\code{pheno=phenoObj}), the genotypic data (\code{geno=genoObj}), the marker map (\code{map=mapObj}), and the number 
+ of processes (\code{ncpu=8}).
+ 
+ 
+ The function statement and its output are
+\begin{CodeChunk}
+\begin{CodeInput}
+R>  fdr <- FPR4AM(falseposrate=0.05, numreps=100,  trait = "Bioch.HDL",  
++          fformula="Sex+Batch+Weight.Average", 
++          pheno=phenoObj, geno=genoObj, map=mapObj, ncpu=8)
+\end{CodeInput}
+\begin{CodeOutput}
+ Setting up null model.  
+ Calculating variance components  for null model
+ Calculating extBIC for null model
+ Calculating matrices that will be used in alternate model. 
+ Analysing 100 permuations. 
+\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-
+
+ Table: Empirical false positive rates, given lambda value for model selection. 
+
+  Lambda    |  False Pos Rate  
+ ---------------------------- 
+0          |  1 
+0.0526315  |  1 
+0.1052632  |  1 
+0.1578947  |  0.98 
+0.2105263  |  0.97 
+0.2631579  |  0.82 
+0.3157895  |  0.59 
+0.3684211  |  0.36 
+0.4210526  |  0.23 
+0.4736842  |  0.16 
+0.5263158  |  0.06 
+0.5789474  |  0.03 
+0.6315789  |  0.01 
+0.6842105  |  0 
+0.7368421  |  0 
+0.7894737  |  0 
+0.8421053  |  0 
+0.8947368  |  0 
+0.9473684  |  0 
+1          |  0 
+ ----------------------------- 
+ For a false positive rate of 0.05 set the lambda parameter in 
+ the AM function to 0.5263158 
+\end{CodeOutput}
+\end{CodeChunk}
+The function concludes by reporting that a   \code{labmda} value of 0.53 (rounded to two significant digits) 
+should be used for this analysis in order to achieve a 5\% false positive rate. 
+
+To perform multi-locus association mapping of the example data, the function statement and its output are
+\begin{CodeChunk}
+\begin{CodeInput}
+R>  res <- AM(trait= "Bioch.HDL", 
++             fformula="Sex+Batch+Weight.Average",  
++             pheno=phenoObj, geno=genoObj,  map=mapObj, ncpu=8,
++             lambda=0.53 ) 
+\end{CodeInput}
+\begin{CodeOutput}
+
+
+                    Multiple-Locus Association Mapping
+                            Version 2.4.2
+
+ 
+   . ,-"-.   ,-"-. ,-"-.   ,-"-. ,-"-. ,-"-. ,-"-.   ,-"-. ,-"-.    
+    X | | \ / | | X | | \ / | | X | | \ / | | X | | \ / | | X | | \ /   
+   / \| | |X| | |/ \| | |X| | |/ \| | |X| | |/ \| | |X| | |/ \| | |X|   
+      `-!-' `-!-"   `-!-' `-!-'   `-!-' `-!-"   `-!-' `-!-'   `-!-' `-     
+
+
+
+
+ Iteration 1: Searching for most significant marker-trait association
+
+
+ Number of cores being used for calculation is .. 8
+ Significant marker-trait association found. 
+
+ New results after iteration 1 are 
+
+            SNP        Chrm           Map Pos     Col Number            extBIC 
+          -----      ------         ---------     -----------         --------- 
+     Null Model                                                        1700.22  
+
+ Iteration 2: Searching for most significant marker-trait association
+
+
+ Significant marker-trait association found. 
+
+ New results after iteration 2 are 
+
+             SNP        Chrm           Map Pos     Col Number            extBIC 
+           -----      ------         ---------     -----------         --------- 
+      Null Model                                                        1700.22  
+      M12008C5             5         124991768          22264           1659.56  
+
+
+
+   .
+   .
+   .
+
+
+
+  Iteration 7: Searching for most significant marker-trait association
+
+
+ Significant marker-trait association found. 
+
+ New results after iteration 7 are 
+
+        
+            SNP        Chrm           Map Pos       Col Number            extBIC 
+           -----      ------         ---------     -----------         --------- 
+       Null Model                                                                         1700.22  
+         M12008C5          5         124991768          22264           1659.56  
+          M1530C6          6          17541026          23521           1652.16  
+         M26336C1          1         171730395           5254           1644.45  
+         M12020C5          5         125044979          22267           1643.63  
+        M11706C10         10         125357987          41402           1643.24     
+         M17665C4          4         134588243          18959           1644.77  
+
+
+
+
+ Final  Results  
+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            SNP        Chrm           Map Pos       Col Number            extBIC 
+           -----      ------         ---------     -----------         --------- 
+       Null Model                                                                         1700.22  
+         M12008C5          5         124991768          22264           1659.56  
+          M1530C6          6          17541026          23521           1652.16  
+         M26336C1          1         171730395           5254           1644.45  
+         M12020C5          5         125044979          22267           1643.63  
+        M11706C10         10         125357987          41402           1643.24     
+    
+
+Gamma value for model selection was set to  0.53 
+\end{CodeOutput}
+\end{CodeChunk}
+
+
+
+\begin{figure}[th]
+\centerline{\includegraphics[width=16cm, height=10cm]{ReadMarkerAnalysis.pdf}}
+\caption{Screenshots of the GUI pages after the genotypic data (left) has been uploaded and 
+the multi-locus association mapping analysis (right) performed. Output is shown in the right-half of the page. 
+}
+\label{fig:ReadMarkerAnalysis}
+\end{figure}
+
+
+
+
+Five snp-trait associations  were found. They are listed in a final results table along with their map location, 
+column number in the marker file, and extended BIC value. 
+The search for genes that are influencing the trait can be narrowed 
+to the genomic regions tagged by these five SNPs. 
+
+
+In Figure \ref{fig:ReadMarkerAnalysis}, a screenshot of the Analysis page is shown of how the same analysis can be performed via the GUI. 
+ Here, a user chooses a trait for analysis, 
+selects any fixed effects, lets \pkg{Eagle} find \code{lambda}  by selecting the \code{Set automatically} option or specifies their own \code{lambda} value 
+by selecting \code{Set manually}, and performs the analysis. 
+The same output from the above two functions is printed in the right-half of the Analysis
+page. 
+
+
+\pagebreak 
+    
+\subsection{Summarising the  results}
+A summary of the results is produced with
+\begin{CodeChunk}
+\begin{CodeInput}
+R>  SummaryAM(AMobj=res)
+\end{CodeInput}
+\end{CodeChunk}
+where \code{res} is the list object obtained from \fct{AM}. 
+Three tables are printed. These same three tables are available within the GUI by 
+going to the Summary page (page not shown). 
+The first table contains summary information 
+such as the number of cpu, trait name, 
+and number of significant snp-trait associations found.  
+The second table gives the names and locations of the SNPs. 
+The third table 
+contains the effect sizes and statistical significances of the explanatory variables and the selected SNPs. 
+
+\begin{CodeChunk}
+\begin{CodeOutput}
+ Table 1: Summary Information 
+   
+--------------------------------------------------------
+Number cpu:                               8        
+Max memory (Gb):                          8         
+Number of samples:                        800       
+Number of snp:                            70484    
+Trait name:                               Bioch.HDL 
+Fixed model:                              Sex + Batch + Weight.Average  
+Number samples missing obs:               0         
+Number significant snp-trait assocs:      5         
+Lambda value for extBIC:                   0.53
+--------------------------------------------------------
+
+
+
+ Table 2: Findings 
+   
+                  SNP           Chr     Position      Col index
+-----------------------------------------------------------------
+              M12008C5            5   124991768.00        22264
+               M1530C6            6    17541026.00        23521
+              M26336C1            1   171730395.00         5254
+              M12020C5            5   125044979.00        22267
+             M11706C10           10   125357987.00        41402
+-----------------------------------------------------------------
+
+
+ Table 3: Size and Significance of Effects in Final Model 
+ 
+                       Effect Size     Df   Wald Statistic        Pr(Chisq)
+---------------------------------------------------------------------------       
+          (Intercept)        -2.31      1           35.98       1.995E-09
+                SexM          1.13      1          507.16       0.000E+00
+          BatchOBT02          0.00      1            0.00       9.869E-01
+          BatchOBT03         -0.28      1            1.29       2.561E-01
+                 ...      
+          BatchOBT63         -0.16      1            0.43       5.117E-01
+          BatchOBT64         -0.11      1            0.21       6.448E-01
+          BatchOBT65         -0.12      1            0.21       6.491E-01
+          BatchOBT66         -0.20      1            0.85       3.570E-01
+      Weight.Average          0.05      1          148.30       0.000E+00
+            M12008C5          0.35      1           23.30       1.387E-06
+             M1530C6          0.15      1           29.76       4.878E-08
+            M26336C1          0.15      1           26.03       3.363E-07
+            M12020C5         -0.20      1           18.98       1.324E-05
+           M11706C10         -0.23      1           17.89       2.346E-05
+---------------------------------------------------------------------------
+-\end{CodeOutput}
+\end{CodeChunk}
+
+
+
+\pagebreak
+
+
+
+%%\begin{figure}[!tpb]%figure2
+\begin{figure}[th]
+\centerline{\includegraphics[width=16cm, height=9cm]{Eagle.png}}
+\caption{
+Screenshots of the plots from running the \pkg{Eagle} function \code{PlotAM}. All plots are Manhattan plots and are of chromosome 5. These plots show how the significance of the SNPs change throughout the model building process. The red vertical line is the position of the SNP that has the largest score statistic and strongest association with the trait at that iteration. The orange vertical lines are the positions of SNPs found in previous iterations to be in strongest association with the trait. 
+Green (purple) points denote SNPs that have increased (decreased) in significance from the previous iteration. 
+The size of the point is proportional to the size of the change in significance.
+(A), (B), and (D) are plots of the first, second, and fifth iteration, respectively, of the model building process. 
+(C) and (E) were created from (B) and (D) respectively by using \code{PlotAM}'s interactive zoom feature.  }
+\label{fig:subplots}
+\end{figure}
+
+
+\subsection{Visualising the findings}
+
+
+Suppose we are interested in viewing how the pattern of significance varies throughout the model building process. Here, 
+we focus on chromosome 5.  This chromosome is interesting because it has two closely linked regions housing 
+genes underlying the trait.  
+
+Using the function statement
+\begin{CodeChunk}
+\begin{CodeInput}
+R> PlotAM(AMobj=res, itnum=1, chr = "5", type = "Manhattan")
+\end{CodeInput}
+\end{CodeChunk}
+
+
+
+
+
+the resulting plot, for chromosome 5 and iteration 1, is shown in Figure  \RemoveSpaces{\ref{fig:subplots} A}.   {
+Each point is a measure of the strength of association between a SNP and 
+trait. The measure is calculated as the $-log_{10}$ of the {\it p}-value of the 
+score statistic (Section \ref{subsec:alg}) for the SNP,  since  \code{type="Manhattan"}.
+There is a clear spike towards the middle of the chromosome. In fact, the SNP in strongest 
+association across the entire genome, at iteration 1, was on chromosome 5. 
+Its position is given by the red vertical line.
+
+
+By the end of the second iteration of the model building process, the SNP which was identified in the first iteration,
+ has been found to be significant. Its effect has been moved from the random to the fixed effects part of the model.  
+ This change  impacts the significance of the other SNPs. 
+ By using the above command but with \code{itnum} set to 2, the plot in Figure \RemoveSpaces{\ref{fig:subplots} B} is generated. 
+ Here, the SNPs that have increased (decreased) in significance are denoted by green (purple) points. 
+ The size of the point is proportional to the size of the change in significance from the previous iteration. 
+ Unsurprisingly,  the largest changes have occurred around the SNP whose effect is now being treated as a fixed effect. 
+ We can see this more clearly by using the zoom feature in \fct{PlotAM} to focus on the region around the SNP of interest  (Figure \RemoveSpaces{\ref{fig:subplots} C}). 
+ 
+ What is interesting about Figure \RemoveSpaces{\ref{fig:subplots} C} is that there are still several SNPs in strong association with the trait. This suggests that there may be other statistically significant SNP-trait associations here.
+This is in fact the case, because by the fifth iteration, a second SNP has been found and fitted as a fixed effect. The pattern of association is shown in 
+Figure \RemoveSpaces{\ref{fig:subplots} D} with the same zoomed region as before shown in Figure \RemoveSpaces{\ref{fig:subplots} E}. The drop in significance between fitting a single SNP in this region as a fixed effect 
+to fitting two closely linked SNPs as fixed effects  is apparent when you compare figures \RemoveSpaces{\ref{fig:subplots} C} and \RemoveSpaces{\ref{fig:subplots} E}, noting the 
+change in scales of the y-axes. 
+
+
+
+\section{Summary}
+
+The \pkg{Eagle} package has been created to make genome-wide multi-locus association mapping easy.  
+The package accepts marker data in different formats, has easy-to-use functions,  comes with a user-friendly GUI, and has an interactive plotting function for visualising the model building process.  
+We welcome feedback via   \email{eaglehelp@csiro.au} from users on how the functionality and usability of the package could be even further improved.
+As we saw in the example, \pkg{Eagle} brings clarity to situations where there are tightly linked SNPs in association with a trait.
+It can also uncover significant SNP-trait associations that are otherwise hidden to single-locus association mapping. 
+At the very least, \pkg{Eagle} compliments single-locus association mapping. 
+ Ultimately though, with the aid of \pkg{Eagle}, our hope  is that the genetics community will shift to multi-locus association mapping as the method-of-choice for the genome-wide analysis of association data. 
+
+
+%% -- Bibliography -------------------------------------------------------------
+%% - References need to be provided in a .bib BibTeX database.
+%% - All references should be made with \cite, \citet, \cite, \citealp etc.
+%%   (and never hard-coded). See the FAQ for details.
+%% - JSS-specific markup (\proglang, \pkg, \code) should be used in the .bib.
+%% - Titles in the .bib should be in title case.
+%% - DOIs should be included where available.
+
+\bibliography{refs}
+
+\end{document}

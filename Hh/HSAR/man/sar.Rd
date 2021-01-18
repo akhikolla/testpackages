@@ -1,0 +1,86 @@
+\name{sar}
+\alias{sar}
+%\alias{sar}
+\title{SAR model estimation}
+\description{
+  The sar() function implements a standard spatial econometrics model (SAR) or a spatially lagged dependent variable model using the Markov chain Monte Carlo (McMC) simulation approach.       
+
+}
+
+\usage{
+sar( formula, data = NULL, W, burnin=5000, Nsim=10000, 
+thinning=1, parameters.start = NULL )
+}
+
+\arguments{
+  \item{formula}{A symbolic description of the model to fit. A formula for the covariate part of the model using the syntax of the lm() function fitting standard linear regression models. Neither the response variable nor the explanatory variables are allowed to contain NA values.}
+  \item{data}{A data frame containing variables used in the formula object. }
+  \item{W}{The N by N spatial weights matrix or neighbourhood matrix where N is the number of spatial units. The formulation of W could be based on geographical distances separating units or based on geographical contiguity. To ensure the maximum value of the spatial autoregressive parameter \eqn{\rho} less than 1, W is usually row-normalised before implementing the SAR model. As in most cases, spatial weights matrix is very sparse, therefore W here should be converted to a sparse matrix before imported into the sar() function to save computational burdon and reduce computing time. More specifically, W should be a column-oriented numeric sparse matrices of a dgCMatrix class defined in the \pkg{Matrix} package. The converion between a dense numeric matrix and a sparse numeric matrix is made quite convenient through the Matrix library.     
+}
+  \item{burnin}{The number of McMC samples to discard as the burnin period.}
+  \item{Nsim}{The total number of McMC samples to generate.}
+  \item{thinning}{MCMC thinning factor.}
+  \item{parameters.start}{A list with names "rho", "sigma2e", and "beta" corresponding to initial values for the model parameters \eqn{\rho, \sigma^2_e} and the regression coefficients respectively.}
+}
+
+\value{
+A list object containing: 
+  \item{cbetas}{A matrix with the MCMC samples of the draws for the coefficients.}
+  \item{Mbetas}{A vector of estimated mean values of regression coefficients.}
+  \item{SDbetas}{The standard deviations of estimated regression coefficients.}
+  \item{Mrho}{The estimated mean of the lower-level spatial autoregressive parameter \eqn{\rho}.}
+  \item{SDrho}{The standard deviation of the estimated lower-level spatial autoregressive parameter.}
+\item{Msigma2e}{The estimated mean of the lower-level variance parameter \eqn{\sigma^{2}_{e} }.}
+\item{SDsigma2e}{The standard deviation of the estimated lower-level variance parameter \eqn{\sigma^{2}_{e} }.}
+\item{DIC}{The deviance information criterion (DIC) of the fitted model.}
+\item{pd}{The effective number of parameters of the fitted model. }
+\item{Log_Likelihood}{The log-likelihood of the fitted model.}
+\item{R_Squared}{A pseudo R square model fit indicator.  }
+\item{impact_direct}{Summaries of the direct impact of a covariate effect on the outcome variable.  }
+\item{impact_idirect}{Summaries of the indirect impact of a covariate effect on the outcome variable. }
+\item{impact_total}{ Summaries of the total impact of a covariate effect on the outcome variable. }
+
+}
+
+\references{ Anselin, L. (1988). \emph{Spatial Econometrics: Methods and Models}. Dordrecht: Kluwer Academic Publishers. 
+
+
+LeSage, J. P., and R. K. Pace. (2009). \emph{Introduction to Spatial Econometrics}. Boca Raton, FL: CRC Press/Taylor & Francis
+ }
+\author{Guanpeng Dong, Richard Harris, Angelos Mimis \email{mimis@panteion.gr} }
+
+\seealso{\code{\link{hsar}}, \code{\link{landprice}}, \code{\link{Beijingdistricts}}, \code{\link{landSPDF}}}
+
+\examples{
+data(landprice)
+head(landprice)
+
+data(landSPDF)
+
+# extract the land parcel level spatial weights matrix
+library(spdep)
+
+nb.25 <- spdep::dnearneigh(landSPDF,0,2500)
+# to a weights matrix
+dist.25 <- spdep::nbdists(nb.25,landSPDF)
+dist.25 <- lapply(dist.25,function(x) exp(-0.5 * (x / 2500)^2))
+mat.25 <- spdep::nb2mat(nb.25,glist=dist.25,style="W")
+W <- as(mat.25,"dgCMatrix")
+
+## run the sar() function
+res.formula <- lnprice ~ lnarea + lndcbd + dsubway + dpark + dele + 
+popden + crimerate + as.factor(year)
+
+betas= coef(lm(formula=res.formula,data=landprice))
+
+pars=list( rho = 0.5, sigma2e = 2.0, betas = betas )
+
+\dontrun{
+res <- sar(res.formula,data=landprice,W=W,
+burnin=500, Nsim=1000, thinning=1, parameters.start=pars)
+summary(res)
+}
+
+}
+\keyword{spatial econometrics}
+

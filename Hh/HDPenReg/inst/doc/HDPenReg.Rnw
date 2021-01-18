@@ -1,0 +1,446 @@
+%\VignetteIndexEntry{HDPenReg}
+\documentclass[a4paper,10pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[english]{babel}
+\usepackage{graphicx}
+\usepackage{geometry}
+\geometry{top=3cm, bottom=3cm, left=2cm, right=2cm}
+
+% Title Page
+\title{ \texttt{HDPenReg}: An \texttt{R} package for LARS algorithm}
+\author{Quentin Grimonprez}
+\date{August 30, 2013}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+\maketitle
+
+\tableofcontents
+
+
+\section{Introduction}
+
+Lasso, fused lasso and fusion problems are linear regression problems with $l_1$
+constraints on the estimates.
+
+This package provides a C++ implementation of the LARS which is an algorithm to
+solve the lasso problem. The storage of the results has been designed for
+handling the case $n<p$, where $n$ is the number of individuals and $p$ the 
+number of covariates.
+
+In the next section, the lasso problem will be presented as well as the fusion.
+The LARS algorithm will be detailed in section 3. In section 4, we will present
+all the functionalities of the package through some examples.
+
+\section{Lasso \& Fusion}
+	\subsection{Lasso}
+
+		Let \textbf{X} the matrix of size $n\times p$ of covariates and $y$, the response vector of length $n$.
+	
+	
+		The goal of ordinary least squares (OLS) is to find $\hat{\beta}$ minimizing the total square sum error $S(\hat{\beta})=\|y-\textbf{X}\hat{\beta}\|_2^2$.
+	
+		If we have a lot of covariates, the estimates can be more difficult to interpret, we prefer to have less covariates but the most relevant one. The lasso \cite{lasso} consists in adding a penalization on the $l_1$-norm of $\hat{\beta}$  to the OLS problem. The aim of this penalization is to force some coefficients to be exactly zero.
+	
+	
+		So, the lasso problem is to find $\hat{\beta}$ such that 
+		\begin{equation}
+			\label{lasso}
+			\hat{\beta}=\text{arg}\min\limits_{\beta}\left\{ \|y-\textbf{X}\beta\|_2^2 \right\} \text{~~subject~to~} \|\beta\|_1\leq t
+		\end{equation}
+
+		where the bound $t$ is a tuning parameter. For large enough $t$, we obtain the OLS solution.\\			
+	
+		We will see later a path algorithm giving solutions for all values of the tuning parameter.
+	
+	\subsection{Fusion}
+
+		If there is an order in the covariates (e.g. DNA sequence), a penalization can be added to the lasso problem to encourage sparsity in the difference of successive coefficients. This new problem is called the fused lasso\cite{fused} and is defined by :
+	
+		\begin{equation}
+			\label{fused}
+	  		\hat{\beta}=\text{arg}\min\limits_{\beta}\left\{ \|y-\textbf{X}\beta\|_2^2 \right\} \text{~~subject~to~} \|\beta\|_1\leq t_1 \text{~and~} \sum\limits_{i=2}^p |\beta_i-\beta_{i-1}|\leq t_2		
+		\end{equation}
+
+	
+		where $t_1$ and $t_2$ are tuning parameters.
+	
+		The fused lasso problem is more difficult to solve, but it can be interesting to consider the problem with only the second penalization. This problem is called the fusion.
+	
+		\begin{equation}
+			\label{fusion}
+			\hat{\beta}=\text{arg}\min\limits_{\beta}\left\{ \|y-\textbf{X}\beta\|_2^2 \right\} \text{~~subject~to~}  \sum\limits_{i=2}^p |\beta_i-\beta_{i-1}|\leq t_2		
+		\end{equation}
+
+		
+		The problem can be rewritten as a lasso problem:
+		
+		Let L a matrix of size $p\times p$ $$L= \begin{pmatrix}
+					1      & 0      & \cdots & \cdots & 0 \\
+					-1     & \ddots & \ddots & ~      & \vdots \\
+					0      & \ddots & \ddots & \ddots & \vdots\\
+					\vdots & \ddots & -1     & 1      & 0 \\
+					0      & \cdots & 0      & -1     & 1 \\
+
+				\end{pmatrix}.$$
+	 	
+	 	The lasso form of the fusion problem is	
+	
+		\begin{equation}
+			\label{fusionlasso}
+			\hat{\theta}=\text{arg}\min\limits_{\beta}\left\{ \|y-\textbf{Z}\theta\|_2^2 \right\} \text{~~subject~to~}  \|\theta\|_1\leq t_2
+		\end{equation}
+
+		
+		with $\theta=L\beta$ and $\textbf{Z}=\textbf{X}L^{-1}$.\\
+		
+	 
+		So, we have just to resolve the lasso problem with $\textbf{Z}$ and then transform back the estimates to find the path of the fusion problem.
+	
+\section{LARS algorithm}
+
+	The LARS (Least Angle Regression) algorithm \cite{lars} is a stepwise procedure for solving the OLS problem, but with a modification, it can solve the lasso problem.
+	
+	The principle of the algorithm is to add or drop covariate one-at-a-time in the active set (non zero covariates). At each step, coefficients will be updated in making a step in the equiangular direction of the most correlated covariates until a new covariate is added or dropped. \\
+	
+	
+\noindent\textbf{Algorithm}
+			
+	We want to estimate $\hat{\mu}=X\hat{\beta}$.
+			
+	0) Let $i=1$, $\mathcal{A}_0=\emptyset$ the actual active (non zeros) covariates, $\hat{\mu}_{\mathcal{A}_0}=0$ and $\hat{c}=X'y$ the current correlation.\\
+	
+			
+	\noindent Repeat until $\vert\mathcal{A}\vert=\min(n,p)$:
+	\begin{itemize}
+		
+		\item[1)] Compute the greatest absolute current correlation : 
+		$$\hat{C}=\max_j\{\vert\hat{c}_j\vert\}.$$	
+		
+		\item[2)]Let $\mathcal{A}_i=\left\{j: \vert c_j\vert=\hat{C}\right\}$, the active set.
+			
+		\item[3)] Define $$X_{\mathcal{A}_i}=(\dots \text{sign}(\hat{c}_j)\textbf{x}_j\dots)_{j\in\mathcal{A}_i}.$$
+			
+			We compute  $$\mathcal{G}_{\mathcal{A}_i}=X_{\mathcal{A}_i}' X_{\mathcal{A}_i}$$ and $$A_{\mathcal{A}_i}=(\textbf{1}_{\mathcal{A}_i}' \mathcal{G}^{-1}_{\mathcal{A}_i} \textbf{1}_{\mathcal{A}_i})^{-1/2}$$ where $\textbf{1}_{\mathcal{A}_i}$is  a vector of 1 of length $|\mathcal{A}_i|$.\\
+			
+		\item[4)] Compute the equiangular vector (unit vector making equal angles with the columns of $X_{\mathcal{A}_i}$) $$\textbf{u}_{\mathcal{A}_i}=X_{\mathcal{A}_i}\omega_{\mathcal{A}_i}$$
+			where $\omega_{\mathcal{A}_i}=A_{\mathcal{A}_i}\mathcal{G}^{-1}_{\mathcal{A}_i} \textbf{1}_{\mathcal{A}_i}$.
+			
+		\item[5)] Compute $\textbf{a}=X'\textbf{u}_{\mathcal{A}_i}$.\\
+			
+		
+		\item[6)] Update of the coefficient : 	$$\hat{\mu}_{\mathcal{A}_{i+1}}=\hat{\mu}_{\mathcal{A}_i}+\gamma ~ \textbf{u}_{\mathcal{A}_i}$$
+		
+		How to choose the value of $\gamma$?
+		
+		 Compute $$\hat{\gamma}=\text{min}_{j\in\mathcal{A}_i^c}^+
+			\left\{\frac{\hat{C}-\hat{c}_j}{A_{\mathcal{A}_i}-a_j},\frac{\hat{C}+\hat{c}_j}{A_{\mathcal{A}_i}+a_j}\right\}.$$
+			
+			$\hat{\gamma}$ is the smallest positive value such that a new index joins the active set.\\
+			
+			For the OLS problem, we use $\gamma=\hat{\gamma}$, but a lasso solution has a restriction, each non-zero coefficient of $\hat{\beta}_j$ must have the same sign as that of the current correlation $\hat{c}_j$.
+			
+			So, we want to find this value called $\tilde{\gamma}$.\\
+						
+			
+			Let $\hat{\textbf{d}}=\text{sign}(\hat{c})_{\mathcal{A}_i}\omega_{\mathcal{A}_i}$.
+			
+			and $$\gamma_j=-\frac{\hat{\beta}_j}{\hat{d}_j}.$$
+			
+			Compute $$\tilde{\gamma}=\min_{\gamma_j>0} \left\{\gamma_j\right\},$$
+			and let $\tilde{j}$ the index such that $\tilde{\gamma}=\gamma_{\tilde{j}}$ .\\
+			
+
+			
+			If $\tilde{\gamma}<\hat{\gamma}$, then
+			$$\hat{\mu}_{\mathcal{A}_{i+1}}=\hat{\mu}_{\mathcal{A}_i}+\tilde{\gamma} ~ \textbf{u}_{\mathcal{A}_i}
+			\text{~~and~~} \mathcal{A}_{i+1}=\mathcal{A}_{i}-\{\tilde{j}\}$$ and skip the next step 1).
+			
+			Else $$\hat{\mu}_{\mathcal{A}_{i+1}}=\hat{\mu}_{\mathcal{A}_i}+\hat{\gamma} ~ \textbf{u}_{\mathcal{A}_i}.$$
+			
+		\item[7)] Compute the current correlation
+		
+		 $$\hat{c}=X'(y-\hat{\mu}_{\mathcal{A}_{i+1}}).$$ 
+		 
+		 and $i=i+1$ .
+
+	\end{itemize}
+		
+\section{\texttt{HDPenReg} package}
+	\SweaveOpts{prefix.string = vignette, eps = FALSE, pdf = TRUE}
+	\setkeys{Gin}{width=0.8\textwidth}
+
+	\subsection{LarsPath class}
+	\label{sec:LarsPath}
+		The \texttt{HDlars} and \texttt{HDfusion} functions return a \texttt{LarsPath} S4 object. This object contains:\\
+		
+		\begin{tabular}{ll}
+			\textbf{variable}    & A list of size step+1 of vectors.\\
+			~~                   & The i-th element contains the vector of indices of active covariates at the step $i-1$.\\
+			\textbf{coefficient} & A list of size step+1 of vectors.\\
+			~~                   & The i-th element contains the vector of the estimates for active covariates at the step $i-1$.\\
+			\textbf{mu}          & Intercept.\\
+      \textbf{meanX}       & Mean of columns of X.\\
+			\textbf{lambda}      & Vector containing the penalty parameter at each step.\\
+      \textbf{l1norm}      & Vector containing $\|\hat{\beta}\|_1$ at each step.\\
+			\textbf{addIndex}	& Vector of length "step" containing the index of the dropped variable at the each step,\\
+       & 0 means no variable has been dropped at this step.\\
+			\textbf{dropIndex}	& Vector of length "step" containing the index of the added variable at each step, \\
+      & , 0 means no variable has been added at this step.\\
+			\textbf{nbStep}        & Number of steps of the algorithm.\\
+			\textbf{ignored}     & A vector containing indices of ignored covariates during the algorithm.\\
+			\textbf{p}			&  Total number of covariates.\\ 
+			\textbf{fusion} 		& \texttt{TRUE} if you have run the \texttt{HDfusion}.\\
+      \textbf{error}     & Error message from lars.
+		\end{tabular}
+		~~\\
+
+		With \texttt{LarsPath} objects, you can use following methods :
+		\begin{itemize}
+			\item \textbf{\texttt{plot}} To see the path of the LARS algorithm.
+			\item \textbf{\texttt{plotCoefficient}} To plot the values of estimates at a given step. 
+			\item \textbf{\texttt{coeff}} To extract in a vector the value of all estimates at a given step. 
+		\end{itemize}
+		
+	\subsection{\texttt{simul}}
+		This function simulates copy-number signals in genomic \underline{but it's not based on any biological assumptions}.\\
+		
+		This function takes in following arguments:
+
+		\begin{tabular}{ll}
+			\textbf{n}                & Number of individuals.\\
+			\textbf{nbSNP}            & Number of covariates.\\
+			\textbf{probCas}          & Probability for an individual to be a case.\\
+			\textbf{nbSeg}            & Number of causal segments.\\
+			\textbf{meanSegmentsize}  & Mean of segments.\\
+			\textbf{prob}             & A $2\times 2$ matrix containing probabilities for covariates to create an anomaly.\\
+			~~ & prob= $\begin{pmatrix}
+					prob_{11}     & prob_{12}      \\
+					prob_{21}     & prob_{22} \\
+				\end{pmatrix}$\\
+			~~ &  	$prob_{11}=\mathbb{P}\left[ \text{~anomaly~} | \text{~causal covariates and control individual}\right]$	\\
+			~~ &  	$prob_{21}=\mathbb{P}\left[ \text{~anomaly~} | \text{~causal covariates and case individual}\right]$	\\
+			~~ &  	$prob_{12}=\mathbb{P}\left[ \text{~anomaly~} | \text{~no causal covariates and control individual}\right]$	\\
+			~~ &  	$prob_{22}=\mathbb{P}\left[ \text{~anomaly~} | \text{~no causal covariates and case individual}\right]$	\\
+			
+			\textbf{alpha}       & Parameter of the beta law $\mathcal{B}eta(alpha,alpha)$.\\
+			~~ & This parameter allows to control the variance of the signal.
+		\end{tabular}
+		~\\
+		
+		This function will generate $n$ signals composed of noised segments. A "normal" segment will have a mean of 2, whereas a segment with an anomaly will have a mean of 1 or 3.\\
+		
+		The simulation process can be defined as follows:
+		
+		First, we simulate the response $y_i$, $i=1,\dots,n$, $y_i\sim\mathcal{B}(probCas)$ and randomly choose the centers of causal segments and their mean values (1 or 3 corresponding to a loss or a gain).
+		
+		Then for an individual $i$, at each covariate, we use a binomial law with parameters $p_{jk}$ ($j=1$ for control individual, and $j=2$ for case individual, $k=1$ for causal covariates and $k=2$ for non-causal covariate) to determine if there is an anomaly at the covariate.
+		
+		Then, for each anomaly, we generate its size $\lambda$, $\lambda\sim\mathcal{P}(meanSegmentSize)$.
+		
+		Finally, we simulate the signal with a beta law $m + \mathcal{B}eta(alpha,alpha)$ where $m$ is a constant representing the status of the segment (gain, normal or loss).
+		
+		\begin{figure}[!h]
+			\begin{center}		
+<< signal, echo=FALSE, fig=TRUE, width=10, height=4 >>=
+library(HDPenReg)
+simu=simul(50,10000,0.4,2,750,matrix(c(0.1,0.9,0.0001,0.0001),nrow=2),10)
+case=which(simu$response==1)
+plot(simu$data[case[1],],ylim=c(0,4),pch=".",xlab="Value")
+@
+				\caption{Example of a simulated signal.}
+			\end{center}
+		\end{figure}
+
+~~\\
+		The function returns a list of 3 objects:\\
+		
+		\begin{tabular}{ll}
+			\textbf{data}        & Matrix of size $n\times p$. Each row contains the signal for an individual.\\		
+			\textbf{response}    & Vector of length $n$ with the status (1 or 0) for each individual.\\
+			\textbf{causalSNP}   & Vector containing the indices of the centers of segments.\\
+		\end{tabular}
+	
+	\subsection{HDlars}
+		The function \texttt{HDlars} performs the LARS algorithm, here is its usage in \texttt{R}:
+<< lars, echo=TRUE,eval=FALSE >>=
+# HDlars(X, y, maxSteps,intercept,eps)
+@
+			
+		\begin{tabular}{ll}
+			\textbf{X}			& Matrix of size $n\times p$ of covariates.\\
+			\textbf{y}			& Vector of length $n$ with the responses.\\
+			\textbf{maxSteps}	& Maximal number of steps for the LARS algorithm.\\
+			~~					& The default value is \texttt{3*min(n,p)}.\\
+			\textbf{intercept}	& If TRUE, there is an intercept in the model.\\
+			\textbf{eps}			& Tolerance of the algorithm.\\
+			~~					& The default value is \texttt{.Machine\$double.eps$^\wedge$0.5}.\\
+		\end{tabular}
+		
+~~\\
+	This function returns a \texttt{LarsPath} object (see section \ref{sec:LarsPath}).\\
+
+		First, we try the function on a basic example.
+		
+		 We simulate a data set with the function \texttt{simul}.
+<< simdata1, echo=TRUE>>=
+data1=simul(50,10000,0.4,2,1000,matrix(c(0,1,0,0),nrow=2),5)
+@
+
+		With these parameters, only causal SNPs create an anomaly for the case individual, whereas for the control there is no anomaly through the signal.\\
+		
+		
+		We launch the LARS algorithm on the simulated data \texttt{data1}.
+<< exlars, echo=TRUE >>=
+reslars=HDlars(data1$data, data1$response)
+@
+
+		We can plot the path of the LARS algorithm with the \texttt{plot} function.
+<< plotlars, echo=TRUE,eval=FALSE>>=
+plot(reslars)
+@
+	
+		In abscissa, there are the values of $\|\hat{\beta}\|_1$ at each step, and in ordinate, the value of coefficients. A colored curve represents the evolution of the value of one coefficient of $\hat{\beta}$ during the algorithm. A vertical blue line indicates that a variable is added or dropped to the active set.  
+
+		\begin{figure}[!h]
+			\begin{center}	
+<< plotlarsb, echo=FALSE,fig=TRUE,width=16,height=8>>=
+plot(reslars)
+@	
+				\caption{Path of the LARS algorithm.}
+			\end{center}
+		\end{figure}
+		
+	~~\\
+		Have a look on the center of the causal segments and the selected covariates at step $15$.
+<< snpcaus, echo=TRUE>>=
+sort(data1$causalSNP)
+sort(reslars@variable[[16]])
+@		
+
+		We find SNPs that are geographically closed to the centers.\\
+		
+	\subsection{HDcvlars}
+		In order to help select the most appropriate coefficients, a cross-validation function is available.
+		This function will split the data into $k$ folds and performs lars on data from $k-1$ folds and then use the remaining fold to predict the response at given index and compute the prediction error.\\
+		
+		
+		The function \texttt{HDcvlars} performs a cross-validation, here is its usage in \texttt{R}:
+<< cvlarsdef, echo=TRUE,eval=FALSE >>=
+# HDcvlars(X, y, nbFolds, index, mode, maxSteps, partition, intercept, eps)
+@
+			
+		\begin{tabular}{ll}
+			\textbf{X}			& Matrix of size say $n\times p$ of covariates.\\
+			\textbf{y}			& Vector of length $n$ with the responses.\\
+			\textbf{nbFolds}		& Number of folds for the cross-validation.\\
+			~~					& The default value is $10$.\\
+			\textbf{index}		& Values at which prediction error should be computed.\\
+			~~					& When mode = "fraction", this is the fraction of the saturated |beta|. \\
+      ~~ &  When mode="lambda", this is values of lambda.\\
+      \textbf{mode} &  Either "fraction" or "lambda". Type of values containing in partition.\\
+			\textbf{maxSteps}	& Maximal number of steps for the LARS algorithm.\\
+			~~					& The default value is \texttt{3*min(n,p)}.\\
+      \textbf{partition} & partition in nbFolds folds of y. \\
+			\textbf{intercept}	& If TRUE, there is an intercept in the model.\\
+			\textbf{eps}			& Tolerance of the algorithm.\\
+			~~					& The default value is \texttt{.Machine\$double.eps$^\wedge$0.5}.\\
+		\end{tabular}		
+			
+			~~\\
+		This function returns a list containing :
+		
+		\begin{tabular}{ll}
+			\textbf{cv}			& Vector containing the mean squared error (MSE) for each index.\\
+			\textbf{cvError}		& Vector containing the standard error of the MSE for each index.\\
+			\textbf{minCv}		& Littlest mean squared error.\\
+			\textbf{minIndex}	& Value of index for which the cv criterion is minimal.\\
+			\textbf{index}		& $l_1$ norm ratio at which the mean squared error of prediction was computed.\\
+			\textbf{maxSteps}	& Maximal number of steps for the LARS algorithm.\\
+		\end{tabular}
+		
+		We perform a 5-folds cross-validation on the previously simulated data set.
+<< cvlars, echo=TRUE>>=
+rescvlars=HDcvlars(data1$data, data1$response,5)
+@	
+
+		Then, we can plot the MSE curve
+<< plotcvlars, echo=TRUE,eval=FALSE>>=
+plot(rescvlars)
+@
+		\begin{figure}[!h]
+			\begin{center}	
+<< plotcvlarsb, echo=FALSE,fig=TRUE,width=16,height=8>>=
+plot(rescvlars)
+@
+			\end{center}
+		\end{figure}	
+		
+		The $L_1$-norm fraction with the littlest MSE is \Sexpr{rescvlars$minIndex}.
+		
+		We can now compute the coefficients associated to this fraction with the \texttt{computeCoefficients} function.
+<< coeff, echo=TRUE>>=
+coefficients=computeCoefficients(reslars, rescvlars$minIndex, mode = "lambda")
+@	
+		We obtain a list containing two vectors : variable and coefficient.\\
+		
+		If we have a new data set without the response, we can use the \texttt{predict} function to compute the associated response.
+<< pred, echo=TRUE, eval=FALSE>>=
+# yPred=predict(reslars, rescvlars$fraction, mode = "fraction")
+@		
+		
+	\subsection{HDfusion}
+		The \texttt{HDlars} function performs the LARS algorithm, here is its usage in \texttt{R}:
+<< fusion, echo=TRUE,eval=FALSE >>=
+# HDfusion(X, y, maxSteps,intercept,eps)
+@
+		
+		This function takes in arguments which are the same parameters as \texttt{HDlars}.\\
+		
+		
+		Try the function on the same data set as previously.
+<< exfusion, echo=TRUE >>=
+resfusion=HDfusion(data1$data, data1$response)
+@
+
+		We plot the path of the algorithm. 
+		
+<< plotfusion, echo=TRUE,eval=FALSE>>=
+plot(resfusion)
+@	
+
+		\begin{figure}[!h]
+			\begin{center}	
+<< plotfusion2, echo=FALSE,fig=TRUE,width=16,height=8>>=
+plot(resfusion)
+@	
+				\caption{Path of the LARS algorithm on Z.}
+			\end{center}
+		\end{figure}
+	
+		It is the path of the LARS version of the fusion (see equation (\ref{fusionlasso})), a non-zero coefficient means a breakpoint in the solution with a jump of the value of the coefficient.\\
+		
+		The \texttt{LarsPath} object contains the solution $\hat{\beta}$ of (\ref{fusionlasso}) (for the lasso version of the fusion problem).
+		
+		To obtain the value of the estimate for the fusion problem (\ref{fusion}) at a given step, we can use the \texttt{coefficient} function.
+
+		\begin{figure}[!h]
+			\begin{center}			
+<< plotcoeff, echo=TRUE,fig=TRUE,width=16,height=8>>=
+resfusion@nbStep
+plotCoefficient(resfusion,3)
+@			
+				\caption{$\hat{\beta}$ coefficients at the step 15.}
+			\end{center}
+		\end{figure}
+		
+	Coefficients are organized in segments of the same value. Here, it's more difficult to analyze due to few number of non-zero coefficient.
+			 
+\nocite{*}
+\bibliographystyle{apalike}
+\bibliography{HDPenReg} 	
+	
+	
+\end{document}

@@ -1,0 +1,278 @@
+---
+title: "Public perception of climate change"
+author: "Robin K. S. Hankin"
+date: "`r Sys.Date()`"
+vignette: >
+  %\VignetteIndexEntry{climate change}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+This short document analyses the climate change dataset originally
+presented in the hyperdirichlet R package^[RKS Hankin 2010.  "A
+generalization of the Dirichlet distribution", *Journal of Statistical
+Software*, 33:11] but using the hyper2 package instead.  Lay
+perception of climate change is a complex and interesting process^[SC
+Moser and L Dilling 2007.  "Creating a climate for change:
+communicating climate change and facilitating social change".
+Cambridge University Press] here we assess the engagement of
+non-experts by the use of "icons" (this word is standard in this
+context.  An icon is a "representative symbol") that illustrate
+different impacts of climate change.
+
+Here we analyse results of one experiment^[S. O'Neill 2007. "An Iconic
+Approach to Representing Climate Change", School of Environmental
+Science, University of East Anglia], in which subjects were presented
+with a set of icons of climate change and asked to identify which of
+them they find most concerning.  Six icons were used: PB [polar bears,
+which face extinction through loss of ice floe hunting grounds], NB
+[the Norfolk Broads, which flood due to intense rainfall events], L
+[London flooding, as a result of sea level rise], THC [the
+thermo-haline circulation, which may slow or stop as a result of
+anthropogenic modification of the water cycle], OA [oceanic
+acidification as a result of anthropogenic emissions of ${\mathrm
+C}{\mathrm O}_2$], and WAIS [the West Antarctic Ice Sheet, which is
+rapidly calving as a result of climate change].
+
+Methodological constraints dictated that each respondent could be
+presented with a maximum of four icons.  The R idiom below (dataset
+```icons``` in the package) shows the experimental results.
+
+```{r}
+M <- matrix(c(
+    5 , 3 , NA,  4, NA,   3,
+    3 , NA,  5,  8, NA,   2,
+    NA,  4,  9,  2, NA,   1,
+    10,  3, NA,  3,  4,  NA,
+    4 , NA,  5,  6,  3,  NA,
+    NA,  4,  3,  1,  3,  NA,
+    5 ,  1, NA, NA,  1,   2,
+    5 , NA,  1, NA,  1,   1,
+    NA,  9,  7, NA,  2,   0)
+  , byrow=TRUE,ncol=6)
+colnames(M) <- c("NB","L","PB","THC","OA","WAIS")
+M
+```
+
+(M is called ```icons_matrix``` in the package).  Each row of ```M```
+corresponds to a particular cue given to respondents.  The first row,
+for example, means that a total of $5+3+4+3=15$ people were shown
+icons NB, L, TCH, WAIS [column names of the the non-NA entries]; 5
+people chose NB as most concerning, 3 chose L, and so on.  The dataset
+is more fully described in the hyperdirichlet package.  To recreate
+the ```icons``` likelihood function in the ```hyper2``` package, we
+use the ```saffy()``` function:
+
+```{r}
+library("hyper2",quietly=TRUE)
+icons <- saffy(M)
+icons
+```
+
+At this point, the ```icons``` object as created above is
+mathematically identical to ```icons``` object in the hyperdirichlet
+package (and indeed the hyper2 package), but the terms might appear in
+a different order.
+
+## Analysis of the icons dataset
+
+The first step is to find the maximum
+likelihood estimate for the ```icons``` likelihood:
+
+```{r}
+mic <- maxp(icons)
+mic
+dotchart(mic,pch=16)
+```
+
+We also need the log-likelihood at an unconstrained maximum:
+
+```{r}
+L1 <- loglik(icons,indep(mic))
+L1
+```
+
+Agreeing to 4 decimal places with the value given in the
+hyperdirichlet package.
+
+The next step is to assess a number of hypotheses concerning the
+relative sizes of $p_1$ through $p_6$.
+
+## Hypothesis 1: $p_1\geqslant 1/6$
+
+Following the analysis in Hankin 2010, we first observe that NB [the
+Norfolk Broads] is the largest-probability icon (as expected on
+theoretical grounds by O'Neill).  This would suggest that $p_1$ is
+large, in some sense.  Consider the hypothesis that $p_1\leqslant 1/6$
+and to that end perform a constrained optimization, with (active)
+constraint that $p_1\leqslant 1/6$.  This is most easily done by
+imposing additional constraints to the ```maxp()``` function via the
+```fcm``` and ```fcv``` arguments:
+
+
+```{r}
+small <- 1e-6  #  ensure start at an interior point
+maxlike_constrained <- 
+    maxp(icons, startp=indep(equalp(icons))-c(small,0,0,0,0),
+         give=TRUE, fcm=c(-1,0,0,0,0),fcv= -1/6)
+maxlike_constrained	 
+```	
+
+Note that the value of $p_1$ is equal to $1/6$: the maximum is on the
+boundary of the admissible region.  The extra support is given by
+
+```{r}
+ES <- L1-maxlike_constrained$value 
+ES
+```
+
+(compare 2.608181 from the hyperdirichlet package).  This exceeds
+Edwards's two-units-of-support criterion; a $p$-value would be
+
+```{r}
+pchisq(2*ES,df=1,lower.tail=FALSE)
+```
+
+both of which would indicate that we may reject that hypothesis that
+$p_1\leqslant 1/6$ and thereby infer $p_1>\frac{1}{6}$.
+
+## Hypothesis 2: $p_1\geqslant\max\left(p_2,\ldots,p_6\right)$
+
+Another constrained likelihood maximization, although this one is not
+possible with convex constraints.  We have to compare ```L1``` against
+the maximum likelihood over the region defined by $p_1$ being greater
+than *at least one* of $p_2,\ldots,p_6$.  The union of convex sets is
+not necessarily convex (think two-way Venn diagrams).  As far as I can
+see, the only way to do it is to perform a sequence of five
+constrained optimizations: $p_1\leqslant p_2, p_1\leqslant p_3,
+p_1\leqslant p_4, p_1\leqslant p_5$.  The fillup constraint would be
+$p_1\leqslant p_6\longrightarrow 2p_1+p_2+\ldots p_5\leqslant 1$.  We
+then choose the largest likelihood from the five.
+
+```{r}
+o <- function(Ul,Cl,startp,give=FALSE){
+    small <- 1e-6  #  ensure start at an interior point
+    if(missing(startp)){startp <- small*(1:5)+rep(0.1,5)}			
+    out <- maxp(icons, startp=small*(1:5)+rep(0.1,5), give=TRUE, fcm=Ul,fcv=Cl)
+    if(give){
+        return(out)
+    }else{
+        return(out$value)
+    }
+}
+
+p2max <- o(c(-1, 1, 0, 0, 0), 0)
+p3max <- o(c(-1, 0, 1, 0, 0), 0)
+p4max <- o(c(-1, 0, 0, 1, 0), 0)
+p5max <- o(c(-1, 0, 0, 0, 1), 0)
+p6max <- o(c(-2,-1,-1,-1,-1),-1)
+```
+
+(the final line is different because $p_6$ is the fillup value).
+
+```{r}
+likes <- c(p2max,p3max,p4max,p5max,p6max)
+likes
+ml <- max(likes) 
+ml
+```
+
+Thus the first element of ```likes``` corresponds to the maximum
+likelihood, constrained so that $p_1\leqslant p_2$; the second element
+corresponds to the constraint that $p_1\leqslant p_3$, and so on.  The
+largest likelihood is the easiest constraint to break, in this case
+$p_1\leqslant p_3$: this makes sense because $p_3$ has the second
+highest MLE after $p_1$.  The extra likelihood is given by
+
+```{r}
+L1-ml
+```
+
+(the hyperdirichlet package gives 0.0853 here, a suprisingly small
+discrepancy given the difficulties of optimizing over a nonconvex
+region).  We conclude that there is no evidence for
+$p_1\geqslant\max\left(p_2,\ldots,p_6\right)$.
+
+It's worth looking at the evaluate too:
+
+```{r}
+o(c(-1, 1, 0, 0, 0), 0,give=TRUE)$par
+o(c(-1, 0, 1, 0, 0), 0,give=TRUE)$par
+o(c(-1, 0, 0, 1, 0), 0,give=TRUE)$par
+o(c(-1, 0, 0, 0, 1), 0,give=TRUE)$par
+o(c(-2,-1,-1,-1,-1),-1,give=TRUE)$par
+```
+
+## Low frequency responses
+
+The next hypothesis was testing the smallness of $p_5+p_6$, and we
+suspected that $p_5+p_6 < \frac{1}{3}$.  This translates into
+optimizing subject to $p_5+p_6\geqslant\frac{1}{3}$, and the required
+constraint is $-p_1-p_2-p_3-p_4\geqslant-\frac{2}{3}$ (because
+$p_5+p_6=1-p_1-p_2-p_3-p_4$).  Dead easy:
+
+```{r} 
+jj <- o(c(-1,-1,-1,-1,0) , -2/3, give=TRUE,start=indep((1:6)/21))$value
+jj
+```
+
+then the extra support is 
+
+```{r}
+L1-jj
+```
+
+(compare 7.711396 in hyperdirichlet, not sure why the discrepancy is
+so large).
+
+## Final example
+
+The final example was
+$\max\left\{p_5,p_6\right\}\geqslant\min\left\{p_1,p_2,p_3,p_4\right\}$.
+This means the optimization is constrained so that *at least one* of
+$\left\{p_5,p_6\right\}$ exceeds *at least one* of
+$\left\{p_1,p_2,p_3,p_4\right\}$.  So we have the union of the various
+possibilities:
+
+\[
+\bigcup_{j\in\left\{5,6\right\}\atop k\in\left\{1,2,3,4\right\}}
+\left\{\left(p_1,p_2,p_3,p_4,p_5,p_6\right)\left|\sum p_i=1,
+p_j\geqslant p_k\right.\right\}
+\]
+
+and of course $p_6\geqslant p_2$, say, translates to
+$-p_1-2p_2-p_3-p_4-p_5\geqslant -1$.
+
+```{r}
+start <- indep(c(small,small,small,small,0.5-2*small,0.5-2*small))
+jj <- c(
+   o(c(-1, 0, 0, 0, 1), 0,start=start),
+   o(c( 0,-1, 0, 0, 1), 0,start=start),
+   o(c( 0, 0,-1, 0, 1), 0,start=start),
+   o(c( 0, 0, 0,-1, 1), 0,start=start),
+
+   o(c(-2,-1,-1,-1,-1),-1,start=start),
+   o(c(-1,-2,-1,-1,-1),-1,start=start),
+   o(c(-1,-1,-2,-1,-1),-1,start=start),
+   o(c(-1,-1,-1,-2,-1),-1,start=start)
+   )
+jj
+max(jj)
+```
+
+So the extra support is
+
+```{r}
+L1-max(jj)
+```
+(compare hyperdirichlet which gives 3.16, not sure why the difference).
+We should look at the maximum value:
+
+```{r}
+   o(c( 0, 0, 0,-1, 1), 0,give=TRUE,start=start)
+```
+
+So the evaluate is at the boundary, for $p_4=p_5$.  I have no
+explanation for the discrepancy between this and that in the
+hyperdirichlet package.

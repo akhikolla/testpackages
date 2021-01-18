@@ -1,0 +1,1 @@
+\name{LKnFRKopt} \alias{LKnFRKopt} \title{ internal function } \description{ internal function } \keyword{internal}

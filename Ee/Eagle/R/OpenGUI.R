@@ -1,0 +1,25 @@
+#' @title Browser-based Graphical User Interface
+#' @description Opens a web browser to act as a user-friendly interface to 'Eagle'
+#' @details
+#' Once \code{OPenGUI} is run, your default web-browser will open automatically the Eagle GUI. We have written our GUI in html code. 
+#' The GUI allows users to input data files, analyse data, summarise findings, and view results via interactive plots. We 
+#' have designed the GUI for users whom may be unfamilar with R and wishing to avoid having to write R code.  
+#'
+#'
+#' Note, that even though a web browser is being used as the user interface, everything remains local to the computer. 
+#' @examples
+#'\dontrun{
+#'# opens a web browser 
+#' OpenGUI()
+#'}
+#'
+OpenGUI <- function() {
+  appDir <- system.file('shiny_app', package = 'Eagle')
+  if (appDir == "") {
+    message("Could not find shiny-app directory. Try re-installing `Eagle` package.")
+    return(NULL)
+  }
+
+  shinyAppDir(appDir, options=list(port = 3838))
+}
+
