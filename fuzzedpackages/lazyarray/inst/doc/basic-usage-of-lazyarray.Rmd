@@ -1,0 +1,90 @@
+---
+title: "A Basic Usage of 'LazyArray'"
+output: rmarkdown::html_vignette
+author: Zhengjia Wang
+vignette: >
+  %\VignetteIndexEntry{A Basic Usage of 'LazyArray'}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(lazyarray)
+```
+
+### Initialize
+
+Create a blank array and assign R object
+
+```{r}
+# Sample data (~24 MB)
+x <- rnorm(3e6); dim(x) <- c(10, 100, 100, 30)
+
+# Save array to a path
+path <- tempfile()
+arr <- create_lazyarray(path, 'double', dim(x), multipart = TRUE)
+arr[] <- x
+```
+
+Load existing array
+
+```{r}
+# Load existing array
+arr <- load_lazyarray(path)
+```
+
+The loaded array is read-only by default. However, they can be set writable.
+
+```{r}
+# Make loaded array writable
+arr$make_writable()
+arr$can_write
+```
+
+### S3 methods
+
+1. Set dimension names
+
+```{r}
+arr$make_writable()
+dimnames(arr) <- list(
+  A = 1:10,
+  B = 1:100,
+  C = 1:100,
+  D = 1:30
+)
+```
+
+2. Subset and subset assign
+
+```{r}
+# Subset/read array
+y1 <- arr[]              
+y2 <- arr[,,,3]          
+
+# Write to slice of data, writing to slices along the 
+# last dimension is optimized
+arr[,,,1] <- seq_len(1e5)
+```
+
+3. Subset by formula
+
+```{r}
+sub <- subset(arr, A ~ A <= 2, B ~ B == 10)
+dim(sub)
+```
+
+### Remove Arrays
+
+Data created via `lazyarray` does not remove automatically. You need to finalize array by yourself. This is because multiple lazy array instances might point to a same dataset. If one of the object is garbage collected, you might not want to remove the data on hard drive as this will invalidate the other instances. To manually remove data, use
+
+```{r}
+arr$remove_data()
+```

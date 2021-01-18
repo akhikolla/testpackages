@@ -1,0 +1,146 @@
+---
+title: "Regularized Mediation Example"
+author: "DJ Schaid, GD Jenkins, JP Sinnwell"
+output:
+  rmarkdown::html_vignette:
+    toc: yes
+    toc_depth: 2
+vignette: |
+  %\VignetteIndexEntry{Regularized Mediation Example}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, tidy.opts=list(width.cutoff=80), tidy=TRUE, comment=NA)
+```
+
+Overview
+==================
+
+This is a demonstration of regularized mediation analysis (*regmed*) for mediation
+
+The user user-level functions in the *regmed* package are:
+
++ `regmed.grid()` penalized model for grid of lambdas
++ `trim.best()` get best model, trim off mediators with no effect, refit model
++ `regmed.fit()` fit penalized model with specified lambda
++ `plot.regmed.grid()` plot results of regmed.grid
++ `plot.regmed()` plot results of a single model fit, from either trim.best() or regmed.fit()
+
+```{r message = FALSE}
+require("regmed")
+```
+
+Dataset
+============
+
+The data used in this example was created from selecting four methylyation loci as examples from the publicly available data E-GEOD-77445 - Genome-wide DNA methylation levels. The "exposure" variable is childhood trauma, the "outcome" variable is cortisol stress reactivity, and the four methylation loci are potential mediators to be evaluated. 
+
+This example data has only four potential mediators. In practice, the number of mediators can be much larger than the sample size. In this case, one can use sure independence screening (Fan, J., & Lv, J. , 2008, Sure independence screening for ultrahigh dimensional feature space. J. R. Statist. Soc.B, 70, 849-911). This approach is based on ranking marginal correlations and then selecting the highest ranked values such that the number of parameters is less than the sample size. Because mediation depends on the two correlations,  r(x,m) and r(m,y), where m is a potential mediator, one can rank the absolute values of their products, |r(x,m) * r(m,y)|, and then select the highest ranked values to determine which potential mediators to include in the penalized mediation models, such that the number parameters in the model is less than the sample size.
+
+```{r, loaddat}
+data(regmed_example)
+
+y <- regmed_example$y
+x <- regmed_example$x
+med <- regmed_example[, -c(1,2)]
+```
+
+Fit Grid
+============================
+
+Fit penalized models for a grid of lambda's
+
+```{r, gridfit}
+fit.grid <- regmed.grid(x, med, y, lambda.vec= c(seq(from=1, to=0, by = -.1)), frac.lasso=.8)
+```
+
+## Plot regmed.grid object
+
+```{r, methodsgrid}
+plot.regmed.grid(fit.grid)
+```
+
+Trim Best Model
+==================
+
+Get best model, trim to remove mediators with near zero effect, and refit with specified
+lambda (default lambda = 0).
+
+```{r, fitbest}
+fit.trim <- trim.best(fit.grid)
+summary.regmed(fit.trim)
+```
+
+Plot regmed object
+==================
+
+```{r, plotregmed}
+plot(fit.trim, cex=.6)
+```
+
+Fit regmed with different lambda penalties
+===============================================
+
+This example subsets to the mediators in fit.trim, and uses *regmed()* on the selected
+subset of mediators. 
+
+```{r med.subset}
+## choose subset of mediators that are in fit.trim
+which.med <- colnames(med) %in% dimnames(fit.trim$alpha)[[1]]
+med.selected <- med[, which.med]
+trauma=x
+cortisol=y
+fit.lam2 <- regmed.fit(trauma, med.selected, cortisol, lambda = 0.2, frac.lasso=.8)
+summary(fit.lam2)
+
+fit.lam0 <- regmed.fit(trauma, med.selected, cortisol, lambda = 0.0, frac.lasso=.8)
+summary(fit.lam0)
+```
+
+## Plot one of the fits from above
+
+We show the plot method can display different sized text and line types,
+along with using the variable names from the call to *regmed.fit()*.
+
+```{r, plotfit}
+plot(fit.lam2, lty=2, lwd=3, cex=.7)
+```
+
+Use Lavaan to get SE of Parameters
+==================
+
+When using trim.best() with default lambda = 0, the returned object is an unpenalized structural equation model fit. For this model, the lavaan R package can be used to estimate standard errors of the model parameters, although these are approximations that do not consider that the terms in the model were first chosen by  the penalized model. 
+
+```{r, lavaan}
+library(lavaan)
+## choose subset of mediators that are in fit.trim
+which.med <- colnames(med) %in% dimnames(fit.trim$alpha)[[1]]
+med.selected <- med[, which.med]
+mediator.names <- dimnames(med.selected)[[2]]
+
+## setup lavaan model
+med.model <- lavaan.model(y.name="y", x.name="x",
+                          med.name=mediator.names, medcov=fit.trim$MedCov)
+
+## setup data for lavaan
+dat <- data.frame( cbind(scale(x, center=TRUE, scale=TRUE),scale(y, center=TRUE, scale=TRUE),scale(med.selected, center=TRUE, scale=TRUE)) )
+names(dat) <- c("x","y",dimnames(med.selected)[[2]])
+
+## fit sem with lavaan
+
+fit.lavaan <- sem(model=med.model, data=dat)
+summary(fit.lavaan)
+```
+
+## Description of Lavaan Output
+
+The output from lavaan sem model shows the regressions for y regressed on x and the mediators. The estimates and std.err for these coefficents are the direct effect of x on y (delta),  and the the beta coeffients for the mediators. The regression of each mediator on x gives the estimate of alpha and its std.err. The covariances of the mediators are fixed (so no std.err), see reference by Schaid and Sinnwell (2020).  The estimate of the residual variance of y is shown in the section of "Variances", along with its std.err.
+
+References
+=============
+
++ Schaid DJ, Sinnwell JP. (2020) Penalized Models for Analysis of Multiple Mediators. Genet Epidemiol, to appear.
+
++ Rosseel Y. (2012) lavaan: An R Package for Structural Equation Modeling. Journal of Statistical Software, 48(2), 1–36. http://www.jstatsoft.org/v48/i02/.

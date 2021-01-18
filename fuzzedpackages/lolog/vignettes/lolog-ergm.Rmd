@@ -1,0 +1,126 @@
+---
+title: "An Example Analysis Using LOLOG"
+author: "The Statnet Development Team"
+date: "`r Sys.Date()`"
+output: rmarkdown::pdf_document
+vignette: >
+  %\VignetteIndexEntry{An Example Analysis Using lolog}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  out.width="90%", 
+  fig.height=4,
+  dpi=120
+)
+```
+
+# The ``ukFaculty`` dataset
+
+The personal friendship network of a faculty of a UK university, consisting of 81 vertices (individuals) and 817 directed and weighted connections. The school affiliation of each individual is stored as a vertex attribute. Two individuals are missing the school attribute. We will remove these for analysis.
+
+```{r, fig.height=7}
+suppressPackageStartupMessages(library(network))
+library(lolog)
+data(ukFaculty)
+#?ukFaculty
+ukFaculty %v% "Group"  # The school affiliation of the faculty
+ukFaculty %v% "GroupC" # affiliation coded as categorical
+delete.vertices(ukFaculty, which(is.na(ukFaculty %v% "Group")))
+plot(ukFaculty, vertex.col = (ukFaculty %v% "Group" ) + 1)
+ukFaculty
+```
+
+We see a great number of like-to-like ties based on school affiliation, so this will probably be an important thing to model.
+
+
+# A first attempt
+
+Recall from the introductory vignette, a LOLOG represents the probability of a tie, given the network grown up to a time-point as
+$$
+\textrm{logit}\big(p(y_{s_t}=1 | \eta, y^{t-1}, s_{ \leq t})\big) = \theta \cdot c(y_{s_t}=1 | y^{t-1}, s_{ \leq t})
+$$
+where $s_{\leq t}$ is the growth order of the network up to time $t$, $y^{t-1}$ is the state of the graph at time $t-1$. $c(y_{s_t} | y^{t-1}, s_{ \leq t})$ is a vector representing the change in graph statistics from time $t-1$ to $t$ if an edge is present, and $\theta$ is a vector of parameters.
+
+If the graph statistics are dyad independent (i.e. the change in graph statistics caused by the addition or deletion of an edge depends only on the vertex covariates of the two vertices connected by the edge), then LOLOG reduces to a simple logistic regression of the presence of an edge on the change statistics.
+
+It is usually a good idea to start off model building with a dyad independent model.
+```{r}
+fitukInd <- lolog(ukFaculty ~ edges() + nodeMatch("GroupC") + nodeFactor("GroupC"))
+summary(fitukInd)
+```
+
+We see a highly significant term for ties within group ``nodematch.GroupC``, and a difference in overall activity comparing group 2 to the baseline group 3. Group 1 is not significantly more active than 3.
+
+For those familiar with ERGM modeling, dyad independent ergms are identical to dyad independent lolog models.
+```{r}
+suppressPackageStartupMessages(library(ergm))
+ergm(ukFaculty ~ edges() + nodematch("GroupC") + nodefactor("GroupC", base=3))
+```
+
+
+At this point we will evaluate the fit of our first LOLOG model by comparing the in-degree, out-degree and esp distribution of graphs simulated from the model to our observed graph.
+
+```{r}
+g <- gofit(fitukInd, ukFaculty ~ degree(0:50,"out"))
+plot(g)
+g <- gofit(fitukInd, ukFaculty ~ degree(0:50,"in"))
+plot(g)
+g <- gofit(fitukInd, ukFaculty ~ esp(0:25))
+plot(g)
+```
+
+The statistics of the simulated networks are traced by the black lines, while out observed network is marked in red. The degree distributions are not terribly mismatched (out-degree is not great though), but the ESP distribution indicates simulated networks have far less transitivity than the observed network. Additionally, the number of reciprocated ties (mutual) is far to low in the simulated graphs
+```{r}
+g <- gofit(fitukInd, ukFaculty ~ edges +mutual)
+plot(g,type="box")
+```
+
+Okay, so let's try adding a ``triangles`` term for transitivity. For dyad dependent models the ``nsamp`` parameter controls how many samples are used for MC-GMM estimation. If you have a lot of terms in your model and are having trouble with convergence, try increasing this parameter. 
+
+```{r}
+fituk <- lolog(ukFaculty ~ edges() + nodeMatch("GroupC") + nodeFactor("GroupC") + 
+            triangles, nsamp=2000, verbose=FALSE)
+summary(fituk)
+```
+
+The ``triangles`` term is significant, but now the ``nodeFactor`` terms are not. This can be intuitively explained by the fact that groups 1 and 2 are larger than group 3. Because the matching term is so highly sigificant, there are more opportunities for within group clustering than in group 3, so when triangles are added, the larger activity within these groups is explained by the clustering activity.
+
+Now let's look at those goodness of fit plots again...
+```{r}
+g <- gofit(fituk, ukFaculty ~ degree(0:50,"out"))
+plot(g)
+g <- gofit(fituk, ukFaculty ~ degree(0:50,"in"))
+plot(g)
+g <- gofit(fituk, ukFaculty ~ esp(0:25))
+plot(g)
+g <- gofit(fituk, ukFaculty ~ edges + mutual)
+plot(g, type="box")
+```
+
+These look pretty good, with the observed values falling within the range of values simulated from the model. Additionally, because ``lolog`` matches the expected model graph statistics with their observed values, we are assured that statistics included in the model will have good goodness of fit. We can see this by plotting the model diagnostics.
+```{r}
+plot(fituk)
+```
+
+# Attempting to fit with ERGM
+
+Like LOLOGs, ERGMs are an incredibly flexible model class. However, they are prone to model degeneracy, so it is recommended that great care is taken in choosing appropriate model statistics to use. Even using best practices in choosing these statistics it is not unusual to be unable to fit a network due to degeneracy related issues.
+
+When modeling transitivity, the best practice for ERGMs is to include a gwesp term, which is "robust" to model degeneracy. We attempted many different models using this term (and others), and the best fitting non-degenerate model that we could find fixed the decay parameter at $0.25$. Larger values exhibited degeneracy problems, and allowing the parameter to be fit using curved ERGM estimation failed to converge.
+```{r}
+fitukErgm <- ergm(ukFaculty ~ edges() + nodematch("GroupC") + nodefactor("GroupC", base=3) +
+            gwesp(decay=.25, fixed=TRUE), verbose=FALSE)
+summary(fitukErgm)
+g <- gof(fitukErgm)
+par(mfrow=c(2,3))
+plot(g)
+```
+
+The added the gwesp term is highly significant, indicating increased levels of transitivity; however, the goodness of fit plot shows that the ERGM is not capturing the full amount of transitivity in the network. Simulated networks have much lower esp values than the one observed. Unfortunately, using the recommended practices for fitting ERGMs, we were unable to find a non-degenerate ERGM that appropriately captures the degree and transitivity patterns of this dataset.
+
+

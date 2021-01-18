@@ -1,0 +1,246 @@
+---
+title: "Parallelization considerations for dtwclust"
+author: "Alexis Sarda-Espinosa"
+output:
+    html_vignette:
+        number_sections: true
+        fig_width: 6.5
+        fig_height: 7
+vignette: >
+    %\VignetteEngine{knitr::rmarkdown_notangle}
+    %\VignettePackage{dtwclust}
+    %\VignetteIndexEntry{Parallelization considerations for dtwclust}
+    %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+library("dtwclust")
+library("RcppParallel")
+library("parallel")
+
+# knitr defaults
+knitr::opts_chunk$set(eval = FALSE, comment = "#>")
+```
+
+# Introduction
+
+Up until `dtwclust` version 5.1.0,
+parallelization solely relied on the `foreach` package,
+which mostly leverages multi-processing parallelization.
+Thanks to the `RcppParallel` package,
+several included functions can now also take advantage of multi-threading.
+However, this means that there are some considerations to keep in mind when using the package in order to make the most of either parallelization strategy.
+The TL;DR version is:
+
+```{r tl-dr}
+# load dtwclust
+library(dtwclust)
+# load parallel
+library(parallel)
+# create multi-process workers
+workers <- makeCluster(detectCores())
+# load dtwclust in each one, and make them use 1 thread per worker
+invisible(clusterEvalQ(workers, {
+    library(dtwclust)
+    RcppParallel::setThreadOptions(1L)
+}))
+# register your workers, e.g. with doParallel
+require(doParallel)
+registerDoParallel(workers)
+```
+
+For more details, continue reading.
+
+# Overview
+
+Parallelization with `RcppParallel` uses multi-threading.
+All available threads are used by default,
+but this can be changed with `RcppParallel::setThreadOptions`.
+The maximum number of threads can be checked with `RcppParallel::defaultNumThreads` or `parallel::detectCores`.
+Parallelization with `foreach` requires a backend to be registered.
+Some packages that provide backends are:
+
+- `doParallel`
+- `doMC`
+- `doSNOW`
+- `doFuture`
+- `doMPI`
+
+See also [this CRAN view](https://CRAN.R-project.org/view=HighPerformanceComputing).
+
+The `dtwclust` functions that use `RcppParallel` are:
+
+- `dtw_lb` for `dtw.func = "dtw_basic"`.
+- `DBA`.
+- `sdtw_cent`
+- The distance calculations in `TADPole`.
+- All distances registered with `proxy` by `dtwclust`.
+
+The `dtwclust` functions that use `foreach` are:
+
+- `tsclust` for partitional and fuzzy clustering when either more than one `k` is specified in the call,
+  or `nrep > 1` in `partitional_control`.
+- The distance calculations in `tsclust` for distances *not* included with `dtwclust` (more details below).
+- `TADPole` (also when called through `tsclust`) for multiple `dc` values.
+- `compare_clusterings` for each configuration.
+- The "shape", "dba" and "sdtw_cent" centroids in partitional clustering with `tsclust` if only one `k` is specified *and* `nrep = 1`.
+- `dtw_lb` for `dtw.func = "dtw"`.
+
+# Calculation of cross-distance matrices
+
+## Distances included in `dtwclust`
+
+As mentioned above,
+all included distance functions that are registered with `proxy` rely on `RcppParallel`,
+so it is not necessary to explicitly create `parallel` workers for the calculation of cross-distance matrices.
+Nevertheless, creating workers will not prevent the distances to use multi-threading when it is appropriate
+(more on this later).
+Using `doParallel` as an example:
+
+```{r existing-scripts}
+data("uciCT")
+
+# doing either of the following will calculate the distance matrix with parallelization
+registerDoParallel(workers)
+distmat <- proxy::dist(CharTraj, method = "dtw_basic")
+registerDoSEQ()
+distmat <- proxy::dist(CharTraj, method = "dtw_basic")
+```
+
+If you want to *prevent* the use of multi-threading,
+you can do the following,
+but it will **not** fall back on `foreach`,
+so it will be always sequential:
+
+```{r prevent-mt}
+RcppParallel::setThreadOptions(1L)
+distmat <- proxy::dist(CharTraj, method = "dtw_basic")
+```
+
+## Distances not included with `dtwclust`
+
+As mentioned in its documentation,
+the `tsclustFamily` class (used by `tsclust`) has a distance function that wraps `proxy::dist` and,
+with some restrictions,
+can use parallelization even with distances not included with `dtwclust`.
+This depends on `foreach` for non-`dtwclust` distances.
+For example:
+
+```{r family-dist}
+# instantiate the family and use the dtw::dtw function
+fam <- new("tsclustFamily", dist = "dtw")
+# register the parallel workers
+registerDoParallel(workers)
+# calculate distance matrix
+distmat <- fam@dist(CharTraj)
+# go back to sequential calculations
+registerDoSEQ()
+```
+
+# Parallelization with `foreach`
+
+## Within `dtwclust`
+
+Internally, any call to `foreach` first performs the following checks:
+
+- Is there more than one parallel worker registered?
+  + If yes, see if the number of threads has been specified with `RcppParallel::setThreadOptions`.
+    - If it has been specified, 
+      change nothing and evaluate the call.
+    - If it has *not* been specified, 
+      configure each worker to use 1 thread,
+      evaluate the call,
+      and reset the number of threads in each worker afterwards.
+
+This assumes that,
+when there are parallel workers,
+there are enough of them to use the CPU fully,
+so it would not make sense for each worker to try to spawn multiple threads.
+When the user has not changed any `RcppParallel` configuration,
+the `dtwclust` functions will configure each worker to use 1 thread,
+but it is best to be explicit (as shown in the introduction) because `RcppParallel` saves its configuration in an environment variable,
+and the following could happen:
+
+```{r reset-rcpp-parallel, eval = TRUE, include = FALSE}
+RcppParallel::setThreadOptions()
+```
+
+```{r rcpp-parallel-env, eval = TRUE}
+# when this is *unset* (default), all threads are used
+Sys.getenv("RCPP_PARALLEL_NUM_THREADS")
+
+# parallel workers would seem the same,
+# so dtwclust would try to configure 1 thread per worker
+workers <- makeCluster(2L)
+clusterEvalQ(workers, Sys.getenv("RCPP_PARALLEL_NUM_THREADS"))
+
+# however, the environment variables get inherited by the workers upon creation
+stopCluster(workers)
+RcppParallel::setThreadOptions(2L)
+Sys.getenv("RCPP_PARALLEL_NUM_THREADS") # for main process
+workers <- makeCluster(2L)
+clusterEvalQ(workers, Sys.getenv("RCPP_PARALLEL_NUM_THREADS")) # for each worker
+```
+
+```{r stop-workers-explicitly, eval = TRUE, include = FALSE}
+stopCluster(workers)
+```
+
+In the last case above `dtwclust` would not change anything,
+so each worker would use 2 threads,
+resulting in 4 threads total.
+If the physical CPU only has 2 cores with 1 thread each,
+the previous would be suboptimal.
+
+There are cases where a setup like above might make sense.
+For example if the CPU has 4 cores with 2 threads per core,
+the following would not be suboptimal:
+
+```{r workers-and-threads}
+workers <- makeCluster(4L)
+clusterEvalQ(workers, RcppParallel::setThreadOptions(2L))
+```
+
+But, at least with `dtwclust`,
+it is unclear if this is advantageous when compared with `makeCluster(8L)`.
+Using `compare_clusterings` with many different configurations,
+where some configurations might take much longer,
+*might* benefit if each worker is not limited to sequential calculations.
+As a very informal example,
+consider the last piece of code from the documentation of `compare_clusterings`:
+
+```{r compare-clusterings-example}
+comparison_partitional <- compare_clusterings(CharTraj, types = "p",
+                                              configs = p_cfgs,
+                                              seed = 32903L, trace = TRUE,
+                                              score.clus = score_fun,
+                                              pick.clus = pick_fun,
+                                              shuffle.configs = TRUE,
+                                              return.objects = TRUE)
+```
+
+A purely sequential calculation (main process with 1 thread) took more than 20 minutes,
+and the following parallelization scenarios were tested on a machine with 4 cores and 1 thread per core
+(each scenario tested only once with R v3.5.0):
+
+- 4 workers required 7.36 minutes to finish.
+- 2 workers and 2 threads per worker required 7.97 minutes to finish.
+- 2 workers and 4 threads per worker required 7.46 minutes to finish.
+- No workers and 4 threads required 10.35 minutes to finish.
+
+The last scenario has the possible advantage that tracing is still possible.
+
+## Outside `dtwclust`
+
+If you are using `foreach` for parallelization,
+there's a good chance you're already using all available threads/cores from your CPU.
+If you are calling `dtwclust` functions inside a `foreach` evaluation,
+you should specify the number of threads:
+
+```{r dtwclust-in-foreach}
+results <- foreach(...) %dopar% {
+    RcppParallel::setThreadOptions(1L)
+    # any code that uses dtwclust...
+}
+```
+

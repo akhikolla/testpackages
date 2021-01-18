@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+
+<meta charset="utf-8" />
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="generator" content="pandoc" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<meta name="author" content="Michael Braun" />
+
+<meta name="date" content="2018-03-27" />
+
+<title>Using trustOptim for Unconstrained Nonlinear Optimization with Sparse Hessians</title>
+
+
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css">
+table.sourceCode, tr.sourceCode, td.lineNumbers, td.sourceCode {
+  margin: 0; padding: 0; vertical-align: baseline; border: none; }
+table.sourceCode { width: 100%; line-height: 100%; }
+td.lineNumbers { text-align: right; padding-right: 4px; padding-left: 4px; color: #aaaaaa; border-right: 1px solid #aaaaaa; }
+td.sourceCode { padding-left: 5px; }
+code > span.kw { color: #007020; font-weight: bold; }
+code > span.dt { color: #902000; }
+code > span.dv { color: #40a070; }
+code > span.bn { color: #40a070; }
+code > span.fl { color: #40a070; }
+code > span.ch { color: #4070a0; }
+code > span.st { color: #4070a0; }
+code > span.co { color: #60a0b0; font-style: italic; }
+code > span.ot { color: #007020; }
+code > span.al { color: #ff0000; font-weight: bold; }
+code > span.fu { color: #06287e; }
+code > span.er { color: #ff0000; font-weight: bold; }
+</style>
+
+
+
+<link href="data:text/css,body%20%7B%0A%20%20background%2Dcolor%3A%20%23fff%3B%0A%20%20margin%3A%201em%20auto%3B%0A%20%20max%2Dwidth%3A%20700px%3B%0A%20%20overflow%3A%20visible%3B%0A%20%20padding%2Dleft%3A%202em%3B%0A%20%20padding%2Dright%3A%202em%3B%0A%20%20font%2Dfamily%3A%20%22Open%20Sans%22%2C%20%22Helvetica%20Neue%22%2C%20Helvetica%2C%20Arial%2C%20sans%2Dserif%3B%0A%20%20font%2Dsize%3A%2014px%3B%0A%20%20line%2Dheight%3A%201%2E35%3B%0A%7D%0A%0A%23header%20%7B%0A%20%20text%2Dalign%3A%20center%3B%0A%7D%0A%0A%23TOC%20%7B%0A%20%20clear%3A%20both%3B%0A%20%20margin%3A%200%200%2010px%2010px%3B%0A%20%20padding%3A%204px%3B%0A%20%20width%3A%20400px%3B%0A%20%20border%3A%201px%20solid%20%23CCCCCC%3B%0A%20%20border%2Dradius%3A%205px%3B%0A%0A%20%20background%2Dcolor%3A%20%23f6f6f6%3B%0A%20%20font%2Dsize%3A%2013px%3B%0A%20%20line%2Dheight%3A%201%2E3%3B%0A%7D%0A%20%20%23TOC%20%2Etoctitle%20%7B%0A%20%20%20%20font%2Dweight%3A%20bold%3B%0A%20%20%20%20font%2Dsize%3A%2015px%3B%0A%20%20%20%20margin%2Dleft%3A%205px%3B%0A%20%20%7D%0A%0A%20%20%23TOC%20ul%20%7B%0A%20%20%20%20padding%2Dleft%3A%2040px%3B%0A%20%20%20%20margin%2Dleft%3A%20%2D1%2E5em%3B%0A%20%20%20%20margin%2Dtop%3A%205px%3B%0A%20%20%20%20margin%2Dbottom%3A%205px%3B%0A%20%20%7D%0A%20%20%23TOC%20ul%20ul%20%7B%0A%20%20%20%20margin%2Dleft%3A%20%2D2em%3B%0A%20%20%7D%0A%20%20%23TOC%20li%20%7B%0A%20%20%20%20line%2Dheight%3A%2016px%3B%0A%20%20%7D%0A%0Atable%20%7B%0A%20%20margin%3A%201em%20auto%3B%0A%20%20border%2Dwidth%3A%201px%3B%0A%20%20border%2Dcolor%3A%20%23DDDDDD%3B%0A%20%20border%2Dstyle%3A%20outset%3B%0A%20%20border%2Dcollapse%3A%20collapse%3B%0A%7D%0Atable%20th%20%7B%0A%20%20border%2Dwidth%3A%202px%3B%0A%20%20padding%3A%205px%3B%0A%20%20border%2Dstyle%3A%20inset%3B%0A%7D%0Atable%20td%20%7B%0A%20%20border%2Dwidth%3A%201px%3B%0A%20%20border%2Dstyle%3A%20inset%3B%0A%20%20line%2Dheight%3A%2018px%3B%0A%20%20padding%3A%205px%205px%3B%0A%7D%0Atable%2C%20table%20th%2C%20table%20td%20%7B%0A%20%20border%2Dleft%2Dstyle%3A%20none%3B%0A%20%20border%2Dright%2Dstyle%3A%20none%3B%0A%7D%0Atable%20thead%2C%20table%20tr%2Eeven%20%7B%0A%20%20background%2Dcolor%3A%20%23f7f7f7%3B%0A%7D%0A%0Ap%20%7B%0A%20%20margin%3A%200%2E5em%200%3B%0A%7D%0A%0Ablockquote%20%7B%0A%20%20background%2Dcolor%3A%20%23f6f6f6%3B%0A%20%20padding%3A%200%2E25em%200%2E75em%3B%0A%7D%0A%0Ahr%20%7B%0A%20%20border%2Dstyle%3A%20solid%3B%0A%20%20border%3A%20none%3B%0A%20%20border%2Dtop%3A%201px%20solid%20%23777%3B%0A%20%20margin%3A%2028px%200%3B%0A%7D%0A%0Adl%20%7B%0A%20%20margin%2Dleft%3A%200%3B%0A%7D%0A%20%20dl%20dd%20%7B%0A%20%20%20%20margin%2Dbottom%3A%2013px%3B%0A%20%20%20%20margin%2Dleft%3A%2013px%3B%0A%20%20%7D%0A%20%20dl%20dt%20%7B%0A%20%20%20%20font%2Dweight%3A%20bold%3B%0A%20%20%7D%0A%0Aul%20%7B%0A%20%20margin%2Dtop%3A%200%3B%0A%7D%0A%20%20ul%20li%20%7B%0A%20%20%20%20list%2Dstyle%3A%20circle%20outside%3B%0A%20%20%7D%0A%20%20ul%20ul%20%7B%0A%20%20%20%20margin%2Dbottom%3A%200%3B%0A%20%20%7D%0A%0Apre%2C%20code%20%7B%0A%20%20background%2Dcolor%3A%20%23f7f7f7%3B%0A%20%20border%2Dradius%3A%203px%3B%0A%20%20color%3A%20%23333%3B%0A%20%20white%2Dspace%3A%20pre%2Dwrap%3B%20%20%20%20%2F%2A%20Wrap%20long%20lines%20%2A%2F%0A%7D%0Apre%20%7B%0A%20%20border%2Dradius%3A%203px%3B%0A%20%20margin%3A%205px%200px%2010px%200px%3B%0A%20%20padding%3A%2010px%3B%0A%7D%0Apre%3Anot%28%5Bclass%5D%29%20%7B%0A%20%20background%2Dcolor%3A%20%23f7f7f7%3B%0A%7D%0A%0Acode%20%7B%0A%20%20font%2Dfamily%3A%20Consolas%2C%20Monaco%2C%20%27Courier%20New%27%2C%20monospace%3B%0A%20%20font%2Dsize%3A%2085%25%3B%0A%7D%0Ap%20%3E%20code%2C%20li%20%3E%20code%20%7B%0A%20%20padding%3A%202px%200px%3B%0A%7D%0A%0Adiv%2Efigure%20%7B%0A%20%20text%2Dalign%3A%20center%3B%0A%7D%0Aimg%20%7B%0A%20%20background%2Dcolor%3A%20%23FFFFFF%3B%0A%20%20padding%3A%202px%3B%0A%20%20border%3A%201px%20solid%20%23DDDDDD%3B%0A%20%20border%2Dradius%3A%203px%3B%0A%20%20border%3A%201px%20solid%20%23CCCCCC%3B%0A%20%20margin%3A%200%205px%3B%0A%7D%0A%0Ah1%20%7B%0A%20%20margin%2Dtop%3A%200%3B%0A%20%20font%2Dsize%3A%2035px%3B%0A%20%20line%2Dheight%3A%2040px%3B%0A%7D%0A%0Ah2%20%7B%0A%20%20border%2Dbottom%3A%204px%20solid%20%23f7f7f7%3B%0A%20%20padding%2Dtop%3A%2010px%3B%0A%20%20padding%2Dbottom%3A%202px%3B%0A%20%20font%2Dsize%3A%20145%25%3B%0A%7D%0A%0Ah3%20%7B%0A%20%20border%2Dbottom%3A%202px%20solid%20%23f7f7f7%3B%0A%20%20padding%2Dtop%3A%2010px%3B%0A%20%20font%2Dsize%3A%20120%25%3B%0A%7D%0A%0Ah4%20%7B%0A%20%20border%2Dbottom%3A%201px%20solid%20%23f7f7f7%3B%0A%20%20margin%2Dleft%3A%208px%3B%0A%20%20font%2Dsize%3A%20105%25%3B%0A%7D%0A%0Ah5%2C%20h6%20%7B%0A%20%20border%2Dbottom%3A%201px%20solid%20%23ccc%3B%0A%20%20font%2Dsize%3A%20105%25%3B%0A%7D%0A%0Aa%20%7B%0A%20%20color%3A%20%230033dd%3B%0A%20%20text%2Ddecoration%3A%20none%3B%0A%7D%0A%20%20a%3Ahover%20%7B%0A%20%20%20%20color%3A%20%236666ff%3B%20%7D%0A%20%20a%3Avisited%20%7B%0A%20%20%20%20color%3A%20%23800080%3B%20%7D%0A%20%20a%3Avisited%3Ahover%20%7B%0A%20%20%20%20color%3A%20%23BB00BB%3B%20%7D%0A%20%20a%5Bhref%5E%3D%22http%3A%22%5D%20%7B%0A%20%20%20%20text%2Ddecoration%3A%20underline%3B%20%7D%0A%20%20a%5Bhref%5E%3D%22https%3A%22%5D%20%7B%0A%20%20%20%20text%2Ddecoration%3A%20underline%3B%20%7D%0A%0A%2F%2A%20Class%20described%20in%20https%3A%2F%2Fbenjeffrey%2Ecom%2Fposts%2Fpandoc%2Dsyntax%2Dhighlighting%2Dcss%0A%20%20%20Colours%20from%20https%3A%2F%2Fgist%2Egithub%2Ecom%2Frobsimmons%2F1172277%20%2A%2F%0A%0Acode%20%3E%20span%2Ekw%20%7B%20color%3A%20%23555%3B%20font%2Dweight%3A%20bold%3B%20%7D%20%2F%2A%20Keyword%20%2A%2F%0Acode%20%3E%20span%2Edt%20%7B%20color%3A%20%23902000%3B%20%7D%20%2F%2A%20DataType%20%2A%2F%0Acode%20%3E%20span%2Edv%20%7B%20color%3A%20%2340a070%3B%20%7D%20%2F%2A%20DecVal%20%28decimal%20values%29%20%2A%2F%0Acode%20%3E%20span%2Ebn%20%7B%20color%3A%20%23d14%3B%20%7D%20%2F%2A%20BaseN%20%2A%2F%0Acode%20%3E%20span%2Efl%20%7B%20color%3A%20%23d14%3B%20%7D%20%2F%2A%20Float%20%2A%2F%0Acode%20%3E%20span%2Ech%20%7B%20color%3A%20%23d14%3B%20%7D%20%2F%2A%20Char%20%2A%2F%0Acode%20%3E%20span%2Est%20%7B%20color%3A%20%23d14%3B%20%7D%20%2F%2A%20String%20%2A%2F%0Acode%20%3E%20span%2Eco%20%7B%20color%3A%20%23888888%3B%20font%2Dstyle%3A%20italic%3B%20%7D%20%2F%2A%20Comment%20%2A%2F%0Acode%20%3E%20span%2Eot%20%7B%20color%3A%20%23007020%3B%20%7D%20%2F%2A%20OtherToken%20%2A%2F%0Acode%20%3E%20span%2Eal%20%7B%20color%3A%20%23ff0000%3B%20font%2Dweight%3A%20bold%3B%20%7D%20%2F%2A%20AlertToken%20%2A%2F%0Acode%20%3E%20span%2Efu%20%7B%20color%3A%20%23900%3B%20font%2Dweight%3A%20bold%3B%20%7D%20%2F%2A%20Function%20calls%20%2A%2F%20%0Acode%20%3E%20span%2Eer%20%7B%20color%3A%20%23a61717%3B%20background%2Dcolor%3A%20%23e3d2d2%3B%20%7D%20%2F%2A%20ErrorTok%20%2A%2F%0A%0A" rel="stylesheet" type="text/css" />
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Using trustOptim for Unconstrained Nonlinear Optimization with Sparse Hessians</h1>
+<h4 class="author"><em>Michael Braun</em></h4>
+<h4 class="date"><em>2018-03-27</em></h4>
+
+
+
+<p>Much of this vignette was originally published as <span class="citation">Braun (2014)</span>. Please cite that article when using this package in your own research. This version of the vignette is abridged with respect to the underlying theory, and the comparison with other methods. It has more of a focus on how to use the package.</p>
+<div id="why-use-trustoptim" class="section level1">
+<h1>Why use trustOptim?</h1>
+<p>The need to optimize continuous nonlinear functions occurs frequently in statistics, most notably in maximum likelihood and <em>maximum a posteriori</em> (MAP) estimation. Users of <strong>R</strong> have a choice of dozens of optimization algorithms. The most readily available algorithms are those that are accessed from the <code>optim</code> function in the base <em>R</em> distribution, and from the many contributed packages that are described in the CRAN Task View for <em>Optimization and Mathematical Programming</em> <span class="citation">(Theussel 2013)</span>. Any particular algorithm may be more appropriate for some problems than for others, and having such a large number of alternatives allows the informed <strong>R</strong> user to choose the best tool for the task at hand.</p>
+<p>One limitation of most of these algorithms is that they can be difficult to use when there is a large number of decision variables. Search methods can be inefficient with a massive number of parameters because the search space is large, and they do not exploit information about slope and curvature to speed up the time to convergence. Conjugate gradient and quasi-Newton methods trace the curvature of the function by using successive gradients to approximate the inverse Hessian. However, if the algorithm stores the entire dense inverse Hessian, its use is resource-intensive when the number of parameters is large. For example, the Hessian for a 50,000 parameter model requires 20GB of RAM to store it as a standard, dense base <strong>R</strong> matrix.</p>
+<p>The <em>trustOptim</em> package provides a trust region algorithm that is optimized for problems for which the Hessian is sparse. Sparse Hessians occur when a large number of the cross-partial derivatives of the objective function are zero. For example, suppose we want to find the mode of a log posterior density for a Bayesian hierarchical model. If we assume that individual-level parameter vectors <span class="math">\(\beta_i\)</span> and <span class="math">\(\beta_j\)</span> are conditionally independent, the cross-partial derivatives between all elements of <span class="math">\(\beta_i\)</span> and <span class="math">\(\beta_j\)</span> are zero. If the model includes a large number of heterogeneous units, and a relatively small number of population-level parameters, the proportion of non-zero entries in the Hessian will be small. Since we know up front which elements of the Hessian are non-zero, we need to compute, store, and operate on only those non-zero elements. By storing sparse Hessians in a compressed format, and using a library of numerical algorithms that are efficient for sparse matrices, we can run the optimization algorithms faster, with a smaller memory footprint, than algorithms that operate on dense Hessians.</p>
+<p>The details of the trust region algorithm are included at the end of this vignette. The vignette for the <em>sparseHessianFD</em> package includes a more detailed discussion of Hessian sparsity patterns.</p>
+</div>
+<div id="example-function" class="section level1">
+<h1>Example function</h1>
+<p>Before going into the details of how to use the package, let’s consider the following example of an objective function with a sparse Hessian. Suppose we have a dataset of <span class="math">\(N\)</span> households, each with <span class="math">\(T\)</span> opportunities to purchase a particular product. Let <span class="math">\(y_i\)</span> be the number of times household <span class="math">\(i\)</span> purchases the product, out of the <span class="math">\(T\)</span> purchase opportunities. Furthermore, let <span class="math">\(p_i\)</span> be the probability of purchase; <span class="math">\(p_i\)</span> is the same for all <span class="math">\(T\)</span> opportunities, so we can treat <span class="math">\(y_i\)</span> as a binomial random variable. The purchase probability <span class="math">\(p_i\)</span> is heterogeneous, and depends on both <span class="math">\(k\)</span> continuous covariates <span class="math">\(x_i\)</span>, and a heterogeneous coefficient vector <span class="math">\(\beta_i\)</span>, such that <span class="math">\[
+  p_i=\frac{\exp(x_i'\beta_i)}{1+\exp(x_i'\beta_i)},~i=1 ... N
+\]</span></p>
+<p>The coefficients can be thought of as sensitivities to the covariates, and they are distributed across the population of households following a multivariate normal distribution with mean <span class="math">\(\mu\)</span> and covariance <span class="math">\(\Sigma\)</span>. We assume that we know <span class="math">\(\Sigma\)</span>, but we do not know <span class="math">\(\mu\)</span>. Instead, we place a multivariate normal prior on <span class="math">\(\mu\)</span>, with mean <span class="math">\(0\)</span> and covariance <span class="math">\(\Omega_0\)</span>. Thus, each <span class="math">\(\beta_i\)</span>, and <span class="math">\(\mu\)</span> are <span class="math">\(k-\)</span>dimensional vectors, and the total number of unknown variables in the model is <span class="math">\((N+1)k\)</span>.</p>
+<p>The log posterior density, ignoring any normalization constants, is <span class="math">\[
+  \log \pi(\beta_{1:N},\mu|Y, X, \Sigma_0,\Omega_0)=\sum_{i=1}^Np_i^{y_i}(1-p_i)^{T-y_i}
+  -\frac{1}{2}\left(\beta_i-\mu\right)'\Sigma^{-1}\left(\beta_i-\mu\right)
+-\frac{1}{2}\mu'\Omega_0^{-1}\mu
+\]</span></p>
+<p>Since the <span class="math">\(\beta_i\)</span> are drawn iid from a multivariate normal, <span class="math">\(\dfrac{\partial^2\log\pi }{\partial\beta_i\beta_j}=0\)</span> for all <span class="math">\(i\neq j\)</span>. We also know that all of the <span class="math">\(\beta_i\)</span> are correlated with <span class="math">\(\mu\)</span>. The structure of the Hessian depends on how the variables are ordered within the vector. One such ordering is to group all of the coefficients for each unit together.</p>
+<p><span class="math">\[
+\beta_{11},...,\beta_{1k},\beta_{21},...,\beta_{2k},...~,~...~,~\beta_{N1}~,~...~,~\beta_{Nk},\mu_1,...,\mu_k
+\]</span></p>
+<p>In this case, the Hessian has a “block-arrow” structure. For example, if <span class="math">\(N=6\)</span> and <span class="math">\(k=2\)</span>, then there are 14 total variables, and the Hessian will have the following pattern.</p>
+<pre><code># 14 x 14 sparse Matrix of class &quot;lgCMatrix&quot;
+#                                  
+#  [1,] | | . . . . . . . . . . | |
+#  [2,] | | . . . . . . . . . . | |
+#  [3,] . . | | . . . . . . . . | |
+#  [4,] . . | | . . . . . . . . | |
+#  [5,] . . . . | | . . . . . . | |
+#  [6,] . . . . | | . . . . . . | |
+#  [7,] . . . . . . | | . . . . | |
+#  [8,] . . . . . . | | . . . . | |
+#  [9,] . . . . . . . . | | . . | |
+# [10,] . . . . . . . . | | . . | |
+# [11,] . . . . . . . . . . | | | |
+# [12,] . . . . . . . . . . | | | |
+# [13,] | | | | | | | | | | | | | |
+# [14,] | | | | | | | | | | | | | |</code></pre>
+<p>There are 196 elements in this symmetric matrix, but only 76 are non-zero, and only 45 values are unique. Although the reduction in RAM from using a sparse matrix structure for the Hessian may be modest, consider what would happen if <span class="math">\(N=1000\)</span> instead. In that case, there are 2002 variables in the problem, and more than <span class="math">\(4\)</span> million elements in the Hessian. However, only <span class="math">\(12004\)</span> of those elements are non-zero. If we work with only the lower triangle of the Hessian we only need to work with only 7003 values.</p>
+</div>
+<div id="using-the-package" class="section level1">
+<h1>Using the package</h1>
+<p>The functions for computing the objective function, gradient and Hessian for this example are in the R/binary.R file. The package also includes a sample dataset with simulated data from the binary choice example. This dataset can be access with the <code>data(binary)</code> call.</p>
+<p>To start, we load the data, set some dimension parameters, set prior values for <span class="math">\(\Sigma^{-1}\)</span> and <span class="math">\(\Omega^{-1}\)</span>, and simulate a vector of variables at which to evaluate the function.</p>
+<pre class="sourceCode r"><code class="sourceCode r"><span class="kw">set.seed</span>(<span class="dv">123</span>)
+<span class="kw">data</span>(binary)
+<span class="kw">str</span>(binary)</code></pre>
+<pre><code># List of 3
+#  $ Y: int [1:200] 16 1 30 70 51 52 0 27 59 15 ...
+#  $ X: num [1:2, 1:200] 1.5587 0.0705 0.1293 1.7151 0.4609 ...
+#  $ T: num 100</code></pre>
+<pre class="sourceCode r"><code class="sourceCode r">N &lt;-<span class="st"> </span><span class="kw">length</span>(binary$Y)
+k &lt;-<span class="st"> </span><span class="kw">NROW</span>(binary$X)
+nvars &lt;-<span class="st"> </span><span class="kw">as.integer</span>(N*k +<span class="st"> </span>k)
+start &lt;-<span class="st"> </span><span class="kw">rnorm</span>(nvars) ## random starting values
+priors &lt;-<span class="st"> </span><span class="kw">list</span>(<span class="dt">inv.Sigma =</span> <span class="kw">rWishart</span>(<span class="dv">1</span>,k<span class="dv">+5</span>,<span class="kw">diag</span>(k))[,,<span class="dv">1</span>],
+               <span class="dt">inv.Omega =</span> <span class="kw">diag</span>(k))</code></pre>
+<p>This dataset represents the simulated choices for <span class="math">\(N= 200\)</span> customers over <span class="math">\(T= 100\)</span> purchase opportunties, where the probability of purchase is influenced by <span class="math">\(k= 2\)</span> covariates.</p>
+<p>The objective function for the binary choice example is <code>binary.f</code>, the gradient function is <code>binary.grad</code>, and the Hessian function is <code>binary.hess</code>. The first argument to both is the variable vector, and the argument lists must be the same for both. For this example, we need to provide the data list “binary” (<span class="math">\(X\)</span>, <span class="math">\(Y\)</span> and <span class="math">\(T\)</span>) and the prior parameter list (<span class="math">\(\Sigma^{-1}\)</span> and <span class="math">\(\Omega^{-1}\)</span>). The <code>binary.hess</code> function returns the Hessian as a <code>dgCMatrix</code> object, which is a compressed sparse matrix class defined in the Matrix package.</p>
+<pre class="sourceCode r"><code class="sourceCode r">opt &lt;-<span class="st"> </span><span class="kw">trust.optim</span>(start, <span class="dt">fn=</span>binary.f,
+                   <span class="dt">gr =</span> binary.grad,
+                   <span class="dt">hs =</span> binary.hess,
+                   <span class="dt">method =</span> <span class="st">&quot;Sparse&quot;</span>,
+                   <span class="dt">control =</span> <span class="kw">list</span>(
+                       <span class="dt">start.trust.radius=</span><span class="dv">5</span>,
+                       <span class="dt">stop.trust.radius =</span> <span class="fl">1e-7</span>,
+                       <span class="dt">prec=</span><span class="fl">1e-7</span>,
+                       <span class="dt">report.precision=</span>1L,
+                       <span class="dt">maxit=</span>500L,
+                       <span class="dt">preconditioner=</span>1L,
+                       <span class="dt">function.scale.factor=</span>-<span class="dv">1</span>
+                   ),
+                   <span class="dt">data=</span>binary, <span class="dt">priors=</span>priors
+                   )</code></pre>
+<pre><code># Beginning optimization
+# 
+# iter       f     nrm_gr                     status
+#   1   15977.1    769.5     Continuing - TR expand
+#   2   12359.7    278.2                 Continuing
+#   3   12359.7    278.2   Continuing - TR contract
+#   4   12059.7    261.9                 Continuing
+#   5   12059.7    261.9   Continuing - TR contract
+#   6   11670.0    310.8                 Continuing
+#   7   11670.0    310.8   Continuing - TR contract
+#   8   11440.0     67.5     Continuing - TR expand
+#   9   11304.5      7.2     Continuing - TR expand
+#  10   11303.8      1.0                 Continuing
+#  11   11303.8      0.0                 Continuing
+#  12   11303.8      0.0                 Continuing
+#  13   11303.8      0.0                 Continuing
+# 
+# Iteration has terminated
+#  13   11303.8      0.0                    Success</code></pre>
+<div id="control-parameters" class="section level2">
+<h2>Control parameters</h2>
+<p>The <code>control</code> argument takes a list of options, all of which are described in the package manual. Most of these arguments are related to the internal workings of the trust region algorithm, such as how close a step needs to be to the border of the trust region before the region expands. However, there are a few arguments that deserve some special attention.</p>
+<div id="scaling-the-objective-function" class="section level3">
+<h3>Scaling the objective function</h3>
+<p>The algorithms in the package <em>minimize</em> the objective function by default. When the <code>function.scale.factor</code> option is specified, the objective function, gradient and Hessian are all multiplied by that value throughout the optimization procedure. If <code>function.scale.factor=-1</code>, then then <code>trust.optim</code> will maximize the objective function.</p>
+</div>
+<div id="stopping-criteria" class="section level3">
+<h3>Stopping criteria</h3>
+<p>The <code>trust.optim</code> function will stop when the Euclidean norm of the gradient is less that <code>sqrt(nvars) * prec</code>, where <code>nvars</code> is the length of the parameter vector, and <code>prec</code> is specified in the control list (the default is <code>sqrt(.Machine\$double.eps)</code>, which is the square root of the computer’s floating point precision. However, sometimes the algorithm cannot get the gradient to be that flat. When that occurs, the trust region will shrink, until its radius is less than the value of the <code>stop.trust.radius</code> parameter. The algorithm will then stop with the message “Radius of trust region is less than <code>stop.trust.radius</code>.” This event is not necessarily a problem if the norm of the gradient is still small enough that the gradient is flat for all practical purposes. For example, suppose we set <code>prec</code> to be <span class="math">\(10^{-7}\)</span> and that, for numerical reasons, the norm of the gradient simply cannot get below <span class="math">\(10^{-6}\)</span>. If the norm of the gradient were the only stopping criterion, the algorithm would continue to run, even though it is probably close enough to the local optimum. With this alternative stopping criterion, the algorithm will also stop when it is clear that the algorithm can no longer take a step that leads to an improvement in the objective function.</p>
+<p>There is, of course, a third stopping criterion. The <code>maxit</code> argument is the maximum number of iterations the algorithm should run before stopping. However, keep in mind that if the algorithm stops at <code>maxit</code>, it is almost certainly not at a local optimum.</p>
+<blockquote>
+<blockquote>
+<p>Note that many other nonlinear optimizers, including <code>optim</code>, do not use the norm of the gradient as a stopping criterion. Instead, they stop when the absolute or relative changes in the objective function are less than some tolerance value. This often causes those optimizers to stop prematurely, when the estimates of the gradient and/or Hessian are not precise, or if there are some regions of the domain where the objective function is nearly flat. In theory, this should never happen, but in reality, it happens <em>all the time</em>. For an unconstrained optimization problem, there is no reason why the norm of the gradient should not be zero (within numerical precision) before the algorithm stops.</p>
+</blockquote>
+</blockquote>
+</div>
+</div>
+<div id="preconditioners" class="section level2">
+<h2>Preconditioners</h2>
+<p>Currently, the package offers two preconditioners: an identity preconditioner (no preconditioning), and an inexact modified Cholesky preconditioner, as in Algorithm 7.3 of <span class="citation">Nocedal and Wright (2006)</span>. The identity and diagonal preconditioners are available for all of the methods. For the <em>Sparse</em> method, the modified Cholesky preconditioner will use a positive definite matrix that is close to the potentially indefinite Hessian (<code>trust.optim</code> does <em>not</em> require that the objective function be positive definite). For <em>BFGS</em>, the modified Cholesky preconditioner is available because <em>BFGS</em> updates are always positive definite. If the user selects a modified Cholesky preconditioner for <em>SR1</em>, the algorithm will use the identity preconditioner instead.</p>
+<p>There is no general rule for selecting preconditioners. There will be a tradeoff between the number of iterations needs to solve the problem and the time it takes to compute any particular preconditioner. In some cases, the identity preconditioner may even solve the problem in fewer iterations than a modified Cholesky preconditioner.</p>
+</div>
+<div id="result-object" class="section level2">
+<h2>Result object</h2>
+<p>The call ot <code>trust.optim</code> returns a list of values.</p>
+<ul>
+<li><strong>fval</strong>: the value of the objective function at the optimum</li>
+<li><strong>solution</strong>: the optimum</li>
+<li><strong>gradient</strong>: the gradient of the objective function at the optimum (all elements should be very close to zero)</li>
+<li><strong>hessian</strong>: the Hessian of the objective function at the optimum, as an object of class <em>dsCMatrix</em>.</li>
+<li><strong>iterations</strong>: number of iterations</li>
+<li><strong>status</strong>: A status message (should be “Success”), or possibly a note that the trust region radius is less than <code>stop.trust.region</code>.</li>
+<li><strong>trust.radius</strong>: trust region radius when the algorithm stopped.</li>
+<li><strong>nnz</strong>: number of nonzero elements in the lower triangle of the Hessian</li>
+<li><strong>method</strong>: the optimization method that was used (Sparse, SR1 or BFGS).</li>
+<li><strong>nnz</strong>: for the Sparse method only, the number of nonzero elements in the Hessian.</li>
+</ul>
+<p>See the package manual for more details.</p>
+</div>
+</div>
+<div id="algorithmic-details" class="section level1">
+<h1>Algorithmic details</h1>
+<p>Consider <span class="math">\(f(x)\)</span>, an objective function over a <span class="math">\(P\)</span>-dimensional vector that we want to minimize. Let <span class="math">\(g\)</span> be the gradient, and let <span class="math">\(B\)</span> be the Hessian. The goal is to find a local minimum of <span class="math">\(f(x)\)</span>, with no constraints on <span class="math">\(x\)</span>, within some window of numerical precision (i.e., where <span class="math">\(\|g\|_2 / \sqrt{p}&lt;\epsilon\)</span> for small <span class="math">\(\epsilon&gt;0\)</span>). We will assume that <span class="math">\(B\)</span> is positive definite at the local optimum, but not necessarily at other values of <span class="math">\(x\)</span>. Iterations are indexed by <span class="math">\(t\)</span>.</p>
+<div id="trust-region-methods-for-nonlinear-optimization" class="section level2">
+<h2>Trust region methods for nonlinear optimization</h2>
+<p>The details of trust region methods are described in both <span class="citation">Nocedal and Wright (2006)</span> and <span class="citation">Conn, Gould, and Toint (2000)</span>, and the following exposition borrows heavily from both sources. At each iteration of a trust region algorithm, we construct a quadratic approximation to the objective function at <span class="math">\(x_t\)</span>, and minimize that approximation, subject to a constraint that the solution falls within a trust region with radius <span class="math">\(d_t\)</span>. More formally, each iteration of the trust region algorithm involves solving the “trust region subproblem,” or TRS.</p>
+<p><span class="math">\[
+\begin{align}
+\tag{TRS}\label{eq:TRS}
+\min_{s\in R^p} f^*(s)&amp; = f(x_t) + g_t^\top s + \frac{1}{2}s^\top B_ts\qquad\text{s.t. }\|s\|_M\leq d_t\\
+s_t&amp;=\arg\min_{s\in R^p} f^*(s) \qquad\text{s.t. }\|s\|_M\leq d_t
+\end{align}
+\]</span></p>
+<p>The norm <span class="math">\(\|\cdot\|_M\)</span> is a Mahalanobis norm with respect to some positive definite matrix <span class="math">\(M\)</span>.</p>
+Let <span class="math">\(s_t\)</span> be the solution to the  for iteration <span class="math">\(t\)</span>, and consider the ratio
+
+<p>This ratio is the improvement in the objective function that we would get from a move from <span class="math">\(x_t\)</span> to <span class="math">\(x_{t+1}\)</span>, where <span class="math">\(x_{t+1}=x_t+s_t\)</span>, relative to the improvement that is predicted by the quadratic approximation. Let <span class="math">\(\eta_1\)</span> be the minimum value of <span class="math">\(\rho_t\)</span> for which we deem it “worthwhile” to move from <span class="math">\(x_t\)</span> to <span class="math">\(x_{t+1}\)</span>, and let <span class="math">\(\eta_2\)</span> be the maximum <span class="math">\(\rho_t\)</span> that would trigger a shrinkage in the trust region. If <span class="math">\(\rho_t &lt; \eta_2\)</span>, or if <span class="math">\(f(x_t+s_t)\)</span> is not finite, we shrink the trust region by reducing <span class="math">\(d_t\)</span> by some predetermined factor, and compute a new <span class="math">\(s_t\)</span> by solving the  again. If <span class="math">\(\rho_t&gt;\eta_1\)</span>, we move to <span class="math">\(x_{t+1}=x_t+s_t\)</span>. Also, if we do accept the move, and <span class="math">\(s_t\)</span> is on the border of the trust region, we expand the trust region by increasing <span class="math">\(d_t\)</span>, again by some predetermined factor. The idea is to not move to a new <span class="math">\(x\)</span> if <span class="math">\(f(x_{t+1})\)</span> would be worse than <span class="math">\(f(x_t)\)</span>. By expanding the trust region, we can propose larger jumps, and potentially reach the optimum more quickly. We want to propose only moves that are among those that we “trust” to give reasonable values of <span class="math">\(f(x)\)</span>. If it turns out that a move leads to a large improvement in the objective function, and that the proposed move was constrained by the radius of the trust region, we want to expand the trust region so we can take larger steps. If the proposed move is bad, we should then reduce the size of the region we trust, and try to find another step that is closer to the current iterate. Of course, there is no reason that the trust region needs to change after a particular iteration, especially if the solution to the TRS is at an internal point.</p>
+<p>There are a number of different ways to solve the TRS; <span class="citation">Conn, Gould, and Toint (2000)</span> is authoritative and encyclopedic in this area. The <em>trustOptim</em> package uses the method described in <span class="citation">Steihaug (1983)</span>. The Steihaug algorithm is, essentially, a conjugate gradient solver for a constrained quadratic program. If <span class="math">\(B_t\)</span> is positive definite, the Steihaug solution to the  will be exact, up to some level of numerical precision. However, if <span class="math">\(B_t\)</span> is indefinite, the algorithm could try to move in a direction of negative curvature. If the algorithm happens to stumble on such a direction, it goes back to the last direction that it moved, runs in that direction to the border of the trust region, and returns that point of intersection with the trust region border as the “solution” to the . This solution is not necessarily the true minimizer of the , but it still might provide sufficient improvement in the objective function such that <span class="math">\(\rho_t&gt;\eta_1\)</span>. If not, we shrink the trust region and try again. As an alternative to the Steihaug algorithm for solving the , <span class="citation">Conn, Gould, and Toint (2000)</span> suggest using the Lanczos algorithm. The Lanczos approach may be more likely to find a better solution to the TRS when <span class="math">\(B_t\)</span> is indefinite, but at some additional computational cost. We include only the Steihaug algorithm for now, because it still seems to work well, especially for sparse problems.</p>
+<p>As with other conjugate gradient methods, one way to speed up the Steihaug algorithm is to rescale the trust region subproblem with a preconditioner <span class="math">\(M\)</span>. Note that the constraint in  is expressed as an <span class="math">\(M\)</span>-norm, rather than an Euclidean norm. The positive definite matrix <span class="math">\(M\)</span> should be close enough to the Hessian that <span class="math">\(M^{-1}B_t\approx I\)</span>, but still cheap enough to compute that the cost of using the preconditioner does not exceed the benefits. Of course, the ideal preconditioner would be <span class="math">\(B_t\)</span> itself, but <span class="math">\(B_t\)</span> is not necessarily positive definite, and we may not be able to estimate it fast enough for preconditioning to be worthwhile. In this case, one could use a modified Cholesky decomposition, as described in <span class="citation">Nocedal and Wright (2006)</span>.</p>
+<div class="references">
+<h1>References</h1>
+<p>Braun, Michael. 2014. “trustOptim: An R Package for Trust Region Optimization with Sparse Hessians.” <em>Journal of Statistical Software</em> 60 (4): 1–16. <a href="http://www.jstatsoft.org/v60/i04/" class="uri">http://www.jstatsoft.org/v60/i04/</a>.</p>
+<p>Conn, Andrew R, Nicholas I M Gould, and Philippe L Toint. 2000. <em>Trust-Region Methods</em>. Philadelphia: SIAM-MPS.</p>
+<p>Nocedal, Jorge, and Stephen J Wright. 2006. <em>Numerical Optimization</em>. Second edition. Springer-Verlag.</p>
+<p>Steihaug, Trond. 1983. “The Conjugate Gradient Method and Trust Regions in Large Scale Optimization.” <em>SIAM Journal on Numerical Analysis</em> 20 (3): 626–37. doi:<a href="http://dx.doi.org/10.1137/0720042">10.1137/0720042</a>.</p>
+<p>Theussel, Stefan. 2013. “CRAN Task View: Optimization and Mathematical Programming.” <a href="https://cran.r-project.org/view=Optimization" class="uri">https://cran.r-project.org/view=Optimization</a>.</p>
+</div>
+</div>
+</div>
+
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

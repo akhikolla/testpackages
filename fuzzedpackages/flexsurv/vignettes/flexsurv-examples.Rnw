@@ -1,0 +1,214 @@
+%\VignetteIndexEntry{Supplementary examples of using flexsurv}
+
+
+\documentclass[nojss,nofooter]{jss}
+\usepackage{bm}
+\usepackage{tabularx}
+\usepackage{graphics}
+
+\author{Christopher H. Jackson \\ MRC Biostatistics Unit, Cambridge, UK \\ \email{chris.jackson@mrc-bsu.cam.ac.uk}}
+
+\title{flexsurv: flexible parametric survival modelling in R.   Supplementary examples}
+
+\Plainauthor{Christopher Jackson, MRC Biostatistics Unit}
+
+\Abstract{ This vignette of examples supplements the main \pkg{flexsurv} user guide.  }
+\Keywords{survival}
+
+\begin{document} 
+
+
+
+\section{Examples of custom distributions}
+
+\subsection{Proportional hazards generalized gamma model}
+
+\citet{stgenreg} discuss using the \pkg{stgenreg} Stata package to
+construct a proportional hazards parameterisation of the
+three-parameter generalised gamma distribution.  A similar trick can
+be used in \pkg{flexsurv}.  A four-parameter custom distribution is
+created by defining its hazard (and cumulative hazard) functions.
+These are obtained by multiplying the built-in functions
+\code{hgengamma} and \code{Hgengamma} by an extra dummy parameter,
+which is used as the location parameter of the new distribution.  The
+intercept of this parameter is fixed at 1 when calling
+\code{flexsurvreg}, so that the new model is no more complex than the
+generalized gamma AFT model \code{fs3}, but covariate effects on the
+dummy parameter are now interpreted as hazard ratios.
+
+<<>>=
+library(flexsurv)
+
+hgengammaPH <- function(x, dummy, mu=0, sigma=1, Q){
+    dummy * hgengamma(x=x, mu=mu, sigma=sigma, Q=Q)
+}
+
+HgengammaPH <- function(x, dummy, mu=0, sigma=1, Q){
+    dummy * Hgengamma(x=x, mu=mu, sigma=sigma, Q=Q)
+}
+
+custom.gengammaPH <- list(name="gengammaPH", 
+                          pars=c("dummy","mu","sigma","Q"), location="dummy",
+                          transforms=c(log, identity, log, identity),
+                          inv.transforms=c(exp, identity, exp, identity),
+                          inits=function(t){
+                              lt <- log(t[t>0])
+                              c(1, mean(lt), sd(lt), 0)
+                          })
+fs7 <- flexsurvreg(Surv(recyrs, censrec) ~ group, data=bc, 
+                   dist=custom.gengammaPH, fixedpars=1)
+@ 
+
+
+
+\section{Examples of custom model summaries}
+
+\subsection{Plotting a hazard ratio against time}
+
+The following code plots the hazard ratio (Medium versus Good
+prognostic group) against time for both the proportional hazards model
+\code{fs7} and the better-fitting accelerated failure time model
+\code{fs2}.  It illustrates the use of the following functions.
+
+\begin{description}
+\item[\code{summary.flexsurvreg}] for generating the estimated hazard
+  at a series of times, for particular covariate categories.
+\item[\code{normboot.flexsurvreg}] for generating a bootstrap-style
+  sample from the sampling distribution of the parameter estimates,
+  for particular covariate categories.
+\item[\code{do.call}] for constructing a function call by supplying a
+  list containing the function's arguments.  This is used throughout
+  the source of \pkg{flexsurv}.
+\end{description}
+
+<<fig=TRUE>>=
+
+fs2 <- flexsurvreg(Surv(recyrs, censrec) ~ group + sigma(group), 
+                   data=bc, dist="gengamma")
+B <- 5000
+t <- seq(0.1, 8, by=0.1)
+
+hrAFT.est <-
+    summary(fs2, t=t, type="hazard",
+            newdata=data.frame(group="Medium"),ci=FALSE)[[1]][,"est"] /
+    summary(fs2, t=t, type="hazard",
+            newdata=data.frame(group="Good"),ci=FALSE)[[1]][,"est"]
+pars <- normboot.flexsurvreg(fs2, B=B, newdata=data.frame(group=c("Good","Medium")))
+hrAFT <- matrix(nrow=B, ncol=length(t))
+for (i in seq_along(t)){ 
+    haz.medium.rep <- do.call(hgengamma, c(list(t[i]), as.data.frame(pars[[2]])))
+    haz.good.rep <- do.call(hgengamma, c(list(t[i]), as.data.frame(pars[[1]])))
+    hrAFT[,i] <- haz.medium.rep / haz.good.rep
+}
+hrAFT <- apply(hrAFT, 2, quantile, c(0.025, 0.975))
+
+hrPH.est <-
+    summary(fs7, t=t, type="hazard",
+            newdata=data.frame(group="Medium"),ci=FALSE)[[1]][,"est"] /
+    summary(fs7, t=t, type="hazard",
+            newdata=data.frame(group="Good"),ci=FALSE)[[1]][,"est"]
+pars <- normboot.flexsurvreg(fs7, B=B, newdata=data.frame(group=c("Good","Medium")))
+hrPH <- matrix(nrow=B, ncol=length(t))
+for (i in seq_along(t)){ 
+    haz.medium.rep <- do.call(hgengammaPH, c(list(t[i]), as.data.frame(pars[[2]])))
+    haz.good.rep <- do.call(hgengammaPH, c(list(t[i]), as.data.frame(pars[[1]])))
+    hrPH[,i] <- haz.medium.rep / haz.good.rep
+}
+hrPH <- apply(hrPH, 2, quantile, c(0.025, 0.975))
+
+plot(t, hrAFT[1,], type="l", ylim=c(0, 10), col="red", xlab="Years",
+     ylab="Hazard ratio (Medium / Good)", lwd=1, lty=2)
+lines(t, hrAFT[2,], col="red", lwd=1, lty=2)
+lines(t, hrPH[1,], col="darkgray", lwd=1, lty=2)
+lines(t, hrPH[2,], col="darkgray", lwd=1, lty=2)
+lines(t, hrAFT.est, col="red", lwd=2)
+lines(t, hrPH.est, col="darkgray", lwd=2)
+legend("topright", lwd=c(2,2), col=c("red","darkgray"), bty="n",
+       c("Generalized gamma: standard AFT", "Generalized gamma: proportional hazards"))
+@ 
+
+\subsection{Restricted mean survival}
+
+The expected survival up to time $t$, from a model with cumulative distribution $F(t|\alpha)$, is 
+
+\[ E(T|T<t) = \int_0^{t} 1 - F(u | \alpha) du \]
+
+%% TODO can t arg to summay fn be omitted if function is independent of time, so it returns one value?
+
+An estimate and confidence interval for this, for a specified
+covariate value, can be computed using a custom summary function as
+follows.  (Note that \code{summary.flexsurvreg} can be
+abbreviated to \code{summary}).  As in the
+\code{median.weibull} example in the user guide vignette, the
+summary function is independent of time, so any value can be specified
+for \code{t} in the call to \code{summary}.  The time horizon
+up to which to compute the mean is specified by the default value of
+the \code{horizon} argument to the custom function.  The mean survival
+is computed here up to 100 years.  Setting \code{horizon=Inf} 
+is theoretically also possible for an unrestricted mean, but the integral
+does not converge in this example. 
+<<>>=
+mean.gengamma <- function(mu, sigma, Q, horizon=100, ...){
+    surv <- function(t, ...) {  1 - pgengamma(q=t, mu=mu, sigma=sigma, Q=Q, ...) }
+    integrate(surv, 0, horizon, ...)$value
+}
+summary(fs2, newdata=list(group="Good"), t=1, fn=mean.gengamma)
+summary(fs2, newdata=list(group="Medium"), t=1, fn=mean.gengamma)
+summary(fs2, newdata=list(group="Poor"), t=1, fn=mean.gengamma)
+@ 
+Note that the (unrestricted) median is more stable, and less than the restricted mean due to the skewness of this distribution. 
+<<>>=
+median.gengamma <- function(mu, sigma, Q) { 
+    qgengamma(0.5, mu=mu, sigma=sigma, Q=Q) 
+}
+summary(fs2, newdata=list(group="Good"), t=1, fn=median.gengamma)
+@ 
+
+%\subsection{Custom summary functions with spline models}                   
+
+
+\section{Spline models}
+
+\subsection{Prognostic model for the German breast cancer data}
+
+The regression model III in \citet{sauerbrei1999building} used to
+create the prognostic group from the breast cancer data (supplied as
+\code{bc} in \pkg{flexsurv} and \code{GBSG2} in \pkg{TH.data}) can be
+reproduced as follows.   Firstly, the required fractional polynomial 
+transformations of the covariates are constructed. \code{progc} 
+implements the Cox model used by
+\citet{sauerbrei1999building}, and \code{prog3} is a flexible
+fully-parametric alternative, implemented as a spline with three
+internal knots.  The number of knots was chosen to minimise AIC.   
+The covariate effects are very similar. 
+
+After fitting the model, the prognostic index can then be derived from categorising
+observations in three groups according to the tertiles of the linear predictor in each model. 
+The indices produced by the Cox model (\code{progc}) and the spline-based model (\code{progf}) agree exactly. 
+
+<<>>=
+if (require("TH.data")){
+
+GBSG2 <- transform(GBSG2,
+                   X1a=(age/50)^-2,
+                   X1b=(age/50)^-0.5,
+                   X4=tgrade %in% c("II","III"),
+                   X5=exp(-0.12*pnodes),
+                   X6=(progrec+1)^0.5
+                   )
+(progc <- coxph(Surv(time, cens) ~ horTh + X1a + X1b + X4 + 
+                  X5 + X6, data=GBSG2))
+(prog3 <- flexsurvspline(Surv(time, cens) ~ horTh + X1a + X1b + X4 + 
+                           X5 + X6, k=3, data=GBSG2))
+predc <- predict(progc, type="lp")
+progc <- cut(predc, quantile(predc, 0:3/3))
+predf <- model.matrix(prog3) %*% prog3$res[-(1:5),"est"]
+progf <- cut(predf, quantile(predf, 0:3/3))
+table(progc, progf)
+
+}
+@ 
+
+\bibliography{flexsurv}
+
+\end{document} 

@@ -1,0 +1,451 @@
+---
+title: "SPARSE-MOD COVID-19 Model"
+author: "JR Mihaljevic"
+date: "December 2020"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{SPARSE-MOD COVID-19 Model}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+
+```{r, message=FALSE}
+library(SPARSEMODr)
+library(future.apply)
+library(tidyverse)
+library(viridis)
+library(lubridate)
+
+# To run in parallel:
+future::plan("multisession")
+```
+
+## The COVID-19 Example Model
+
+Here we present a walk-through of using the SPARSE-MOD COVID-19 Model, which our research group has been using to advise Arizona Dept. of Health Services during the pandemic. Note that we personally recommend using this R package in an exploratory and educational capacity, not as a mechanism with which to forecast or predict dynamics into the future. See [our vignette on key features of SPARSEMODr](key-features.html) for more general details of the SPARSEMODr package. And see the end of this vignette for model equations.
+
+### Generating a synthetic meta-population
+
+First, we will generate some data that describes the meta-population^[A set of distinct, focal populations that are connected by migration] of interest.
+
+```{r, fig.show='hold'}
+# Set seed for reproducibility
+set.seed(5)
+
+# Number of focal populations:
+n_pop = 100
+
+# Population sizes + areas
+## Draw from neg binom:
+pop_N = rnbinom(n_pop, mu = 50000, size = 3)
+census_area = rnbinom(n_pop, mu = 50, size = 3)
+
+# Identification variable for later
+pop_ID = c(1:n_pop)
+
+# Assign coordinates, plot for reference
+lat_temp = runif(n_pop, 32, 37)
+long_temp = runif(n_pop, -114, -109)
+
+pop_local_df =
+  data.frame(pop_ID = pop_ID,
+             pop_N = pop_N,
+             census_area,
+             lat = lat_temp,
+             long = long_temp) %>%
+  # Assign regions by quadrant
+  ## Used later for aggregation
+  mutate(region = case_when(
+    lat >= 34.5 & long <= -111.5 ~ "1",
+    lat >= 34.5 & long >  -111.5 ~ "2",
+    lat <  34.5 & long >  -111.5 ~ "3",
+    lat <  34.5 & long <= -111.5 ~ "4"
+  ))
+
+# Plot the map:
+ggplot(pop_local_df) +
+  geom_point(aes(x = long, y = lat, color = region),
+             shape = 19) +
+  scale_color_viridis_d(direction = -1) +
+  # Map coord
+  coord_quickmap() +
+  theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    axis.title = element_blank(),
+    plot.margin = unit(c(0, 0.1, 0, 0), "cm")
+  )
+
+# Calculate pairwise dist
+## in meters so divide by 1000 for km
+dist_mat = geosphere::distm(cbind(pop_local_df$long, pop_local_df$lat))/1000
+hist(dist_mat, xlab = "Distance (km)", main = "")
+
+# We need to determine how many Exposed individuals
+# are present at the start in each population
+E_pops = vector("numeric", length = n_pop)
+# We'll assume a total number of exposed across the
+# full meta-community, and then randomly distribute these hosts
+n_initial_E = 20
+# (more exposed in larger populations)
+these_E <- sample.int(n_pop,
+                      size = n_initial_E,
+                      replace = TRUE,
+                      prob = pop_N)
+for(i in 1:n_initial_E){
+  E_pops[these_E[i]] <- E_pops[these_E[i]] + 1
+}
+
+pop_local_df$E_pops = E_pops
+
+```
+
+### Setting up the time-windows
+
+One of the benefits of the SPARSEMODr design is that the user can specify how certain parameters of the model change over time (see [our vignette on key features of SPARSEMODr](key-features.html) for more details). We demonstrate this below. In this particular example, we allow the time-varying R0 to change in a step-wise fashion due to 'interventions', but we assume host migration dynamics are static. Note that when the parameter values change between two time windows, the model assumes a linear change over the number of days in that window. In other words, the user specifies the value of the parameter achieved on the *last day* of the time window.
+
+We'll use the $\texttt{time_windows()}$ function to generate a pattern of time-varying R0 that looks like the following:
+
+```{r, , fig.width=5, echo=FALSE}
+# Set up the dates of change. 5 time windows
+n_windows = 5
+# Window intervals
+start_dates = c(mdy("1-1-20"),  mdy("2-1-20"),  mdy("2-16-20"), mdy("3-11-20"),  mdy("3-22-20"))
+end_dates =   c(mdy("1-31-20"), mdy("2-15-20"), mdy("3-10-20"), mdy("3-21-20"), mdy("5-1-20"))
+
+# Date sequence
+date_seq = seq.Date(start_dates[1], end_dates[n_windows], by = "1 day")
+
+# Time-varying R0
+changing_r0 = c(3.0,            0.8,            0.8,            1.4,            1.4)
+
+#R0 sequence
+r0_seq = NULL
+
+r0_seq[1:(yday(end_dates[1]) - yday(start_dates[1]) + 1)] =
+  changing_r0[1]
+
+for(i in 2:n_windows){
+
+  r0_temp_seq = NULL
+  r0_temp = NULL
+
+  if(changing_r0[i] != changing_r0[i-1]){
+
+    r0_diff = changing_r0[i-1] - changing_r0[i]
+    n_days = yday(end_dates[i]) - yday(start_dates[i]) + 1
+    r0_slope = - r0_diff / n_days
+
+    for(j in 1:n_days){
+      r0_temp_seq[j] = changing_r0[i-1] + r0_slope*j
+    }
+
+  }else{
+    n_days = yday(end_dates[i]) - yday(start_dates[i]) + 1
+    r0_temp_seq = rep(changing_r0[i], times = n_days)
+  }
+
+  r0_seq = c(r0_seq, r0_temp_seq)
+
+}
+
+r0_seq_df = data.frame(r0_seq, date_seq)
+date_breaks = seq(range(date_seq)[1],
+                  range(date_seq)[2],
+                  by = "1 month")
+
+
+ggplot(r0_seq_df) +
+  geom_path(aes(x = date_seq, y = r0_seq)) +
+  scale_x_date(breaks = date_breaks, date_labels = "%b") +
+  labs(x="", y="Time-varying R0") +
+  # THEME
+  theme_classic()+
+  theme(
+    axis.text = element_text(size = 10, color = "black"),
+    axis.title = element_text(size = 12, color = "black"),
+    axis.text.x = element_text(angle = 45, vjust = 0.5)
+  )
+
+```
+
+
+
+```{r}
+# Set up the dates of change. 5 time windows
+n_windows = 5
+## Specify the start and end dates of the time intervals
+start_dates = c(mdy("1-1-20"),  mdy("2-1-20"),  mdy("2-16-20"), mdy("3-11-20"), mdy("3-22-20"))
+end_dates =   c(mdy("1-31-20"), mdy("2-15-20"), mdy("3-10-20"), mdy("3-21-20"), mdy("5-1-20"))
+
+### TIME-VARYING PARAMETERS ###
+
+# R0
+changing_r0 = c(3.0,            0.8,            0.8,            1.4,            1.4)
+# Migration rate
+changing_m = rep(1/10.0, times = n_windows)
+# Migration range
+changing_dist_param = rep(150, times = n_windows)
+# Immigration (none)
+changing_imm_frac = rep(0, times = n_windows)
+
+# Create the time_window() object
+tw = time_windows(
+  r0 = changing_r0,
+  m = changing_m,
+  dist_param = changing_dist_param,
+  imm_frac = changing_imm_frac,
+
+  start_dates = start_dates,
+  end_dates = end_dates
+)
+
+# Create the covid19_control() object
+covid19_control <- covid19_control(input_N_pops = pop_N,
+                                   input_E_pops = E_pops)
+
+# Date Sequence for later:
+date_seq = seq.Date(start_dates[1], end_dates[n_windows], by = "1 day")
+
+```
+
+
+### Running the COVID-19 model in parallel
+
+Now we have all of the input elements needed to run SPARSEMODr's COVID-19 model. Below we demonstrate a workflow to generate stochastic realizations of the model in parallel.
+
+```{r}
+# How many realizations of the model?
+n_realz = 75
+
+# Need to assign a distinct seed for each realization
+## Allows for reproducibility
+input_realz_seeds = c(1:n_realz)
+
+# Run the model in parallel
+
+model_output =
+  model_parallel(
+      # Necessary inputs
+      input_dist_mat = dist_mat,
+      input_census_area = pop_local_df$census_area,
+      input_tw = tw,
+      input_realz_seeds = input_realz_seeds,
+      control = covid19_control,
+      # OTHER MODEL PARAMS
+      trans_type = 1, # freq-dependent trans
+      stoch_sd = 2.0  # stoch transmission sd
+  )
+
+glimpse(model_output)
+
+```
+
+### Plotting the output
+
+First we need to manipulate and aggregate the output data. Here we show an example just using the 'new events' that occur each day.
+
+```{r}
+# Grab the new events variables
+new_events_df =
+  model_output %>%
+  select(pops.seed:pops.time, events.pos:events.n_death)
+
+# Simplify/clarify colnames
+colnames(new_events_df) = c("iter","pop_ID","time",
+                            "new_pos", "new_sym", "new_hosp",
+                            "new_icu", "new_death")
+# Join the region
+region_df = pop_local_df %>% select(pop_ID, region)
+new_events_df =
+  left_join(new_events_df, region_df, by = "pop_ID")
+
+# Join with dates (instead of "time" integer)
+date_df = data.frame(
+  date = date_seq,
+  time = c(1:length(date_seq))
+)
+new_events_df =
+  left_join(new_events_df, date_df, by = "time")
+
+# Aggregate outcomes by region:
+## First, get the sum across regions,dates,iterations
+new_event_sum_df =
+  new_events_df %>%
+  group_by(region, iter, date) %>%
+  summarize(new_pos = sum(new_pos),
+            new_sym = sum(new_sym),
+            new_hosp = sum(new_hosp),
+            new_icu = sum(new_icu),
+            new_death = sum(new_death))
+glimpse(new_event_sum_df)
+
+# Now calculate the median model trajectory across the realizations
+new_event_median_df =
+  new_event_sum_df %>%
+  ungroup() %>%
+  group_by(region, date) %>%
+  summarize(med_new_pos = median(new_pos),
+            med_new_sym = median(new_sym),
+            med_new_hosp = median(new_hosp),
+            med_new_icu = median(new_icu),
+            med_new_death = median(new_death))
+glimpse(new_event_median_df)
+
+```
+
+Now we'll start creating a rather complex figure to show the different time intervals. We'll layer on the elements. For this example, we'll just look at the number of new hospitalizations per region.
+
+```{r, fig.height=3.7, fig.width=7, fig.align='center'}
+# SET UP SOME THEMATIC ELEMENTS:
+## Maximum value of the stoch trajectories, for y axis ranges
+max_hosp = max(new_event_sum_df$new_hosp)
+## Breaks for dates:
+date_breaks = seq(range(date_seq)[1],
+                  range(date_seq)[2],
+                  by = "1 month")
+
+#######################
+# PLOT
+#######################
+
+# First we'll create an element list for plotting:
+plot_new_hosp_base =
+  list(
+      # Date Range:
+      scale_x_date(limits = range(date_seq),
+                   breaks = date_breaks, date_labels = "%b"),
+      # New Hosp Range:
+      scale_y_continuous(limits = c(0, max_hosp*1.05)),
+      # BOXES AND TEXT TO LABEL TIME WINDOWS
+      ## R0 = 3.0
+      annotate("text", label = paste0("R0 = ", format(changing_r0[1], nsmall = 1)),
+               color = "#39558CFF", hjust = 0, vjust = 1, size = 3.0,
+               x = start_dates[1], y = max_hosp*1.05),
+      annotate("rect", xmin = start_dates[1], xmax = end_dates[1],
+               ymin = 0, ymax = max_hosp*1.05,
+               fill = "gray", alpha = 0.2),
+      ## R0 = 0.8
+      annotate("text", label = paste0("R0 = ", changing_r0[3]),
+               color = "#39558CFF", hjust = 0, vjust = 1, size = 3.0,
+               x = start_dates[3], y = max_hosp*1.05),
+      annotate("rect", xmin = start_dates[3], xmax = end_dates[3],
+               ymin = 0, ymax = max_hosp*1.05,
+               fill = "gray", alpha = 0.2),
+      ## R0 = 1.4
+      annotate("text", label = paste0("R0 = ", changing_r0[5]),
+               color = "#39558CFF", hjust = 0, vjust = 1, size = 3.0,
+               x = start_dates[5], y = max_hosp*1.05),
+      annotate("rect", xmin = start_dates[5], xmax = end_dates[5],
+               ymin = 0, ymax = max_hosp*1.05,
+               fill = "gray", alpha = 0.2),
+      # THEME ELEMENTS
+      labs(x = "", y = "New Hospitalizations Per Day"),
+      theme_classic(),
+      theme(
+        axis.text = element_text(size = 12, color = "black"),
+        axis.title = element_text(size = 14, color = "black"),
+        axis.text.x = element_text(angle = 45, vjust = 0.5)
+      )
+  )
+
+
+ggplot() + plot_new_hosp_base
+
+
+```
+
+Ok, now we have our plotting base, and we'll layer on the model output. We'll add the stochastic trajectories as well as the median model trajectory.
+
+```{r, fig.height=5, fig.width=7, fig.align='center'}
+
+# region labels for facets:
+region_labs = paste0("Region ",
+                     sort(unique(region_df$region)))
+names(region_labs) = sort(unique(region_df$region))
+
+# Create the plot:
+plot_new_hosp =
+  ggplot() +
+  # Facet by Region
+  facet_wrap(~region,
+             scales = "free",
+             labeller = labeller(region = region_labs)) +
+  # Add our base thematics
+  plot_new_hosp_base +
+  # Add the stoch trajectories:
+  geom_path(data = new_event_sum_df,
+            aes(x = date, y = new_hosp, group = iter),
+            alpha = 0.05, color = "black") +
+  # Add the median trajectory:
+  geom_path(data = new_event_median_df,
+            aes(x = date, y = med_new_hosp),
+            size = 2, color = "black")
+
+plot_new_hosp
+
+```
+
+
+## Model equations
+
+The version of the model with frequency-dependent transmission that is implemented in each population is below. Note that there is also simulated movement dynamics of the $S$, $I_a$, $I_p$ and $I_s$ classes, moderated by a rate parameter $m$. However, these dynamics are not explicitly represented in these equations.
+\begin{align}
+    \frac{dS}{dt} &= -\beta_{t} \lambda_{t} S \\
+    \frac{dE}{dt} &=  \beta_{t} \lambda_{t} S - \delta_{1} E \\
+    \frac{dI_a}{dt} &=  \delta_1 \rho_1 E  - \gamma_{a} I_a \\
+    \frac{dI_p}{dt} &=  \delta_1 (1 - \rho_1) E - \delta_2 I_p \\
+    \frac{dI_s}{dt} &=  \delta_2 I_p - \delta_3 I_s \\
+    \frac{dI_b}{dt} &=  \delta_3 (1 - \rho_2 - \rho_3) I_s - \gamma_{b} I_b \\
+    \frac{dI_h}{dt} &=  \delta_3 \rho_2 I_s - \delta_4 I_h \\
+    \frac{dI_{c1}}{dt} &=  \delta_3 \rho_3 I_s + \delta_4 \rho_4 I_h - \delta_5 I_{c1} \\
+    \frac{dI_{c2}}{dt} &=  \delta_5 (1 - \rho_5) I_{c1} - \gamma_{c} I_{c2} \\
+    \frac{dD}{dt} &=  \delta_5 \rho_5 I_{c1} \\
+    \frac{dR}{dt} &=  \gamma_{a} I_a + \gamma_{b} I_b + \gamma_{c} I_{c2} + \delta_4 (1 - \rho_4) I_h
+\end{align}
+
+And the time-varying force of infection:
+$$\lambda_{t} =  \frac{\omega_{1} I_a + I_p + I_s + I_b + \omega_2 \left( I_h + I_{c1} + I_{c2}  \right)}{N - D}$$
+
+| State Variable | Description |
+| :------------- | :---------- |
+| $S$ | Number of susceptible individuals |
+| $E$ | Number of exposed individuals |
+| $I_a$ | Number of asymptomatic individuals |
+| $I_p$ | Number of pre-symptomatic individuals |
+| $I_s$ | Number of mildly symptomatic individuals |
+| $I_b$ | Number of mildly symptomatic individuals on bed rest at home |
+| $I_h$ | Number of hospitalized individuals |
+| $I_{c1}$ | Number of individuals in the ICU|
+| $I_{c2}$ | Number of individuals in the recovery (step-down) ICU|
+| $D$ | Number of deceased individuals |
+| $R$ | Number of susceptible individuals |
+
+
+| Parameter | Description | Corresponding model input |
+| :--- | :---------------- | :------- |
+| $\beta_t$ | Time-varying transmission rate | *Internally calculated* |
+| $\omega_1$ | Proportion reduction in transmission for asymptomatic folks | $\texttt{frac_beta_asym}$ |
+| $\omega_2$ | Proportion reduction in transmission for hospitalized folks | $\texttt{frac_beta_hosp}$ |
+| $N$ | Total number of individuals in population | $\texttt{input_N_pops}$ |
+| $\delta_1$ | Transition rate: exposed to pre-symptomatic | $\texttt{delta}$ |
+| $\delta_2$ | Transition rate: pre-symptomatic to symptomatic | $\texttt{recov_p}$ |
+| $\delta_3$ | Transition rate: symptomatic to home or regular hospital bed or ICU | $\texttt{recov_s}$ |
+| $\delta_4$ | Transition rate: regular hospital bed to home or ICU | $\texttt{recov_hosp}$ |
+| $\delta_5$ | Transition rate: ICU to step-down ICU | $\texttt{recov_icu1}$ |
+| $\gamma_{a}$ | Recovery rate: asymptomatic | $\texttt{recov_a}$ |
+| $\gamma_{b}$ | Recovery rate: home bed | $\texttt{recov_home}$ |
+| $\gamma_{c}$ | Recovery rate: step-down ICU | $\texttt{recov_icu2}$ |
+| $\rho_1$ | Fraction of exposed that transition to asymptomatic | $\texttt{asym_rate}$ |
+| $\rho_2$ | Fraction of symptomatic that transition to hospital bed | $\texttt{hosp_rate}$ |
+| $\rho_3$ | Fraction of symptomatic that transition to icu bed | $\texttt{sym_to_icu_rate}$ |
+| $\rho_4$ | Fraction of hospitalized that transition to ICU | $\texttt{icu_rate}$ |
+| $\rho_5$ | Fraction of patients in ICU that die of disease | $\texttt{death_rate}$ |

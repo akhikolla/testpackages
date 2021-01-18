@@ -1,0 +1,155 @@
+#+STARTUP: showeverything
+#+TITLE: Comparing the performance of computation methods
+#+SUBTITLE: an example with package ~Countr~ and the ~fertility~ data
+#+PROPERTY: header-args:R :cache yes :session perf-r :results value :exports both
+#+PROPERTY: header-args:R  :tangle ./perf.R 
+#+OPTIONS: author:nil
+#+OPTIONS: toc:nil
+#+INCLUDE:"../custom_packages.org"
+#+LaTeX_CLASS_OPTIONS: [a4paper,twoside,11pt]
+#+LaTeX_CLASS: article_tarak
+#+LATEX_HEADER: \author[1]{Tarak Kharrat}
+#+LATEX_HEADER: \author[2]{Georgi N. Boshnakov}
+#+LATEX_HEADER: \affil[1]{Salford Business School, University of Salford, UK.}
+#+LATEX_HEADER: \affil[2]{School of Mathematics, University of Manchester, UK.}
+#+LATEX_HEADER: \newcommand{\code}{\texttt}
+#+LATEX_HEADER: \newcommand{\CountrDist}[1]{\texttt{"#1"}}
+
+#+BEGIN_abstract
+This short document compares the performance of the different algorithms
+implemented in ~Countr~ to fit renewal-count models. The computation described
+here is based on the ~fertility~ data shipped with the package and the
+weibull-count model which allows using series based methods on top of the other
+convolution methods. More details about the different computation methods can be
+found in \citet{baker2017event}.
+
+This vignette is part of package ~Countr~ \citep[see][]{CountrJssArticle}.
+#+END_abstract
+
+
+* Prerequisites
+
+We will do the analysis of the data with package ~Countr~, so we load it:
+#+NAME: load-pkg
+#+BEGIN_SRC R  :exports code :cache no :results value silent
+library(Countr)
+#+END_SRC
+
+Package ~rebenchmark~ \citep{rbench2012} will also be used here to facilitate
+performance computation
+#+NAME: load-aux-pkg
+#+BEGIN_SRC R  :exports code :cache no :results value silent
+library(rbenchmark) 
+#+END_SRC
+
+* Comparing performance of different methods
+The data used here is the ~fertility~ data shipped with the package and
+described in length in \citet{winkelmann1995duration}. 
+
+The execution time depends obviously on the machine used but the relative order
+should remain the same regardless of the characteristic of your machine. The
+~benchmark()~ routine from the ~rbenchmark~ package \citet{rbench2012} will be
+used to compare the different computation methods discussed in
+\citet{baker2017event}. We selected the parameters for every method such as we
+achieve an error or at least $10^{-8}$. The code below reproduces the results
+reported in \citet[Table 2]{baker2017event}. As a benchmark, we use an
+adaptation of the original code gently provided by Blake McShane 
+\citep{mcshane2008count}. The McShane's code is implemented in a separate file
+and is not shown here. We repeat the iterations 1000 times.
+#+NAME: compare-methods
+#+BEGIN_SRC R
+source("mcShaneCode.R")
+data(fertility)
+
+## config: choose parameters (selection process not shown here)
+children <- fertility$children
+shape <- 1.116
+scale <- rep(2.635, length(children))
+rep <- 1000
+nstepsConv <- c(132, 24, 132, 24, 132, 36)
+ntermsSeries <- c(20, 17)
+conv_series_acc <- 1e-7
+
+## performance model
+perf <- benchmark(direct0 =
+                      dWeibullCount_loglik(children, shape, scale, "conv_direct",
+                                           1, TRUE, nstepsConv[1],
+                                           conv_extrap = FALSE),
+                  direct1 =
+                      dWeibullCount_loglik(children, shape, scale, "conv_direct",
+                                           1, TRUE, nstepsConv[2],
+                                           conv_extrap = TRUE),
+                  naive0 =
+                      dWeibullCount_loglik(children, shape, scale, "conv_naive",
+                                           1, TRUE, nstepsConv[3],
+                                           conv_extrap = FALSE),
+                  naive1 = dWeibullCount_loglik(children, shape, scale,
+                                                "conv_naive",
+                                                1, TRUE, nstepsConv[4],
+                                                conv_extrap = TRUE),
+                  dePril0 = dWeibullCount_loglik(children, shape, scale,
+                                                 "conv_dePril",
+                                                 1, TRUE, nstepsConv[5],
+                                                 conv_extrap = FALSE),
+                  dePril1 = dWeibullCount_loglik(children, shape, scale,
+                                                 "conv_dePril",
+                                                 1, TRUE, nstepsConv[6],
+                                                 conv_extrap = TRUE),
+                  series_mat =
+                      dWeibullCount_loglik(children, shape, scale,
+                                           "series_mat", 1, TRUE,
+                                           series_terms = ntermsSeries[1]),
+                  series_acc =
+                      dWeibullCount_loglik(children, shape, scale,
+                                           "series_acc", 1, TRUE,
+                                           series_terms = ntermsSeries[2],
+                                           series_acc_eps = conv_series_acc),
+                  mcShane = dWeibullCount_McShane(scale, shape,
+                                                  children, jmax = 150),
+                  replications = rep, order = "relative",
+                  columns = c("test", "replications", "relative", "elapsed")
+                  )
+
+print(perf)
+#+END_SRC
+
+#+RESULTS[44036995fb4c6de2153fac09fb0eb92bb1a95929]: compare-methods
+| series_acc | 1000 |      1 | 5.45999999999998 |
+| series_mat | 1000 |   1.31 | 7.15099999999995 |
+| direct1    | 1000 |   2.97 |           16.215 |
+| naive1     | 1000 |   2.98 |           16.273 |
+| dePril1    | 1000 |  3.158 |           17.241 |
+| dePril0    | 1000 | 11.139 |            60.82 |
+| naive0     | 1000 | 14.675 |           80.126 |
+| direct0    | 1000 | 16.381 |           89.441 |
+| mcShane    | 1000 | 18.594 |          101.523 |
+
+As can been seen, all the methods outperform the McShane's original code with
+the series methods almost 20 times faster and the extrapolated convolution
+methods roughly 6 times faster. As noted in the package documentation, the
+series methods are less robust to large values of count and may fail for some
+application. We therefore encourage the users to use the extrapolated
+convolution method (the default in ~Countr~) as much as possible.  
+
+* Save Image                                                  :ignoreheading:
+We conclude this document by saving the work space to avoid re-running the
+computation in future exportation of the document:
+#+NAME: save-workspace
+#+BEGIN_SRC R  :exports code :cache no :results value silent
+save.image()
+#+END_SRC
+
+
+
+
+* Bibliography :ignoreheading:
+\bibliographystyle{apalike}
+\bibliography{perf}
+
+
+
+
+# Local Variables:
+# org-ref-default-bibliography: REFERENCES.bib
+# fill-column: 80
+# End:

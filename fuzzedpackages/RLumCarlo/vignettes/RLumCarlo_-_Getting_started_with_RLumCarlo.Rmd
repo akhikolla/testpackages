@@ -1,0 +1,313 @@
+---
+title: "`RLumCarlo': Tedious features - fine examples"
+author: "Sebastian Kreutzer, Johannes Friedrich, Vasilis Pagonis, Christoph Schmidt"
+date: "RLumCarlo: v`r packageVersion('RLumCarlo')` | last modified: `r Sys.Date()`"
+output: 
+  pdf_document: 
+    number_sections: yes
+header-includes:
+  - \usepackage{doi}
+vignette: |
+  %\VignetteIndexEntry{RLumCarlo - Getting started with RLumCarlo}         
+  %\VignetteEncoding{UTF-8}{inputenc}
+  %\VignetteEngine{knitr::rmarkdown}
+bibliography: bibliography.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(RLumCarlo)
+```
+
+```{r, echo = FALSE, fig.align='center', message = FALSE}
+knitr::include_graphics("../man/figures/Logo_RLumCarlo.png")
+library(ggplot2)
+library(scales)
+library(kableExtra)
+library(knitr)
+
+##https://github.com/JohannesFriedrich/EnergyBandModels
+theme <- theme(axis.text = element_text(size = 14),
+             axis.title = element_text(size = 14, face = "bold"),
+             legend.text = element_text(size = 12),
+             legend.title = element_text(size = 12, face = "bold"))
+
+electrons <- data.frame(
+  x = seq(0,1, length.out = 10),
+  y = rep(c(-2.2,-1.5, -1, -0.6, -0.3, 0), each = 10)
+)
+```
+
+# Scope
+
+\`RLumCarlo' is a collection of energy-band models to simulate luminescence signals in dosimetric materials
+using Monte-Carlo (MC) methods for various stimulation modes. This document aims at supplementing the package documentation and elaborating the package examples. 
+
+# The models in \`RLumCarlo'
+
+## Overview
+TRANSITION  | BASE MODEL        |    IRSL      |     OSL         |     LM-OSL      | TL 
+|-----------|-------------------|--------------|-----------------|-----------------|---------------|
+Delocalised | OTOR    | -        | X            | X            |X 
+Localised   | GOT   | X         | -           | X            |X
+Excited state tunnelling | LTM | X | - | X | X   
+
+In the table above column headers refer to stimulation modes, which are infrared 
+stimulated luminescence (IRSL), optically stimulated luminescence (OSL), LM-OSL [@Bulur_1996rc], 
+and thermally stimulated luminescence (short: TL). In the column \`BASE MODEL' OTOR refers to \`One Trap-One Recombination Centre', GOT to \`General One Trap', and LTM to \`Localized Transition Model'
+[@Jain:2012ic; @Pagonis:2019hk]. For general overview we refer to the excellent book 
+by @Chen_2011vn.
+
+## Where to find them
+The following table lists models as implemented in \`RLumCarlo' along with the **R** function call 
+and the corresponding R (\*.R) and C++ (\*.cpp) files. The modelling takes place 
+in the C++ functions which are wrapped by the R functions with a similar name. 
+If you, however, want to cross-check the code, you should inspect files with the ending `.cpp`. 
+
+```{r, echo = FALSE, message=FALSE}
+## extract models
+models <- list.files("../R/", pattern = "run_")
+models <- strtrim(models, nchar(models) - 2)
+models <- regmatches(models, regexpr("(?<=run\\_).*", models, perl = TRUE), invert = FALSE)
+
+## combine into data.frame
+df <- data.frame(
+  `MODEL_NAME` = models, 
+  `R_CALL` = paste0("run_", models, "()"),
+  `CORRESPONDING_FILES` = paste0("R/run_", models, ".R \n src/MC_C_", models, ".cpp"), 
+  stringsAsFactors = FALSE)
+
+knitr::kable(df, booktabs = TRUE, linesep = "\\addlinespace") %>% 
+  kable_styling(full_width = TRUE, font_size = 8) %>%
+  column_spec(1, bold = TRUE)
+```
+
+Each model is run by calling one of the **R** functions starting with `run_`. Currently, three 
+different model types (TUN: tunnelling, LOC: localised transition, DELOC: delocalised transition) 
+are implemented for the stimulation types TL, IRSL, LM-OSL, and ISO (isothermal). 
+Please note that each model has different parameters and requirements. 
+
+# \`RLumCarlo' model parameters and variables
+
+The following table summarises the parameters used in the implemented MC models along with 
+their physical meaning, units and the range of realistic values. This range represents just a rough 
+guideline and might be exceeded for particular cases.
+
+```{r, echo = FALSE, message=FALSE}
+
+variables <- read.table("Variable definitions and realistic values for RLumCarlo.csv", sep = ";")
+knitr::kable(variables, booktabs = TRUE, longtable = TRUE, format = "latex", col.names = c("Stimulation mode","Parameter","Parameter description","Unit","Realistic values"), linesep = "\\addlinespace", align = c("l", "l", "l", "l", "l"), escape = FALSE, row.names = FALSE) %>%
+  kable_styling(full_width = FALSE, font_size = 8) %>% 
+  column_spec(1, bold = TRUE, width = "11em") %>%
+  column_spec(2, bold = F, width = "5em") %>%
+  column_spec(3, bold = F, width = "27em") %>%
+  column_spec(4, bold = F, width = "3em") %>%
+  column_spec(5, bold = F, width = "5em")
+
+```
+
+# Examples
+
+The following examples illustrate the capacity of \`RLumCarlo', by using code-snippets deploying longer 
+simulation times than allowed for the standard package examples, which aim at a functionality test. 
+
+## Example 1: A first example
+
+The first example is an iso-thermal decay curve using the tunnelling model (other models work 
+similarly). Returned are either the simulated signal or the estimated remaining trapped charge carriers. 
+The Function `plot_RLumCarlo()` provides an easy way to visualise the modelling results and 
+is here called using the tee operator `%T>` from the package `magrittr` (which is imported by \`RLumCarlo'). 
+Simulation results are stored in the object `results` while, at the same time, piped to the function 
+`plot_RLumCarlo()` for the output visualisation. 
+
+### Model the signal  
+ 
+The most obvious modelling output is the luminescence signal itself, our example below simulates an 
+iso-thermal (ITL) signal for a temperature (`T`) of 200 °C over 
+5,000 s using a tunnelling transition model. Trap parameters are $E = 1.2$ eV for the trap 
+depth and a frequency factor of $1\times10^{10}$ (1/s). The parameter `rho` ($\rho'$) defines the 
+recombination centre density. 
+
+```{r Fig 1, fig.align='center', cache=FALSE, fig.height=4, fig.width=5}
+results <- run_MC_ISO_TUN(
+  E = 1.2,
+  s = 1e10,
+  T = 200,
+  N_e = 200,
+  rho = 0.007,
+  clusters = 10,
+  times = seq(0, 5000)
+) %T>%
+  plot_RLumCarlo(norm = TRUE,
+                 legend = TRUE,
+                 main = "Iso-thermal decay (TUN)")
+```
+In the example above `N_e` is a scalar, which means that all clusters start
+with the same number of electrons (here 200). However, \`RLumCarlo' supports
+different starting conditions with regard to the initial number of electrons. 
+For example, one could assume that the number of initial electrons vary randomly 
+between 190 and 210. Such a situation is created in the next example. Generally, 
+\`RLumCarlo' supports such an input for the parameters `N_e` and `n_filled`.
+
+```{r Fig 1b, fig.align='center', cache=FALSE, fig.height=4, fig.width=5}
+results <- run_MC_ISO_TUN(
+  E = 1.2,
+  s = 1e10,
+  T = 200,
+  N_e = sample(190:210,10,TRUE),
+  rho = 0.007,
+  clusters = 10,
+  times = seq(0, 5000)
+) %T>%
+  plot_RLumCarlo(norm = TRUE,
+                 legend = TRUE,
+                 main = "Iso-thermal decay (TUN) for varying N_e")
+```
+
+
+### Model remaining charges
+
+The first example can be slightly altered to provide alternative insight. 
+Instead of the luminescence signal, the variant below returns 
+the number of remaining electrons in the trap. 
+
+```{r Fig 2, fig.align='center', cache=TRUE, fig.height=4, fig.width=5}
+results <- run_MC_ISO_TUN(
+  E = 1.2,
+  s = 1e10,
+  T = 200,
+  rho = 0.007,
+  times = seq(0, 5000), 
+  output = "remaining_e"
+) %T>%
+  plot_RLumCarlo(
+    legend = TRUE,
+    ylab = "Remaining electrons"
+    )
+```
+
+### Understanding the numerical output
+In both cases the modelling output is an object of class `RLumCarlo_Model_Output`, 
+which is basically a list consisting of an `array` and a `numeric` (vector). 
+
+```{r}
+str(results)
+```
+
+While this represents the full modelling output results, its interpretation might be less straight forward, 
+and the user may want to condense the information via `summary()`. The 
+function `summary()` is also used internally by the function `plot_RLumCarlo()` to simplify the data
+before there are plotted.
+
+```{r}
+df <- summary(results)
+head(df)
+```
+
+The call summarises the modelling results and returns a terminal output and a `data.frame` with, e.g., the mean or the standard deviation, which can be used to create plots for further insight. For instance, the stimulation time against coefficient of variation (CV in %): 
+ 
+```{r Fig 3, fig.align="center", fig.height=4, fig.width=5}
+plot(
+  x = df$time,
+  y = (df$sd / df$mean) * 100,
+  pch = 20, 
+  col = rgb(0,0,0,.1),
+  xlab = "Stimulation time [s]",
+  ylab = "CV [%]"
+)
+```
+
+## Example 2: Combining two plots
+
+The following examples use again the tunnelling model but for continuous wave (CW) infrared light stimulation (IRSL), 
+and they combine two plots in one single plot window. 
+
+```{r Fig 4, fig.align='center', fig.height=4, fig.width=5}
+## set time vector 
+times <- seq(0, 1000)
+
+## Run MC simulation
+run_MC_CW_IRSL_TUN(A = 0.12, rho = 0.003, times = times) %>%
+  plot_RLumCarlo(norm = TRUE, legend = TRUE)
+
+run_MC_CW_IRSL_TUN(A = 0.21, rho = 0.003, times = times) %>%
+  plot_RLumCarlo(norm = TRUE, add = TRUE)
+```
+
+## Example 3: Testing different parameters
+
+The example above can be further extended to test the effect of different parameters. 
+Contrary to the example above, here the results are stored in a `list` and `plot_RLumCarlo()` 
+is called only one time and it will then iterate automatically over the results to 
+create a combined plot.
+
+```{r Fig 5, fig.align='center', cache = FALSE}
+s <- 3.5e12
+rho <- 0.015
+E <- 1.45
+r_c <- c(0,0.7,0.77,0.86, 0.97)
+times <- seq(100, 450) # here time = temperature
+results <- lapply(r_c, function(x) {
+  run_MC_TL_TUN(
+    s = s,
+    E = E,
+    rho = rho,
+    r_c = x,
+    times = times
+  )
+  
+})
+```
+
+The plot output can be highly customised to provide a better visual experience, e.g., 
+the manual setting of the colours and the legend.
+
+```{r Fig 6,Plot average signal, fig.align='center', echo = TRUE, cache = FALSE, fig.height=4, fig.width=5}
+## plot curves, but without legend
+plot_RLumCarlo(
+  object = results, 
+  ylab = "normalised TL signal",
+  xlab = "Temperature [\u00b0C]", 
+  plot_uncertainty = "range",
+  col = khroma::colour("bright")(length(r_c)),
+  legend = FALSE,
+  norm = TRUE
+)
+
+## add legend manually
+legend(
+  "topleft",
+  bty = "n",
+  legend = paste0("r_c: ", r_c),
+  lty = 1,
+  col = khroma::colour("bright")(length(r_c))
+)
+```
+
+## Example 4: Dosimetric cluster systems
+\`RLumCarlo' supports the simulation of a cheap dosimetric cluster system with 
+spatial correlation. Such a dosimetric cluster system can be created with the 
+function `create_ClusterSystem()`:
+
+```{r, fig.height=4.5, fig.width=4.5, fig.align='center'}
+clusters <- create_ClusterSystem(n = 100, plot = TRUE)
+```
+The result is an arbitrary dosimetric system with randomly distributed clusters. The Euclidean distance is used to group the clusters (colour code). To use the system in the simulation, instead of providing a scalar as input to `clusters`, the output of `create_ClusterSystem()` can be injected in every `run_MC` function.
+
+```{r, echo = TRUE, fig.align='center', cache = FALSE, fig.height=4, fig.width=5}
+run_MC_TL_LOC(
+ s = 1e14,
+ E = 0.9,
+ times = 0:100,
+ b = 1,
+ n_filled = 1000,
+ method = "seq",
+ clusters = clusters,
+ r = 1) %>%
+plot_RLumCarlo()
+```
+
+Please note: For the simulation of a dosimetric cluster system, the meaning of `n_filled` changes. Instead of defining the number of electrons per cluster, it becomes the total number of electrons in the system. Electrons are distributed according to the grouping of the single clusters (the colours in the three-dimensional scatter plot). Within one group, electrons are distributed evenly. 
+
+# References {-}
+

@@ -1,0 +1,113 @@
+---
+title: "Using External Simulators"
+author: "Paul Staab"
+date: "coala `r packageVersion('coala')`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Installing ms, msms and seqgen}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\usepackage[utf8]{inputenc}
+---
+
+Coala can call the coalescent simulators _ms_[1], _msms_[2] and _scrm_[3] 
+and can use _seq-gen_[4] for finite sites simulations.
+The R version of _scrm_ should get installed automatically as a dependeny of 
+coala. For the other programs, you need to have an executable binary available
+on your system.
+
+
+# Installation
+
+Short instructions on obtaining and compiling the programs are 
+given in the help pages of `activate_ms`, `activate_msms` and `activate_seqgen`. 
+More detailed instructions are provided in [the wiki](https://github.com/statgenlmu/coala/wiki/Installation).
+
+
+# Activation
+
+In addition to providing the binary for a simulator, you need to inform `coala`
+where the binary is. We refer to this process as _activation_ of a binary.
+Afterwards, `coala` will use the simulator automatically
+where-ever appropriate.
+
+There are three different ways to activate a binary:
+
+1. Use the `activate_msms` and `activate_seqgen` functions to
+activate the simulators from within R. You should use the functions before
+creating a model.
+2. Alternatively, you can place the binaries in your working
+directory or in a folder listed in your _PATH_ environment variable using
+one of the names listed under "Expected Binary Names" below. If there is
+a match file, coala will automatically activate the simulator.
+3. You can start the R session with an environment variable
+that hold the path to the binaries. In this case, the simulators should
+also be automatically be activated when the coala package is loaded.
+4. Coala uses the R versions of `scrm` and `ms`. `scrm` should alawys be 
+available. Install the CRAN package `phyclust` to use `ms`. 
+
+| Simulator | Priority | Expected Binary Names                    | Environment Var | Function        |
+| ---       | ---      | ---                                      | ---             | ---             |
+| seq-gen   | 100      | seqgen, seq-gen, seqgen.exe, seq-gen.exe | SEQGEN          | activate_seqgen |
+| msms      | 200      | msms.jar / java, java.exe                | MSMS / JAVA     | activate_msms   |
+| ms        | 300      |                                          |                 | activate_ms     |
+| scrm      | 400      |                                          |                 |                 |
+
+You can use the `list_simulators()` command to view which 
+simulators are currently available:
+
+```{r size="small"}
+library(coala)
+list_simulators()
+```
+
+
+
+# Priority
+
+The `check_model` function checks which simulators support a specific model,
+and states the problems which coala has detected with the simulators that do not
+support it.
+For example, a simple model with infinite-sites mutations (IFS) can be simulated
+with `scrm` or -- if installed -- with `ms` and `msms`, but not with `seq-gen`
+because the latter generates finite-sites mutations:
+
+```{r}
+model <- coal_model(10, 1) +
+  feat_mutation(5, model = "IFS") +
+  sumstat_nucleotide_div()
+check_model(model)
+model
+```
+
+If multiple simulators can simulate a model, the one with the highest 
+priority is used. In our example, that is `scrm`. If we would like to use
+`ms` instead, we need to raise its priority:
+
+```{r eval=FALSE}
+activate_ms(priority = 500)
+```
+
+
+
+
+# References
+
+* __[1]__: Richard R. Hudson. 
+  _Generating samples under a Wright-Fisher neutral model of genetic variation._
+  Bioinformatics (2002) 18 (2): 337-338
+  [10.1093/bioinformatics/18.2.337](http://doi.org/10.1093/bioinformatics/18.2.337)
+* __[2]__: Gregory Ewing and Joachim Hermisson.
+  _MSMS: a coalescent simulation program including recombination,
+  demographic structure and selection at a single locus._
+  Bioinformatics (2010) 26 (16): 2064-2065
+  [10.1093/bioinformatics/btq322](http://doi.org/10.1093/bioinformatics/btq322)
+* __[3]__: Paul R. Staab, Sha Zhu, Dirk Metzler and Gerton Lunter. 
+  _scrm: efficiently simulating long sequences using the approximated 
+  coalescent with recombination._
+  Bioinformatics (2015) 31 (10): 1680-1682. 
+  [10.1093/bioinformatics/btu861](http://doi.org/doi:10.1093/bioinformatics/btu861)
+* __[4]__: Andrew Rambaut and Nicholas C. Grassly.
+  _Seq-Gen: an application for the Monte Carlo simulation of DNA sequence
+  evolution along phylogenetic trees._
+  Comput Appl Biosci (1997) 13 (3): 235-238
+  [10.1093/bioinformatics/13.3.235](http://doi.org/10.1093/bioinformatics/13.3.235)

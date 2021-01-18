@@ -1,0 +1,312 @@
+\documentclass[10pt,xcolor=x11names,compress]{beamer}
+
+\usepackage{lmodern}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{booktabs}
+\usepackage[round]{natbib}
+\renewcommand{\newblock}{} % Get natbib and beamer working together: http://tex.stackexchange.com/questions/1969/beamer-and-natbib
+
+%\VignetteEngine{knitr::knitr}
+%\VignetteIndexEntry{fastJT}
+
+\newcommand{\R}{\texttt{R}}
+\newcommand{\pkgname}{\texttt{fastJT}}
+\newcommand{\Rcpp}{\texttt{Rcpp}}
+\newcommand{\openmp}{\texttt{OpenMP}}
+
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+\setbeamertemplate{enumerate item}{\insertenumlabel}
+\setbeamertemplate{enumerate subitem}{\alph{enumii}.}
+
+
+\begin{document}
+<<setup1, include=FALSE>>=
+require(knitr)
+@
+
+<<setup2, include=FALSE>>=
+old_ops<-options(width=80)  # make the printing fit on the page
+set.seed(1121)     # make the results repeatable
+stdt<-date()
+@
+
+\begin{frame}
+	\title{\pkgname}
+	\subtitle{Efficient Jonckheere-Terpstra Test Statistics for Robust Machine Learning and Genome-Wide Association Studies}
+	\date{2020-11-04}
+	\titlepage
+\end{frame}
+
+
+\begin{frame}{Outline}
+	\tableofcontents[]
+\end{frame}
+
+
+\section{Introduction}
+\begin{frame}{Introduction}
+  \begin{itemize}
+    \item This document provides an example for using the \pkgname{} package to calculate the Jonckheere-Terpstra test statistics for large data sets (multiple dependent and independent variables) commonly encountered in machine learning or GWAS. The functionality is also included to perform k-fold cross validation or feature sets.
+    \item The calculation of the standardized test statistic employs the null variance equation as defined by \citet[eq. 6.19]{HollanderBook} to account for ties in the data.
+    \item The major algorithm in this package is written in C++, which is ported to \R{} by \Rcpp{}, to facilitate fast computation. 
+	\item Features of this package include:
+      \begin{enumerate}
+        \item $O(N\times\log(N))$ computational complexity (where $N$ is the number of the samples)
+        \item \openmp{} supported parallelization
+        \item Customized output of top $m$ significant independent variables for each dependent variable
+      \end{enumerate}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{fastJT}
+<<fastJT, eval=FALSE>>=
+res <- fastJT(Y, X, outTopN=15, numThreads=1, standardized=TRUE)
+@
+Function arguments:\\
+\begin{description}
+	\item[\texttt{Y}:] Matrix of continuous values, representing dependent variables, with sample IDs as row names and variable names as column names.
+	\item[\texttt{X}:] A matrix of integer values, representing independent variables, with sample IDs as row names and feature IDs as column names.
+	\item[\texttt{outTopN}:] Number of top statistics to return (i.e., the largest standardized statistics). The default value is 15. If \texttt{outTopN} is set to \texttt{NA}, all results will be returned.
+	\item[\texttt{numThreads}:] Number of threads to use for parallel computation. The default value is 1 (sequential computation).
+	\item[\texttt{standardized}:] A boolean to specify whether to return standardized statistics or non-standardized statistics. The default value is \texttt{TRUE}, returning standardized statistics.
+\end{description}
+Users may wish to consider the \texttt{dplyr::recode()} function for converting non-numeric group indices into ordinal values for argument \texttt{X}.
+\end{frame}
+
+\begin{frame}[fragile]{Returned Values}
+Function returns:
+\begin{description}
+ 	\item[\texttt{J}:] A matrix of standardized/non-standardized Jonckheere-Terpstra test statistics, depending on option \texttt{standardized}, with column names from input \texttt{Y}. If \texttt{outTopN} is not \texttt{NA}, results are sorted within each column.
+	\item[\texttt{XIDs}:] If \texttt{outTopN} is not \texttt{NA}, this is a matrix of column names from \texttt{X} associated with top standardized Jonckheere-Terpstra test statistics from \texttt{J}. Otherwise this is an unsorted vector of column names from input \texttt{X}.
+\end{description}
+\end{frame}
+
+
+\begin{frame}[fragile]{fastJT.select}
+<<fastJTselect, eval=FALSE>>=
+res <- fastJT.select(Y, X, cvMesh=NULL, kFold=10L,
+                     selCrit=NULL, outTopN=15L, numThreads=1L)
+@
+Function arguments:\\
+\begin{description}
+        \item[\texttt{Y}:] Matrix of continuous values, representing dependent variables, with sample IDs as row names and variable names as column names.
+        \item[\texttt{X}:] Matrix of integer values, representing independent variables, with sample IDs as row names and feature IDs as column names.
+        \item[\texttt{cvMesh}:] A user-defined function to specify how to separate the data into training and testing parts. The inputs of this function are a vector of the sample IDs and \texttt{kFold}, an integer representing the number of folds for cross validation. The output of this function is a list of \texttt{kFold} vectors of sample IDs forming the testing subset for each fold. The default value is \texttt{NULL}, and if no function is specified, the data are partitioned sequentially into \texttt{kFold} equal sized subsets. Optional.
+\end{description}
+\end{frame}
+
+\begin{frame}[fragile]{fastJT.select}
+Function arguments continued:\\
+\begin{description}
+        \item[\texttt{kFold}:] An integer to indicate the number of folds. Optional. The default value is 10.
+        \item[\texttt{selCrit}:] A user-defined function to specify the criteria for selecting the top features. The inputs of this function include \texttt{J}, the matrix of statistics resulting from \texttt{fastJT}, and \texttt{P}, the matrix of p-values from \texttt{pvalues(J)}. The output is a data frame containing the selected feature IDs for each trait of interest. Optional. The default value is \texttt{NULL}, and if no function is specified, the features the largest standardized Jonckheere-Terpstra test statistics are selected.
+        \item[\texttt{outTopN}:] An integer to indicate the number of top hits to be returned when \texttt{selCrit=NULL}. Unused if \texttt{selCrit!=NULL}. Optional. The default value is 15.
+        \item[\texttt{numThreads}:] A integer to indicate the number of threads to be used in the computation. Optional. The default value is 1 (sequential computation).
+\end{description}
+The function withholds one subset while the remaining \texttt{kFold}-1 subsets are used to test the features. The process is repeated \texttt{kFold} times, with each of the subsets withheld exactly once as the validation data.
+\end{frame}
+
+
+
+\begin{frame}[fragile]{Returned Values}
+Function returns: Three \texttt{lists} of length \texttt{kFold}:
+\begin{description}
+        \item[\texttt{J}:] A \texttt{list} of matrices of standardized Jonckheere-Terpstra test statistics, one for each  cross validation.
+        \item[\texttt{Pval}:] A \texttt{list} of matrices of p-values, one for each cross validation.
+        \item[\texttt{XIDs}:] A \texttt{list} of matrices of the selected feature IDs, one for each cross validation.
+\end{description}
+\end{frame}
+
+
+\section{Examples}
+\begin{frame}[fragile]{Simulate Data}
+  \begin{enumerate}
+  \item Define the number of markers, samples, and features:
+<<inputPara>>=
+num_sample	<- 100
+num_marker 	<- 4
+num_feature 	<- 50
+@  
+\item Create two matrices containing marker levels and feature information.
+  \begin{enumerate}
+    \item \texttt{Data} contains the samples' marker levels.
+    \item \texttt{Feature} contains the samples' feature values.
+  \end{enumerate}	
+
+<<markers_levels_geno_types>>=
+set.seed(12345);
+Data    <- matrix(rnorm(num_sample*num_marker), 
+                  num_sample, num_marker)
+Feature <- matrix(rbinom(num_sample*num_feature,2,0.5),
+                  num_sample, num_feature)
+colnames(Data)    <- paste0("Mrk:",1:num_marker)
+colnames(Feature) <- paste0("Ftr:",1:num_feature)
+@ 
+  \end{enumerate}
+\end{frame}
+
+
+\begin{frame}[fragile]{Load Package}
+Load \pkgname{} (after installing its dependent packages):
+<<loadpkg>>=
+library(fastJT)
+@ 
+\end{frame}
+
+
+\begin{frame}[fragile]{Example Execution}
+<<exp3, results='hide'>>=
+JTStat <- fastJT(Y=Data, X=Feature, outTopN=10)
+summary(JTStat, Y2Print=1:4, X2Print=1:5)
+@
+<<exp4, echo=FALSE, size='tiny'>>=
+summary(JTStat, Y2Print=1:4, X2Print=1:5)
+@
+\end{frame}
+
+\begin{frame}[fragile]{Example Execution: Statistics in the Summary}
+<<exp5, eval=FALSE>>=
+summary(JTStat, Y2Print=1:4, X2Print=1:5, printP=FALSE)
+@
+<<exp6, echo=FALSE, size='tiny'>>=
+summary(JTStat, Y2Print=1:4, X2Print=1:5, printP=FALSE)
+@
+\end{frame}
+
+\begin{frame}[fragile]{Example Execution: Sorting in the Summary}
+<<exp7, results='hide'>>=
+JTAll <- fastJT(Y=Data, X=Feature, outTopN=NA)
+summary(JTAll, Y2Print=1:4, outTopN=3)
+@
+<<exp8, echo=FALSE, size='tiny'>>=
+summary(JTAll, Y2Print=1:4, outTopN=3)
+@
+\end{frame}
+
+
+\begin{frame}[fragile]{Example Execution: \texttt{fastJT.select}}
+<<select1, eval=FALSE>>=
+fastJT.select(Y=Data, X=Feature, cvMesh=NULL, kFold=5,
+              selCrit=NULL, outTopN=5, numThreads=1)
+@
+<<select1out, echo=FALSE, size='tiny'>>=
+fastJT.select(Y=Data, X=Feature, cvMesh=NULL, kFold=5,
+              selCrit=NULL, outTopN=5, numThreads=1)
+@
+\end{frame}
+
+\begin{frame}[fragile]{Example User-Defined \texttt{cvMesh} Function}
+<<cvMesh, results='hide'>>=
+Mesh <- function(rownamesData, kFold){
+  numSamples <- length(rownamesData)
+  res <- NULL
+  subSampleSize <- floor(numSamples/kFold)
+  for (i in 1:kFold){
+    start <- (i-1)*subSampleSize + 1
+    if(i < kFold)
+      end <- i*subSampleSize
+    else
+      end <- numSamples
+    if(i == 1)
+      res <- list(c(start:end))
+    else
+      res[[i]] <- c(start:end)
+  }
+  res
+}
+@
+\end{frame}
+
+\begin{frame}[fragile]{Example User-Defined \texttt{selCrit} Function}
+<<selCrit, results='hide'>>=
+whichpart <- function(x, n=30) {
+  nx <- length(x)
+  p <- nx-n
+  xp <- sort(x, partial=p)[p]
+  which(x > xp)
+}
+
+selectCrit <- function(J, P){
+  pcut <- 0.95
+  hit <- NULL
+  for(i in 1:ncol(P)){
+    if(i == 1)
+      hit <- list(rownames(P)[whichpart(P[,i], 4)])
+    else
+      hit[[i]] = rownames(P)[whichpart(P[,i], 4)]
+  }
+  res <- do.call(cbind, hit)
+  colnames(res) <- colnames(P)
+  res
+}
+@
+\end{frame}
+
+\begin{frame}[fragile]{Example Execution with User-Defined Functions}
+<<select2, eval=FALSE>>=
+fastJT.select(Data, Feature, cvMesh=Mesh, kFold=5,
+              selCrit=selectCrit, outTopN=5, numThreads=1)
+@
+<<select2out, echo=FALSE, size='tiny'>>=
+fastJT.select(Data, Feature, cvMesh=Mesh, kFold=5,
+              selCrit=selectCrit, outTopN=5, numThreads=1)
+@
+\end{frame}
+
+
+\section*{}
+\begin{frame}[fragile]{References}
+% {\footnotesize
+\begin{thebibliography}{9}
+\setbeamertemplate{bibliography item}[text]
+\bibitem[Hollander and Wolfe(1999)]{HollanderBook}
+	Hollander, M. and Wolfe, D. A.,
+	\emph{Nonparametric Statistical Methods}.
+        New York, Wiley,
+        2nd edition,
+	1999.
+\end{thebibliography}
+% }
+\end{frame}
+
+
+\section{Session Information}
+\begin{frame}[fragile]{Session Information}
+<<sessinfo, echo=FALSE, include=TRUE, results='asis'>>=
+toLatex(sessionInfo(), locale=FALSE)
+@ 
+<<times, echo=FALSE, include=TRUE>>=
+print(paste("Start Time",stdt))
+print(paste("End Time  ",date()))
+## reset options
+options(old_ops)
+@ 
+\end{frame}
+
+\end{document}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

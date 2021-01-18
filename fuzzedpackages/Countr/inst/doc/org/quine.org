@@ -1,0 +1,367 @@
+#+STARTUP: showeverything
+#+TITLE: Model selection and comparison
+#+SUBTITLE: an example with package ~Countr~
+#+PROPERTY: header-args:R   :cache yes :session quine-r :results value :exports both
+#+PROPERTY: header-args:R  :tangle ./quine.R 
+#+OPTIONS: author:nil
+#+OPTIONS: toc:nil
+#+INCLUDE:"../custom_packages.org"
+#+LaTeX_CLASS_OPTIONS: [a4paper,twoside,11pt]
+#+LaTeX_CLASS: article_tarak
+#+LATEX_HEADER: \author[1]{Tarak Kharrat}
+#+LATEX_HEADER: \author[2]{Georgi N. Boshnakov}
+#+LATEX_HEADER: \affil[1]{Salford Business School, University of Salford, UK.}
+#+LATEX_HEADER: \affil[2]{School of Mathematics, University of Manchester, UK.}
+#+LATEX_HEADER: \newcommand{\code}{\texttt}
+#+LATEX_HEADER: \newcommand{\CountrDist}[1]{\texttt{"#1"}}
+
+#+BEGIN_abstract
+This document describes a strategy to choose between various possible
+count models. The computation described in this document is done in ~R~
+\citep{Rcore} using the contributed package ~Countr~ \citep{RpackageCountr} and
+the ~quine~ data shipped with the ~MASS~ package \citep{Venables20102MASS}. The
+ideas used here are inspired by the demand for medical care example detailed in
+\citet[Section 6.3]{cameron2013regression}. 
+
+This vignette is part of package ~Countr~ \citep[see][]{CountrJssArticle}.
+#+END_abstract
+
+
+* Prerequisites
+
+We will do the analysis of the data with package ~Countr~, so we load it:
+#+NAME: load-pkg
+#+BEGIN_SRC R  :exports code :cache no :results value silent
+library(Countr)
+library("MASS") # for glm.nb()
+#+END_SRC
+
+Packages ~dplyr~ \citep{dplyr2016} and ~xtable~ \citep{xtable2016} provide
+usefull facilities for data manipulation and presentation:
+#+NAME: load-aux-pkg
+#+BEGIN_SRC R  :exports code :cache no :results value silent
+library(dplyr) 
+library(xtable)
+#+END_SRC
+
+* Data
+
+The dataset used in this example is the ~quine~ data shipped with 
+package ~MASS~ \citep{Venables20102MASS} and first analysed in
+\citet{aitkin1978analysis}. The data can be loaded in the usual way:
+#+NAME: load-data
+#+BEGIN_SRC R  :results value silent :exports code
+data(quine, package = "MASS")
+#+END_SRC
+
+The dataset gives the number of days absent from school (\texttt{Days}) of
+src_R[:exports results :results value raw]{nrow(quine)}
+children in a particular school year. A number of
+explanatory variables are available describing the children's ethnic background
+(~Eth~), sex (~Sex~), age (~Age~) and learner status
+(~Lrn~).  The count variable ~Days~ is characterised by large
+/overdispersion/ --- the variance is more than
+16 times larger the mean, 
+src_R[:exports results :results value raw]{formatC(var(quine$Days))}
+versus 
+src_R[:exports results :results value raw]{formatC(mean(quine$Days))}.
+Table \ref{tab:quine:days} gives an idea about its
+distribution. The entries in the table were calculated as follows:
+
+
+#+NAME: children-table
+#+BEGIN_SRC R :results output latex :exports both
+breaks_ <- c(0, 1, 3, 5:7, 9, 12, 15, 17, 23, 27, 32)
+freqtable <- 
+    count_table(count = quine$Days, breaks = breaks_, formatChar = TRUE)
+#+END_SRC
+
+#+RESULTS[0c05b2a85955498c5e1870e4ec68a7135acb68ad]: children-table
+#+BEGIN_EXPORT latex
+#+END_EXPORT
+
+
+#+BEGIN_EXPORT latex
+\begin{table}
+\centering
+\begin{tabular}{lrrrrrrrrr}
+#+END_EXPORT
+
+#+BEGIN_SRC R :results output latex :exports results
+ print(xtable(freqtable[ , 1:7]), floating = FALSE, only.contents = TRUE)
+ cat("\n\\\\[5pt]\n")
+ print(xtable(freqtable[ , -(1:7)]), floating = FALSE, only.contents = TRUE)
+#+END_SRC
+
+#+RESULTS[e4bdfa86c9d3361ecd49383dcef855393ce93398]:
+#+BEGIN_EXPORT latex
+% latex table generated in R 3.4.2 by xtable 1.8-2 package
+% Tue Nov 14 16:37:27 2017
+ & 0 & 1-2 & 3-4 & 5 & 6 & 7-8 & 9-11 \\ 
+  \hline
+Frequency & 9 & 10 & 7 & 19 & 8 & 10 & 13 \\ 
+  Relative frequency & 0.062 & 0.068 & 0.048 & 0.13 & 0.055 & 0.068 & 0.089 \\ 
+   \hline
+
+\\[5pt]
+% latex table generated in R 3.4.2 by xtable 1.8-2 package
+% Tue Nov 14 16:37:27 2017
+ & 12-14 & 15-16 & 17-22 & 23-26 & 27-31 & $>$= 32 \\ 
+  \hline
+Frequency & 13 & 6 & 14 & 6 & 6 & 25 \\ 
+  Relative frequency & 0.089 & 0.041 & 0.096 & 0.041 & 0.041 & 0.17 \\ 
+   \hline
+#+END_EXPORT
+
+#+BEGIN_EXPORT latex
+\end{tabular}
+\caption{quine data: Frequency distribution of column \texttt{Days}.}
+\label{tab:quine:days}
+\end{table}
+#+END_EXPORT
+
+
+
+* Models for ~quine~ data
+
+Given the extreme over-dispersion observed in the ~quine~ data, we do not expect
+the Poisson data to perform well. Nevertheless, we can still use this model as a
+starting point and treat it as a benchmark (any model worse than Poisson should
+be strongly rejected). Besides, the negative binomial (as implemented in
+~MASS:glm.nb()~) and 3 renewal-count models based on weibull, gamma and
+generalised-gamma inter-arrival times are also considered giving in total 5
+models to choose from. The code used to fit the 5 models is provided below:
+#+NAME: models
+#+BEGIN_SRC R :results output
+quine_form <- as.formula(Days ~ Eth + Sex + Age + Lrn)
+pois <- glm(quine_form, family = poisson(), data = quine)
+nb <- glm.nb(quine_form, data = quine)
+
+## various renewal models
+wei <- renewalCount(formula = quine_form, data = quine, dist = "weibull",
+                          computeHessian = FALSE, weiMethod = "conv_dePril",
+                          control = renewal.control(trace = 0,
+                              method = c("nlminb", 
+                                  "Nelder-Mead","BFGS")),
+                          convPars = list(convMethod = "dePril")
+                          )
+
+gam <- renewalCount(formula = quine_form, data = quine, dist = "gamma",
+                    computeHessian = FALSE, weiMethod = "conv_dePril",
+                    control = renewal.control(trace = 0,
+                                              method = "nlminb"),
+                        convPars = list(convMethod = "dePril")
+                    )
+
+gengam <- renewalCount(formula = quine_form, data = quine, dist = "gengamma",
+                       computeHessian = FALSE, weiMethod = "conv_dePril",
+                       control = renewal.control(trace = 0,
+                                                 method = "nlminb"),
+                           convPars = list(convMethod = "dePril")
+                       )
+#+END_SRC
+
+#+RESULTS[d184934924d05f2d479f9bb32df834fb58b663e8]: models
+
+#+RESULTS[5348cd6c85de976aeb8e2ee5ca24229e9b98fd35]: modelso
+
+Note that it is possible to try several optimisation algorithms in a single call to
+~renewalCount()~, as in the computation of ~wei~ above  for the weibull-count model. 
+The function will choose the best performing one in terms of
+value of the objective function (largest log-likelihood). It also reports the
+computation time  of each method, which may be useful for future computations
+(for example, bootstrap).
+
+
+* Model Selection and Comparison
+
+The different models considered here are fully parametric. Therefore, a
+straightforward method to use to discriminate between models is a likelihood
+ratio test (LR). This is possible when models are nested and in this case the LR
+statistic has the usual $\chi^2(p)$ distribution, where $p$ is the difference in
+the number of parameters in the model. In this current study, we can compare all
+the renewal-count models against Poisson, negative-binomial against Poisson,
+weibull-count against generalised-gamma and gamma against the generalised-gamma.
+
+For non-nested models, the standard approach is to use information criteria such
+as the Akaike information criterion (AIC) and the Bayesian information criterion
+(BIC). This method can be applied to discriminate between weibull and gamma
+renewal count models and between these two models and the negative binomial.
+
+Therefore, a possible strategy can be summarised as follows:
++ Use the LR test to compare Poisson with negative binomial.
++ Use the LR test to compare Poisson with weibull-count.
++ Use the LR test to compare Poisson with gamma-count.
++ Use the LR test to compare Poisson with generalised-gamma-count.
++ Use the LR test to compare weibull-count with generalised-gamma-count.
++ Use the LR test to compare gamma-count with generalised-gamma-count.
++ Use information criteria to compare gamma-count with weibull-count.
++ Use information criteria to compare weibull-count to negative binomial.
+
+#+NAME: lr-test-poisson
+#+BEGIN_SRC R :results output latex :exports results 
+library(lmtest)
+pois_nb <- lrtest(pois, nb)
+pois_wei <- suppressWarnings(lrtest(pois, wei))
+pois_gam <- suppressWarnings(lrtest(pois, gam))
+pois_gengam <- suppressWarnings(lrtest(pois, gengam))
+pois_res <- data.frame("Alternative model" = c("negative-binomial", "weibull",
+                                 "gamma", "generalised-gamma"),
+                       Chisq = c(pois_nb$Chisq[2], pois_wei$Chisq[2],
+                                 pois_gam$Chisq[2], pois_gengam$Chisq[2]),
+                       Df = c(1, 1, 1, 2),
+                       Critical_value = c(rep(qchisq(0.95, 1), 3),
+                                           qchisq(0.95, 2)),
+                       stringsAsFactors = FALSE                    
+                       )                  
+                         
+print(xtable(pois_res, caption = "LR results against Poisson model. Each row compares an alternative model vs the Poisson model. All alternatives are preferable to Poisson.", 
+             label = "tab:lr_pois"))                        
+#+END_SRC
+
+#+RESULTS[5ae327a69957df9f56acc0d21525b81ad2f3c4ef]: lr-test-poisson
+#+BEGIN_EXPORT latex
+% latex table generated in R 3.4.1 by xtable 1.8-2 package
+% Wed Nov 15 07:06:47 2017
+\begin{table}[ht]
+\centering
+\begin{tabular}{rlrrr}
+  \hline
+ & Alternative.model & Chisq & Df & Critical\_value \\ 
+  \hline
+1 & negative-binomial & 1192.03 & 1.00 & 3.84 \\ 
+  2 & weibull & 1193.21 & 1.00 & 3.84 \\ 
+  3 & gamma & 1193.36 & 1.00 & 3.84 \\ 
+  4 & generalised-gamma & 1194.46 & 2.00 & 5.99 \\ 
+   \hline
+\end{tabular}
+\caption{LR results against Poisson model. Each row compares an alternative model vs the Poisson model. All alternatives are preferable to Poisson.} 
+\label{tab:lr_pois}
+\end{table}
+#+END_EXPORT
+
+As observed in Table \ref{tab:lr_pois}, the LR test rejects the null
+hypothesis and all the alternative models are preferred to Poisson. This due to
+the large over-dispersion discussed in the previous section. Next, we use the LR
+test to discriminate between the renewal count models:
+#+NAME: lr-test-renewal
+#+BEGIN_SRC R :results output latex :exports results 
+gengam_wei <- lrtest(wei, gengam)
+gengam_gam <- lrtest(gam, gengam)
+
+gengam_res <- data.frame(Model = c("weibull", "gamma"),
+                         Chisq = c(gengam_wei$Chisq[2], gengam_gam$Chisq[2]),
+                         Df = 1,
+                         Critical_value = rep(qchisq(0.95, 1), 2),
+                         stringsAsFactors = FALSE                    
+                         )                  
+                         
+print(xtable(gengam_res, caption = "LR results against generalised-gamma model", 
+             label = "tab:lr_gengam"))                        
+#+END_SRC
+
+#+RESULTS[2b5c70f524a425d7bc82a05428b073622ebe713f]: lr-test-renewal
+#+BEGIN_EXPORT latex
+% latex table generated in R 3.4.1 by xtable 1.8-2 package
+% Wed Nov 15 07:06:48 2017
+\begin{table}[ht]
+\centering
+\begin{tabular}{rlrrr}
+  \hline
+ & Model & Chisq & Df & Critical\_value \\ 
+  \hline
+1 & weibull & 1.25 & 1.00 & 3.84 \\ 
+  2 & gamma & 1.10 & 1.00 & 3.84 \\ 
+   \hline
+\end{tabular}
+\caption{LR results against generalised-gamma model} 
+\label{tab:lr_gengam}
+\end{table}
+#+END_EXPORT
+
+The results of Table \ref{tab:lr_gengam} suggest that the weibull and gamma models
+should be preferred to the generalised gamma model.
+
+Finally, we use information criteria to choose the best model among the weibull
+and gamma renewal models and the negative binomial:
+#+NAME: IC-models
+#+BEGIN_SRC R :results output latex :exports both
+ic <- data.frame(Model = c("weibull", "gamma", "negative-binomial"),
+                 AIC = c(AIC(wei), AIC(gam), AIC(nb)),
+                 BIC = c(BIC(wei), BIC(gam), BIC(nb)),
+                 stringsAsFactors = FALSE                    
+                 )                  
+                         
+print(xtable(ic, caption = "Information criteria results", 
+             label = "tab:ic_models"))                        
+#+END_SRC
+
+#+RESULTS[690feeae4a41b050c6f128e3fba693da7a8d6eb2]: IC-models
+#+BEGIN_EXPORT latex
+% latex table generated in R 3.4.2 by xtable 1.8-2 package
+% Tue Nov 14 16:51:36 2017
+\begin{table}[ht]
+\centering
+\begin{tabular}{rlrr}
+  \hline
+ & Model & AIC & BIC \\ 
+  \hline
+1 & weibull & 1107.98 & 1131.84 \\ 
+  2 & gamma & 1107.83 & 1131.70 \\ 
+  3 & negative-binomial & 1109.15 & 1133.02 \\ 
+   \hline
+\end{tabular}
+\caption{Information criteria results} 
+\label{tab:ic_models}
+\end{table}
+#+END_EXPORT
+
+It is worth noting here that all models have the same degree of freedom and
+hence comparing information criteria is equivalent to comparing the likelihood
+value. According to Table \ref{tab:ic_models}, the gamma renewal model is slightly
+preferred to the weibull model.   
+
+* Goodness-of-fit
+We conclude this analysis by running a formal chi-square goodness of fit test 
+\citep[Section 5.3.4]{cameron2013regression} to the results of the previously
+selected model.
+#+NAME: go-f
+#+BEGIN_SRC R :results output
+  gof <- chiSq_gof(gam, breaks = breaks_)
+  print(gof)
+#+END_SRC
+
+#+RESULTS[f7ef5d5faac42e03f502350b3ee405dbaf82ac4e]: go-f
+: chi-square goodness-of-fit test
+: 
+: Cells considered 0 1-2 3-4 5 6 7-8 9-11 12-14 15-16 17-22 23-26 27-31 >= 32
+:   DF  Chisq Pr(>Chisq)
+: 1 12 17.502     0.1317
+
+The null hypothesis cannot be rejected at standard confidence levels and
+conclude that the selected model presents a good fit to the data. User can check
+that the same test yields similar results for the weibull and negative binomial
+models but comfortably rejects the null hypothesis for the Poisson and
+generalised gamma models. These results confirm what we observed in the previous
+section.
+ 
+* Save Image                                                  :ignoreheading:
+We conclude this document by saving the work space to avoid re-running the
+computation in future exportation of the document:
+#+NAME: save-workspace
+#+BEGIN_SRC R  :exports code :cache no :results value silent
+save.image()
+#+END_SRC
+
+
+
+
+* Bibliography :ignoreheading:
+\bibliographystyle{apalike}
+\bibliography{quine}
+
+
+# Local Variables:
+# org-ref-default-bibliography: REFERENCES.bib
+# fill-column: 80
+# End:

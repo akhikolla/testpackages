@@ -1,0 +1,1 @@
+dataf.growth <- function() return(getdata("growth"))

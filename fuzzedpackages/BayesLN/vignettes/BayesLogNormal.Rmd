@@ -1,0 +1,284 @@
+---
+title: "Bayesian Inference with Log-normal Data"
+author: "Aldo Gardini, Carlo Trivisano and Enrico Fabrizi"
+date: "`r Sys.Date()`"
+bibliography: bibliography.bib
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Bayesian Inference with Log-normal Data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+
+library(BayesLN)
+```
+
+## Introduction 
+Inference under the log-normal assumption for the data looks simple as parameters can be estimated taking the log- transform and then working with normality of the transformed data. Estimation of descriptors of the variable in question before transformation (such as median, mean, quantiles, variance, etc...) involve back-transformation can be critical as naive estimators can perform poorly. 
+Here we focus on the estimation of a log-normal mean and quantiles and on the prediction of the conditional expectation in a lognormal linear and linear mixed models. In all these cases these estimates can be defined as functionals (involving the exp) of parameters estimated on log-transformed data. In the first place, back-transforming involves bias whenever the transformation is nonlinear, but this is not the only problem. In fact, one may suppose that this inferential issue is easily overcome in the Bayesian framework by sampling directly from the posterior distributions of the target functional, but there can be problems with the posteriors obtained assuming most of the priors popular in the analysis of normal data.
+
+If Bayes estimator under the quadratic loss function are to be considered (i.e., the posterior mean), the finiteness of the posterior moments must be assured at least up to the second order, to obtain the posterior variance too. The existence of such posterior moments, which is crucial to summarize the posterior distribution using squared loss, is often taken for granted, but this may not be the case for many prior choices. Furthermore, if estimation is performed through MCMC methods the non-existence of posterior moments cannot be easily detected.
+
+When an improper prior is fixed, a lot of care is usually taken in the properness of the posterior distribution. Even if the distribution is proper, it is not guaranteed that its moments are finite. This is the case with the Bayes estimators of log-normal functionals when the analysis is based on the choice of popular priors, both improper and proper (like the inverse gamma for the log-scale variance). For the estimation of the mean of a log-normal variable, this issue was first highlighted by @zellner1971bayesian and then the issues affecting the Bayesian estimation of the log-normal mean were faced by @fabrizi2012bayes and @fabrizi2016bayesian, wherein the log-normal linear model was considered. The core of their proposal consists of specifying a generalized inverse Gaussian (GIG) prior for the variance in the log-scale $\sigma^2$. In this way, existence conditions for the posterior moments of the target functionals to estimate were found and a careful inferential procedure in the Bayesian framework was proposed. 
+
+Functions that allows to carry out Bayesian inference for important functionals under the log-normality assumption are included in the `BayesLN` package. With respect to the theory covered in Fabrizi and Trivisano (2012, 2016), the `BayesLN` package offers tools for the estimation of quantiles [@gardini2020bayesian] and means under mixed models too.
+
+## Some theoretical results
+
+In this section, a brief overview of the theoretical problems are presented, followed by some key results, in order to motivate and describe the usefulness of the `R` functions implemented in the package. 
+
+### Model with only fixed effects
+The conditional estimation problem is directly faced, since the unconditional case can be easily deduced as a special case. 
+
+In this context, a random sample of size $n$ is observed:
+\begin{equation*}
+(y_i,\mathbf{x}_i),\ i=1\dots n;
+\end{equation*}
+where $\mathbf{x}_i$ is a vector containing the values of the $p$ covariates that are related to the $i$-th unit. These vectors are stored as rows of the usual design matrix $\mathbf{X}\in\mathbb{R}^{n\times p}$. Besides, the vector of the logarithmic transformation of the response variable is $\mathbf{w}=\log(\mathbf{y})$. Finally, the following distributional assumption is fixed:
+\begin{equation}\label{eq:ass_reg}
+y_i|\mathbf{x}_i,\boldsymbol{\beta},\sigma^2\sim \log\mathcal{N}\left(\mathbf{x}_i^T\boldsymbol{\beta},\sigma^2\right),\ i=1,\dots n,
+\end{equation}
+where $\boldsymbol{\beta}=(\beta_0,...,\beta_{p-1})$ is the vector of coefficients. 
+
+To complete the inferential setting, the improper flat prior is assumed for the regression coefficients and a generalized inverse Gaussian (GIG) prior is fixed for the variance in the log scale $\sigma^2$:
+\begin{align}
+&\boldsymbol{\beta}\propto 1,\\
+&\sigma^2\sim GIG(\lambda, \delta, \gamma)\label{eq:priors_model_GIG};
+\end{align}
+where $\lambda\in \mathbb{R}$, $\delta\in \mathbb{R}^+$ and $\gamma\in \mathbb{R}^+$ are the hyperparameter to specify. 
+
+The inferential questions that will be answered involve two basic functionals of the log-normal theory:
+
+* the conditional mean at a given a point $\tilde{\mathbf{x}}\in\mathbb{R}^{q}$ of the covariate space:
+
+\begin{equation}
+\theta_m(\tilde{\mathbf{x}})=\mathbb{E}\left[\tilde{y}|\tilde{\mathbf{x}}\right]=\exp\left\{\tilde{\mathbf{x}}^T\boldsymbol{\beta}+\frac{\sigma^2}{2} \right\};
+\end{equation} 
+and the function `LN_MeanReg()` allows to make inference on this quantity;
+
+* the $p$-th quantile at a given a point $\tilde{\mathbf{x}}\in\mathbb{R}^{q}$ of the covariate space:
+
+\begin{equation}
+\theta_p(\tilde{\mathbf{x}})=\mathbb{Q}_p\left[\tilde{y}|\tilde{\mathbf{x}}\right]=\exp\left\{\tilde{\mathbf{x}}^T\boldsymbol{\beta}+\Phi^{-1}(p)\sigma \right\},
+\end{equation}
+and the function `LN_QuantReg()` can be used to obtain posterior summaries for this quantity.
+
+It is possible to prove that the posterior moments of these functionals are finite up to order $r$ if the following conditions on the tail parameter $\gamma$ of the GIG prior holds. 
+
+* $\mathbb{E}[\theta_m(\tilde{\mathbf{x}})^r|\mathbf{y}]<\infty$ if $\gamma>r+r^2\tilde{\mathbf{x}}^T(\mathbf{X}^T\mathbf{X})^{-1}\tilde{\mathbf{x}}$;
+* $\mathbb{E}[\theta_p(\tilde{\mathbf{x}})^r|\mathbf{y}]<\infty$ if $\gamma>r^2\tilde{\mathbf{x}}^T(\mathbf{X}^T\mathbf{X})^{-1}\tilde{\mathbf{x}}$.
+
+In the proposed software implementation of the methodologies, the conditions on the parameter $\gamma$ are evaluated with $r=3$ to set the hyperparameter value, in order to assure the stable existence of the posterior variance. 
+
+It is useful to remark that in case of unconditional estimation, the previous target quantities and the related conditions reduce to the following ones:
+
+* The unconditional mean is $\theta_m=\exp\{\beta_0+\frac{\sigma^2}{2}\}$ and the moments are defined up to order $r$ if $\gamma>r+\frac{r^2}{n}$. The function `LN_Mean()` can be used for this particular case. 
+* The unconditional quantile is $\theta_p=\exp\{\beta_0+\Phi^{-1}(p)\sigma\}$, the moments are defined up to order $r$ if $\gamma>\frac{r^2}{n}$ and the function `LN_Quan()` can be used.
+
+The last aspect to determine is the hyperparameters specification. For all the `R` functions related to these quantities, two different strategies are proposed and can be selected through the `method` argument:
+
+* If a weakly informative prior for the variance is desired, the (default) `"weak_inf"` option can be chosen. In this way, it has been proved that credibility intervals with good frequentist properties are obtained [@fabrizi2012bayes].
+* If the point estimation is desired, optimal-MSE procedures are implemented too and can be set using the `"optimal"` option. For details of the setting related to the mean estimation process see @fabrizi2012bayes and @fabrizi2016bayesian. For quantiles a numerical procedure is called. 
+
+
+### Conditional means estimation under linear mixed models
+
+In this case we are considering a vector of responses $\mathbf{y}\in\mathbb{R}^n$ and the assumption of log-normality for the response means analysing the log-transformed vector $\mathbf{w}=\log \mathbf{y}$ as normally distributed. The classical formulation of the model is: 
+\begin{equation}
+\mathbf{w}= \mathbf{X}\boldsymbol{\beta}+\mathbf{Zu}+\boldsymbol{\varepsilon}.
+\end{equation}
+ The coefficients of the fixed effects are in the vector $\boldsymbol{\beta}\in\mathbb{R}^p$, whereas $\mathbf{u}\in\mathbb{R}^m$ is the vector of random effects and $\boldsymbol{\varepsilon}\in\mathbb{R}^{n}$ is the vector of residuals. The design matrices are $\mathbf{X}\in\mathbb{R}^{n\times p}$, that is assumed to be full rank in order to guarantee the existence of $(\mathbf{X}^T\mathbf{X})^{-1}$, and $\mathbf{Z}\in\mathbb{R}^{n\times m}$. The following Bayesian hierarchical model is studied: 
+
+\begin{equation}\label{eq:mod_mix}
+\begin{aligned}
+&\mathbf{w}|\mathbf{u}, \boldsymbol{\beta}, \sigma^2\sim \mathcal{N}_n\left(\mathbf{X}\boldsymbol{\beta}+\mathbf{Zu}, \mathbf{I}_n\sigma^2 \right);\\
+&\mathbf{u}|\tau^2_1,...,\tau^2_q\sim\mathcal{N}_m\left(\mathbf{0}, \mathbf{D}\right),\  \mathbf{D}=\oplus^q_{s=1}\mathbf{I}_{m_s}\tau_s^2;\\
+&(\boldsymbol{\beta},\sigma^2)\sim p(\boldsymbol{\beta},\sigma^2);\\
+&\boldsymbol{\tau}^2\sim p(\tau_1^2,...,\tau_q^2).
+\end{aligned}
+\end{equation}
+
+Since $q$ random factors are considered, $q$ different variances related to the random components $\boldsymbol{\tau}^2=(\tau^2_1,...,\tau^2_q)$ are included in the model. Therefore, it is possible to split the vector of random effects in $\mathbf{u}=[\mathbf{u}_1^T,...,\mathbf{u}_s^T,...,\mathbf{u}_q^T]^T$, where $\mathbf{u}_s\in\mathbb{R}^{m_s}$ with $\sum_{s=1}^q m_s=m$. The design matrix of the random effects might be partitioned too: $\mathbf{Z}=[\mathbf{Z}_1\cdots \mathbf{Z}_s\cdots\mathbf{Z}_q]$. 
+
+The function `LN_hierarchical()` allows the user to make inference on the desired log-normal linear mixed model by sampling from the posterior distributions through a Gibbs sampler. The model equation need to be given to the `formula_lme` argument using the same syntax as the `lmer()` function of the `lme4` package [@lme].
+
+In practice, the interpretable outputs are usually provided in the original data scale, back-transforming the results obtained estimating the previous model. Exploiting the properties of the log-normal distribution, the following quantities can be of interest:
+
+* the conditioned expectation of the observation $\tilde{y}$ given the random effects and the covariate patterns $\tilde{\mathbf{x}},\ \tilde{\mathbf{z}}$ (quantity that could be also labelled as subject-specific expectation). It is defined as:
+
+\begin{equation}
+\theta_c(\tilde{\mathbf{x}},\tilde{\mathbf{z}})=\mathbb{E}\left[\tilde{y}|\mathbf{u},\tilde{\mathbf{x}},\tilde{\mathbf{z}}\right]=\exp\left\{\tilde{\mathbf{x}}^T\boldsymbol{\beta}+\tilde{\mathbf{z}}^T\mathbf{u}+\frac{\sigma^2}{2} \right\},
+\end{equation}
+
+* if the random effects are ignored and they are integrated out, then the conditioned expectation of interest is:
+
+\begin{equation}\label{eq:avg_marg}
+\theta_m(\tilde{\mathbf{x}})=\mathbb{E}\left[\tilde{y}|\tilde{\mathbf{x}}\right]=\exp\left\{\tilde{\mathbf{x}}^T\boldsymbol{\beta}+\frac{1}{2}\left(\sigma^2+\sum_{s=1}^q \tau_s^2\right) \right\};
+\end{equation}
+
+* the posterior predictive distribution $p(\tilde{y}|\mathbf{y})$ and its posterior moments is a further quantity that might be investigated.
+
+The argument `functional` of the `LN_hierarchical()` function let the user specify the kind of functionals for which the posterior distribution is of interest: the posterior of $\theta_c(\tilde{\mathbf{x}},\tilde{\mathbf{z}})$ is obtained by specifying `"Subject"`, $\theta_m(\tilde{\mathbf{x}})$ with `"Marginal"` and the posterior predictive distribution with `"PostPredictive"`. Moreover, the argument `data_pred` allow to provide a data frame containing the desired covariate points for which the target quantities need to be computed. 
+
+As in the previous section, independent GIG priors are adopted for the variance components:
+\begin{equation}
+p(\sigma^2)\sim GIG(\lambda_\sigma,\delta_\sigma,\gamma_\sigma);\ \ p(\tau_s^2)\sim GIG(\lambda_{\tau,s},\delta_{\tau,s} ,\gamma_{\tau,s}),\ \forall s.
+\end{equation}
+Moreover, it is possible to prove that the tail parameter $\gamma$ is involved again in the existence conditions for the posterior moments of the target quantities defined above. In particular:
+
+* $\mathbb{E}\left[\theta_c^r(\tilde{\mathbf{x}},\tilde{\mathbf{z}})|\mathbf{w}\right]$ exists if $\gamma_{\sigma}^2>r+r^2\tilde{\mathbf{x}}^T\left(\mathbf{X}^T\mathbf{X}\right)^{-1}\tilde{\mathbf{x}}$;
+* $\mathbb{E}\left[\theta_m^r(\tilde{\mathbf{x}})|\mathbf{w}\right]$ exists if $\gamma_{\sigma}^2>r+r^2\tilde{\mathbf{x}}^T\left(\mathbf{X}^T\mathbf{X}\right)^{-1}\tilde{\mathbf{x}}$ and $\gamma^2_{\tau,s}>r+r^2\tilde{\mathbf{x}}_{o}^T\mathbf{L}_s\tilde{\mathbf{x}}_{o},\ \forall s$;
+* $\mathbb{E}\left[\tilde{y}^r|\mathbf{y}\right]$ exists if $\gamma_{\sigma}^2>r^2+r^2\tilde{\mathbf{x}}^T\left(\mathbf{X}^T\mathbf{X}\right)^{-1}\tilde{\mathbf{x}}$.
+
+If the first and the latter conditions are equal to the ones stated in the previous section and only the tail parameter of the prior for $\sigma^2$ is involved, the existence condition for the posterior moments of $\theta_m(\tilde{\mathbf{x}})$ requires a constraint on $\gamma_{\tau,s}$ too. This expression is function of the the matrix $\mathbf{L}_s\in\mathbb{R}^{p\times p}$: its entries are all 0s with the exception of the first $l \times l$ square block $\mathbf{L}_{s;1,1}$, where $l=p-\text{rank}\{ \mathbf{X}^T\left(\mathbf{I}-\mathbf{P_Z} \right)\mathbf{X}\}$. It coincides with the number of variables of $\mathbf{X}$ that are included in $\mathbf{Z}$ too. Furthermore, to simplify the final form of the result, it is useful to place the columns related to these variables as first $l$ columns of the \textit{ordered design matrix} $\mathbf{X}_o$, without loss of generality. As a consequence, the matrix $\mathbf{L}_{s;1,1}$ coincides with the inverse of the upper left $l \times l$ block on the diagonal of the matrix $\mathbf{X}_o^T\left(\mathbf{Z}(\mathbf{Z}^T\mathbf{Z})^{-}\mathbf{C}_s (\mathbf{Z}^T\mathbf{Z})^{-}\mathbf{Z}^T\right)\mathbf{X}_o$, where $\mathbf{C}_s$ is the null matrix with the exception of $\mathbf{I}_{m_s}$ as block on the diagonal in correspondence to the $s$-th variance component of the random effect. To complete the notation, $\tilde{\mathbf{x}}_{o}$ is the covariate pattern of the observation to estimate that is ordered coherently with respect to $\mathbf{X}_o$.
+
+Because of the non-intuitive expressions of the existence conditions, the function `LN_hier_existence()` is implemented to compute them. This routine is called by the function `LN_hierarchical()` to fix the values of the hyperparameters in order to fulfil the more restrictive existence condition for the functionals of interest, if the default priors are desired. To specify different priors, the arguments `par_tau` and `par_sigma` can be used. 
+
+Otherwise, if the proposed prior specification is adopted, the key concepts of the strategy can be synthesized as follows:
+
+* the hyperparameters of all the priors are the same, to preserve the prior balance among the different variance components;
+* as tail parameter $\gamma$, the more restrictive condition is evaluated replacing $r$ with the specified `order_moment` (default 2) plus 1;
+* to obtain uniform marginal priors for the intraclass correlation coefficients, it is fixed $\lambda=1$ and $\delta=\varepsilon=0.01$.
+
+
+
+## Real data applications
+
+To show how the functions of the package work and to briefly illustrate the produced outputs, some real data application are presented in this section.
+
+### Unconditional estimation
+
+In environmental monitoring, it is common to deal with small datasets containing observations of pollutant concentrations and for which the log-normality assumption appears to be appropriate. 
+In these applications, it is important to provide both point estimates and intervals, that constitutes the so-called confidence limits.
+A popular example included in @USEPA09 is faced: it consists of a small sample ($n=8$) of chrysene concentrations (ppb) obtained from two background wells. The vector of observations is already included in the package and is named `EPA09`.
+
+First, the mean estimation problem is faced and the function `LN_Mean()` is used. If a point estimate is desired, the advise is to use the `"optimal"` prior setting. Since the observations are not already log-transformed, the argument `x_transf` is set as `FALSE`.
+
+```{r}
+# Load dataset
+data("EPA09")
+
+# Bayes estimator under relative quadratic loss and optimal prior setting
+LN_Mean(x = EPA09, x_transf = FALSE, method = "optimal", CI = FALSE)
+
+```
+
+The output reports the prior parameters for the variance $\sigma^2\sim GIG(\lambda, \delta, \gamma)$ and the 5 parameters that characterize the posterior distribution of the log-normal mean $\theta_m$, i.e. a Generalized Hyperbolic distribution (see @fabrizi2012bayes for more methodological details). Then, the basic summaries of the posterior distributions of the log-normal parameters are reported (`xi` is the log-scale mean and `sigma2` the log-scale variance). Finally, the posterior mean $\mathbb{E}[\theta_m|\mathbf{y}]$ and the posterior standard deviation of the target quantity are reported (note that these values are obtained in closed form, without MC simulations).
+
+On the other hand, if the interval estimate is required, it is advisable to use the weakly informative (`"weak_inf"`) prior setting, specify the desired credibility level `alpha_CI` and select the type of interval: it is possible to obtain as output the usual two sided interval (`"two-sided"`), the lower credible limit (`"LCL"`) and the upper credible limit (`"UCL"`). The last two interval kinds are often required in environmental problems to estimate pollutants legal limits. For example, the $95\%$ UCL can be estimated as follows.
+
+```{r}
+LN_Mean(x = EPA09, x_transf = FALSE, method = "weak_inf", alpha_CI = 0.05, type_CI = "UCL")
+```
+
+The interval is added to the previous output, noting that the posterior quantiles required to produce the interval are obtained by simulation.
+
+The same procedures can be implemented also if the interest is in estimating a quantile $\theta_p$ under the log-normality assumption. For example, if the target is quantile $p=0.95$, to find an optimal point estimate it is possible to use the following command. 
+
+```{r}
+LN_Quant(x = EPA09, quant = 0.95, method = "optimal", CI = FALSE)
+```
+
+The output is similar to the one printed for the mean $\theta_m$ and in this case the posterior mean and standard deviation of the desired quantile $\theta_p$ are reported. To compute an interval estimate, the function can be used as showed for `LN_Mean()`.
+
+
+### Log-normal regression 
+
+The presented methods can be useful in predicting conditioned means under a log-normal linear model. 
+The function `LN_MeanReg()` receives as input the vector `y` containing the observations of the response variable and the design matrix `X`. A matrix `Xtilde`, containing the covariate patterns for which a prediction is required, must be provided too. Likewise the unconditional estimation problem, it is possible to specify both an optimal prior setting and a weakly informative one. 
+
+As illustrative example, the same data used in @fabrizi2016bayesian are considered, loading the `"fatigue"` dataset. Results for the weakly informative setting are reported. 
+
+```{r}
+# Load data
+data("fatigue")
+
+# Design matrices
+Xtot <- cbind(1, log(fatigue$stress), log(fatigue$stress)^2)
+X <- Xtot[-c(1,13,22),]
+y <- fatigue$cycle[-c(1,13,22)]
+Xtilde <- Xtot[c(1,13,22),] # units to predict
+
+#Estimation
+
+LN_MeanReg(y = y,
+           X = X, Xtilde = Xtilde,
+           method = "weak_inf", y_transf = FALSE)
+```
+
+
+For each one of the points for which a prediction is required, the summaries of the posterior distributions are reported: `$Sigma2` represents the variance in the log scale, whereas the `$Coefficients` reports the summaries of the vector of coefficients $\boldsymbol{\beta}$.
+
+
+
+
+
+### Random coefficient model
+
+As last example, the estimation of log-normal linear mixed model is presented. The analysed dataset is due to @gibson2013processing and consists of a two-conditions repeated measure collection of observations of the time (in milliseconds) required to read the head noun of a Chinese clause. The following model is specified: 
+\begin{equation}
+w_{ijk}=\log(y_{ijk})=\beta_0+\beta_1 x_{i}+u_j+v_k+\varepsilon_{ijk},
+\end{equation}
+where $y_{ijk}$ is the reading time observed for subject $j=1,...,37$, reading item $k=1,...,15$ and condition $i=1,2$. Moreover, it is fixed $x_i=-1$ in case of subject relative, and $x_i=1$ for object relative condition. 
+
+The goal of the analysis is to predict the expectation conditioned on $x_i$ and marginalized with respect both the random effect:
+\begin{equation}
+\theta_m(x_i=\pm 1)=\exp\left\{\beta_0\pm\beta_1+\frac{\tau^2_u+\tau^2_v+\sigma^2}{2} \right\}.
+\end{equation}
+Moreover, the expectation specific of a particular subject and item might be of interest too: 
+\begin{equation}
+\theta_c(x_i,u_j,v_k)=\exp\left\{\beta_0+x_i\beta_1+u_j+v_k+\frac{\sigma^2}{2} \right\},
+\end{equation}
+
+As example, the prediction of these quantities for both the values of the covariate $x_i$ related to subject $12$ and item $8$ are desired. A new `data.frame` containing the desired covariate patterns must be created.
+
+```{r}
+# Load the dataset included in the package 
+data("ReadingTime")
+
+# Define data.frame containing the covariate patterns to investigate
+data_pred_new <- expand.grid(so=c(-1,1), subj=factor(12), item=factor(8))
+
+# Model estimation 
+Mod_est_RT <- LN_hierarchical(formula_lme = log_rt ~ so +(1|subj)+(1|item), 
+                              data_lme = ReadingTime, data_pred = data_pred_new, 
+                              functional = c("Marginal", "Subject"), 
+                              nsamp = 25000, burnin = 5000, n_thin = 5)
+```
+
+As hinted before, the same priors for all the variance components are specified, choosing the most restrictive value for the parameter $\gamma$ (i.e. the highest one). To check the values, the element `$par_prior` of the output can be printed.
+
+```{r}
+# Prior parameters
+Mod_est_RT$par_prior
+```
+
+The `$samples` element is an object of class `mcmc` containing the samples drown from the posterior distributions of the model parameters and of the target functionals. The usual tools provided by the `coda` package [@coda] can be used to explore them. For example, the chains convergence can be explored plotting the traceplots.  
+
+```{r, fig.width = 6.5}
+# coda package
+library(coda)
+# Traceplots model parameters
+oldpar <- par(mfrow=c(2,3))
+traceplot(Mod_est_RT$samples$par[, 1:6])
+par(oldpar)
+```
+
+
+Finally, the `$summaries` part contains the summary statistics of the posterior distributions of the parameters and the functionals required. It is possible to isolate the outputs related to the latter as follows.
+
+```{r}
+# Posterior summaries
+Mod_est_RT$summaries$marg
+Mod_est_RT$summaries$subj
+```
+
+
+
+## References

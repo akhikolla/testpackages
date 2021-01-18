@@ -1,0 +1,1300 @@
+\documentclass[10pt]{article}\usepackage[]{graphicx}\usepackage[]{color}
+% maxwidth is the original width if it is less than linewidth
+% otherwise use linewidth (to make sure the graphics do not exceed the margin)
+\makeatletter
+\def\maxwidth{ %
+  \ifdim\Gin@nat@width>\linewidth
+    \linewidth
+  \else
+    \Gin@nat@width
+  \fi
+}
+\makeatother
+
+\definecolor{fgcolor}{rgb}{0.345, 0.345, 0.345}
+\newcommand{\hlnum}[1]{\textcolor[rgb]{0.686,0.059,0.569}{#1}}%
+\newcommand{\hlstr}[1]{\textcolor[rgb]{0.192,0.494,0.8}{#1}}%
+\newcommand{\hlcom}[1]{\textcolor[rgb]{0.678,0.584,0.686}{\textit{#1}}}%
+\newcommand{\hlopt}[1]{\textcolor[rgb]{0,0,0}{#1}}%
+\newcommand{\hlstd}[1]{\textcolor[rgb]{0.345,0.345,0.345}{#1}}%
+\newcommand{\hlkwa}[1]{\textcolor[rgb]{0.161,0.373,0.58}{\textbf{#1}}}%
+\newcommand{\hlkwb}[1]{\textcolor[rgb]{0.69,0.353,0.396}{#1}}%
+\newcommand{\hlkwc}[1]{\textcolor[rgb]{0.333,0.667,0.333}{#1}}%
+\newcommand{\hlkwd}[1]{\textcolor[rgb]{0.737,0.353,0.396}{\textbf{#1}}}%
+\let\hlipl\hlkwb
+
+\usepackage{framed}
+\makeatletter
+\newenvironment{kframe}{%
+ \def\at@end@of@kframe{}%
+ \ifinner\ifhmode%
+  \def\at@end@of@kframe{\end{minipage}}%
+  \begin{minipage}{\columnwidth}%
+ \fi\fi%
+ \def\FrameCommand##1{\hskip\@totalleftmargin \hskip-\fboxsep
+ \colorbox{shadecolor}{##1}\hskip-\fboxsep
+     % There is no \\@totalrightmargin, so:
+     \hskip-\linewidth \hskip-\@totalleftmargin \hskip\columnwidth}%
+ \MakeFramed {\advance\hsize-\width
+   \@totalleftmargin\z@ \linewidth\hsize
+   \@setminipage}}%
+ {\par\unskip\endMakeFramed%
+ \at@end@of@kframe}
+\makeatother
+
+\definecolor{shadecolor}{rgb}{.97, .97, .97}
+\definecolor{messagecolor}{rgb}{0, 0, 0}
+\definecolor{warningcolor}{rgb}{1, 0, 1}
+\definecolor{errorcolor}{rgb}{1, 0, 0}
+\newenvironment{knitrout}{}{} % an empty environment to be redefined in TeX
+
+\usepackage{alltt}
+%*********************************************************************
+%*********************************************************************
+\usepackage{amsmath}
+\usepackage{amscd}
+\usepackage{bbm}
+\usepackage{cite}
+
+%\VignetteIndexEntry{texmex1d}
+%\VignetteEngine{knitr}
+
+%*********************************************************************
+
+
+
+%*********************************************************************
+%DEFINE SYMBOLS
+\def\IR{\hbox{{\rm I}\kern -0.2em\hbox{{\rm R}}}}
+\def\bX{\boldsymbol X}
+\def\bY{\boldsymbol Y}
+\def\bZ{\boldsymbol Z}
+\def\bc{\boldsymbol c}
+\def\bd{\boldsymbol d}
+\def\balpha{\boldsymbol \alpha}
+\def\bbeta{\boldsymbol \beta}
+%*********************************************************************
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\begin{document}
+
+
+
+
+\title{Univariate Extreme Value Modelling  using R}
+\author{Harry Southworth and Janet E.\ Heffernan}
+\maketitle
+
+\setkeys{Gin}{width=1.0\textwidth}
+%
+\section{Introduction}
+%
+This document illustrates the use of the {\tt texmex} package
+for performing extreme value analysis of some environmental data in {\tt R},~\cite{R}.  This package vignette focusses on univariate extreme value modelling of threshold excesses using the generalized Pareto distribution (GPD), and of data arising as maxima, using the generalized extreme value (GEV) distribuion.  The separate vignette {\tt texmexMultivariate} examines multivariate extreme value
+modelling using a conditional threshold based approach.  For extreme value modelling of temporally dependent Peaks over Threshold data by using declustering, see the package vignette {\tt declustering}.
+
+To cite this vignette, refer to Vignette name: {\tt texmex1d} and use the package citation:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{verbatim}
+## 
+## To cite package 'texmex' in publications use:
+## 
+##   Harry Southworth, Janet E. Heffernan and Paul D. Metcalfe (2020).
+##   texmex: Statistical modelling of extreme values. R package version
+##   2.4.4.
+## 
+## A BibTeX entry for LaTeX users is
+## 
+##   @Manual{,
+##     title = {texmex: Statistical modelling of extreme values},
+##     author = {Harry Southworth and Janet E. Heffernan and Paul D. Metcalfe},
+##     year = {2020},
+##     note = {R package version 2.4.4},
+##   }
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+Extreme value statistical models are unusual among statistical models in that they are often required for extrapolation beyond levels observed in the data.  As statisticians, we are told that extrapolation from statistical models is perilous: our models can only be trusted in regions where we have sufficient data to calibrate and check goodness of model fit.  Extreme value modelling has responded to a demand for extrapolation beyond this safe region.  Since we can no longer rely on data as a check on our models' suitability, extreme value statisticians turn to mathematical arguments to bolster their confidence in their extrapolation.  These arguments provide a justification for the use of a particular type of model to describe tail behaviour of random variables.
+
+This is not a tutorial in Extreme Value Theory, for which we refer the reader to \cite{coles}, which describes a range of methods for modelling the statistical properties of sample maxima, threshold excesses, extremes of dependent series and other aspects of tail behaviour.
+
+%
+\subsection{Preliminaries}
+%
+With {\tt texmex} installed, use the {\tt library} command to make the package available to the current session, set the colours used for graphics, and set the random seed so that results are reproducible on a given machine:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{library}\hlstd{(texmex)}
+\hlkwd{library}\hlstd{(gridExtra)}
+\hlkwd{palette}\hlstd{(}\hlkwd{c}\hlstd{(}\hlstr{"black"}\hlstd{,}\hlstr{"purple"}\hlstd{,}\hlstr{"cyan"}\hlstd{,}\hlstr{"orange"}\hlstd{))}
+\hlkwd{set.seed}\hlstd{(}\hlnum{20130618}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+The {\tt gridExtra} package is used for laying out plots produced by {\tt ggplot2}.
+%
+\subsection{Data}
+%
+The datasets used in this example analysis are contained in the {\tt texmex}
+package. We give a detailed exposition of the fitting of the GPD without covariates to a daily rainfall dataset, {\tt rain}, which appears in Coles (2001),~\cite{coles}.  We show how to extend the modelling framework to include covariates using the {\tt winter} air pollution data from Heffernan and Tawn (2004),~\cite{heffernanTawn}.  The modelling approach for fitting GEV models that we take within {\tt texmex} is very similar to that for fitting the GPD, so we conclude with a brief demonstration of this by using the annual maxima sea-level dataset, {\tt portpirie}, again from Coles~\cite{coles}.  More details of these datasets are given in their help files.
+\subsubsection{Rainfall data}
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{head}\hlstd{(rain)}
+\end{alltt}
+\begin{verbatim}
+## [1] 0.0 2.3 1.3 6.9 4.6 0.0
+\end{verbatim}
+\begin{alltt}
+\hlkwd{summary}\hlstd{(rain)}
+\end{alltt}
+\begin{verbatim}
+##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+##   0.000   0.000   0.500   3.476   4.300  86.600
+\end{verbatim}
+\begin{alltt}
+\hlkwd{length}\hlstd{(rain)}
+\end{alltt}
+\begin{verbatim}
+## [1] 17531
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+To plot the data (not shown here):
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{d1} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwc{data}\hlstd{=}\hlkwd{data.frame}\hlstd{(}\hlkwc{rain}\hlstd{=rain,}\hlkwc{index}\hlstd{=}\hlnum{1}\hlopt{:}\hlkwd{length}\hlstd{(rain)),}
+             \hlkwd{aes}\hlstd{(index,rain))} \hlopt{+}
+    \hlkwd{geom_point}\hlstd{(}\hlkwc{alpha}\hlstd{=}\hlnum{0.5}\hlstd{,}\hlkwc{col}\hlstd{=}\hlnum{4}\hlstd{)}
+\hlstd{d1}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+\subsubsection{Winter air pollution data}
+\label{section:winterData}
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{head}\hlstd{(winter)}
+\end{alltt}
+\begin{verbatim}
+##   O3 NO2  NO SO2 PM10
+## 1 27  50 112  13   34
+## 2 27  51 126  13   29
+## 3 15  43  90  21   33
+## 4  9  71 470  44  101
+## 5 20  51 167  48   30
+## 6  8  50 211  16   44
+\end{verbatim}
+\begin{alltt}
+\hlkwd{summary}\hlstd{(winter,}\hlkwc{digits}\hlstd{=}\hlnum{3}\hlstd{)}
+\end{alltt}
+\begin{verbatim}
+##        O3            NO2              NO           SO2           PM10      
+##  Min.   : 1.0   Min.   : 19.0   Min.   : 10   Min.   :  1   Min.   :  7.0  
+##  1st Qu.:10.0   1st Qu.: 36.8   1st Qu.: 64   1st Qu.:  8   1st Qu.: 29.0  
+##  Median :22.0   Median : 43.0   Median :112   Median : 15   Median : 40.0  
+##  Mean   :20.1   Mean   : 44.2   Mean   :135   Mean   : 21   Mean   : 48.4  
+##  3rd Qu.:29.0   3rd Qu.: 51.0   3rd Qu.:166   3rd Qu.: 26   3rd Qu.: 60.0  
+##  Max.   :44.0   Max.   :104.0   Max.   :568   Max.   :200   Max.   :177.0
+\end{verbatim}
+\begin{alltt}
+\hlkwd{dim}\hlstd{(winter)}
+\end{alltt}
+\begin{verbatim}
+## [1] 532   5
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+We focus on the two variables Nitrogen Dioxide, {\tt NO2} and ozone {\tt O3} in the examples of covariate modelling that follow.  A scatter plot of these two variables suggests a negative association:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{d2} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(winter,}\hlkwd{aes}\hlstd{(O3,NO2))} \hlopt{+} \hlkwd{geom_point}\hlstd{(}\hlkwc{alpha}\hlstd{=}\hlnum{0.5}\hlstd{,}\hlkwc{col}\hlstd{=}\hlnum{4}\hlstd{)}
+\hlstd{d2}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1ddata_winter2d-1} 
+
+\end{knitrout}
+\subsubsection{Portpirie data}
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{head}\hlstd{(portpirie)}
+\end{alltt}
+\begin{verbatim}
+##   Year SeaLevel
+## 1 1923     4.03
+## 2 1924     3.83
+## 3 1925     3.65
+## 4 1926     3.88
+## 5 1927     4.01
+## 6 1928     4.08
+\end{verbatim}
+\begin{alltt}
+\hlkwd{summary}\hlstd{(portpirie)}
+\end{alltt}
+\begin{verbatim}
+##       Year         SeaLevel    
+##  Min.   :1923   Min.   :3.570  
+##  1st Qu.:1939   1st Qu.:3.830  
+##  Median :1955   Median :3.960  
+##  Mean   :1955   Mean   :3.981  
+##  3rd Qu.:1971   3rd Qu.:4.110  
+##  Max.   :1987   Max.   :4.690
+\end{verbatim}
+\begin{alltt}
+\hlkwd{dim}\hlstd{(portpirie)}
+\end{alltt}
+\begin{verbatim}
+## [1] 65  2
+\end{verbatim}
+\begin{alltt}
+\hlstd{d3} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(portpirie,}\hlkwd{aes}\hlstd{(Year,SeaLevel))} \hlopt{+} \hlkwd{geom_point}\hlstd{(}\hlkwc{col}\hlstd{=}\hlnum{4}\hlstd{)}
+\hlstd{d3}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1ddata_portpirie-1} 
+
+\end{knitrout}
+
+%****************************************************************
+%****************************************************************
+%
+\section{Generalized Pareto distribution models}
+%
+We now proceed to fit, evaluate, choose between, and ultimately
+make predictions from generalized Pareto distribution (GPD) models.
+%
+\subsection{Extreme value modelling and asymptotic motivation for the GPD}
+%
+In this section, we show how to fit the generalised Pareto Distribution,
+GPD($\sigma, \xi$)~\cite{davisonSmith} to
+data points in excess of suitably chosen thresholds.
+The GPD has distribution function
+\begin{eqnarray}
+\label{eqn:genParetoDistnFun}
+F_{>u}(x)=1-\left\{1+\xi\left(\frac{x-u}{\sigma}\right)\right\}^{-1/\xi}
+\mbox{ for }x>u,
+\end{eqnarray}
+where $u$ is the threshold for fitting and $\sigma>0$ and $\xi \in
+\IR$ are the scale and shape parameters respectively.  This is the
+conditional distributon of observations given that the observations
+exceed the fitting threshold $u$. The range of possible values taken
+by realisations from the GPD depends on the parameter values, with the
+distribution having a finite upper end point (short tailed) if the
+shape parameter is negative ($u<x\leq u-\sigma/\xi$ if $\xi<0$) and an
+infinite tail otherwise ($u<x<\infty$ if $\xi\geq 0$).  When $\xi=0$, the GPD corresponds exactly to the Exponential distribution.
+
+Extreme value theory tells us that under appropriate normalisation of
+the threshold excesses, as the threshold $u$ tends to the
+distributional upper endpoint, the limiting distribution of the
+excesses must fall in the generalised Pareto family of distributions
+(given certain conditions concerning non-degeneracy of the limit
+distribution and smoothness of the distribution of the original
+variable). So whatever the original distribution of the measurements,
+provided we choose an appropriately high threshold, the distribution
+of values exceeding that threshold should be well approximated by a
+GPD.  Diagnostic tools to aid the choice of suitable threshold are
+standard, and are described shortly -- see also~\cite{coles}.
+%
+\subsection{Parameterization}
+\label{sect:parameterization}
+%
+The usual parameterization of the GPD (as in Equation~(\ref{eqn:genParetoDistnFun})) is in terms of its
+scale paramter $\sigma$ and shape parameter $\xi$. There
+are, however, good reasons for reparameterizing in terms
+of $\phi = \log\sigma$:
+\begin{itemize}
+\item Experience has demonstrated that the numerical
+algorithms used for optimizing the log-likelihood tend
+to converge more reliably when working with $\phi$;
+\item When including covariates in the model we are
+faced with the constraint that $\sigma > 0$ and working
+with a linear predictor specified in terms of $\phi = \log\sigma$
+guarantees this constraint;
+\item When placing prior distributions on parameters,
+it is convenient to work with Gaussian distributions and
+$\phi$ is more likely to be close to Gaussian than is
+$\sigma$.
+\end{itemize}
+As such, some of the functions in {\tt texmex} work with $\phi$, not
+$\sigma$. In the case when inference is required for $\sigma$ rather than $\phi$, the point estimates
+can simply be exponentiated if
+maximum likelihood estimation is used. If a prior distribution is
+used, the point estimates are not invariant to transformation,
+so any transformed values should only be considered to
+be approximate.
+%
+\subsection{Threshold selection}
+%
+GPD modelling proceeds by selecting a threshold above
+which the data appear to be well modelled. Standard
+tools for threshold selection that appear in the
+literature (see for example~\cite{coles}) include the \emph{mean residual
+life} (MRL) plot, and plots of parameters estimated using a range of
+thresholds, \emph{threshold stability plots}.
+
+For a suitably chosen threshold, the mean residual life
+plot should be linear and the parameter estimates in threshold stability plots
+constant above the chosen threshold (both of these requirements are assessed by taking account of sampling variability). The sign of the gradient in the linear part of the MRL plot corresponds to the sign of the shape parameter and hence indicates the shape of the tail -- negative slope shows a short tailed distribution, a horizontal line (zero gradient) shows an exponential type tail and a positive slope suggests a heavy tailed distribution.
+
+We illustrate the use of these diagnostics now for the {\tt rain} data:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{grfRain} \hlkwb{<-} \hlkwd{gpdRangeFit}\hlstd{(rain,}\hlkwc{umax}\hlstd{=}\hlnum{35}\hlstd{)}
+\hlstd{mrlRain} \hlkwb{<-} \hlkwd{mrl}\hlstd{(rain)}
+
+\hlstd{g1} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(grfRain)}
+\hlstd{g2} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(mrlRain)}
+
+\hlkwd{grid.arrange}\hlstd{(g1[[}\hlnum{1}\hlstd{]]} \hlopt{+} \hlkwd{ggtitle}\hlstd{(}\hlstr{"Stability plot, scale parameter"}\hlstd{),}
+             \hlstd{g1[[}\hlnum{2}\hlstd{]]} \hlopt{+} \hlkwd{ggtitle}\hlstd{(}\hlstr{"Stability plot, shape parameter"}\hlstd{),}
+             \hlstd{g2} \hlopt{+} \hlkwd{ggtitle}\hlstd{(}\hlstr{"MRL plot"}\hlstd{),}\hlkwc{ncol}\hlstd{=}\hlnum{2}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dthreshold-1} 
+
+\end{knitrout}
+The threshold stability plots (top) show both (log-)scale and shape parameter estimates to be stable for thresholds of around 20 and above.
+
+The Mean Residual Life plot (bottom) has a linear form from values of around ten, the gradient being positive (up to a threshold of around 60 above which there are only a small handful of points).  This indicates a heavy tail and positive shape parameter.
+
+Note that this form of MRL plot is typical, with the very highest thresholds giving very erratic estimates with apparently narrow confidence bands.  This commonly observed feature is due to the estimates for very high thresholds being based on a very small number of points - the very largest points in the data set.  These are by construction close to the sample maximum and therefore MRL plots often have a sudden negative slope for very high values of threshold, which can be spurious as in this case.
+
+For our example, a threshold around 20 therefore appears to be sensible. However, we will need to
+do some additional diagnostics to check this.
+We proceed by selecting the $97^{th}$ percentile
+as being the candidate threshold.
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{quantile}\hlstd{(rain,}\hlnum{0.97}\hlstd{)}
+\end{alltt}
+\begin{verbatim}
+##  97% 
+## 20.6
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+The theory underpinning the GPD tells us that (if the underlying distribution satisfies our conditions) there exists a
+threshold above which the GPD fits the data, but the
+theory does not specify that the threshold necessarily must be
+high.  Indeed, if the data are realisations from an Exponential distribution -- which is a member of the GPD class, with shape parameter $\xi=0$ --  then a threshold equal to the minimum data point would be appropriate.  In many cases of course, the threshold will be towards the top end of the observed data range, the motivation for the GPD as a tail model being asymptotic as the threshold goes to infinity.  If sample sizes are too small, it may be the case that a suitable threshold cannot be chosen from within the range of the data with any degree of confidence.
+%
+\subsection{GPD fitting in {\tt texmex}}
+%
+
+The generalised Pareto model for threshold excesses can
+be fit by using the {\tt texmex} function {\tt evm}, {\it Extreme Value Model}, which has a default {\tt family=gpd} argument.  We must specify the threshold to be used for fitting:
+
+For the {\tt rain} data:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{rain.fit} \hlkwb{<-} \hlkwd{evm}\hlstd{(rain,}\hlkwc{th}\hlstd{=}\hlnum{20}\hlstd{)}
+\hlstd{rain.fit}
+\end{alltt}
+\begin{verbatim}
+## Call: evm(y = rain, th = 20)
+## Family:       GPD 
+## 
+## Model fit by maximum likelihood.
+## 
+## Convergence:		TRUE
+## Threshold:		20
+## Rate of excess:		0.03251
+## 
+##   Log. lik   AIC     
+##   -1740.834  3485.667
+## 
+## 
+## Coefficients:
+##        Value    SE     
+## phi:   1.92214  0.06348
+## xi:    0.13224  0.04802
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+The estimated shape parameter shows us that with this threshold, the fitted GPD has a heavy tail, as $\hat\xi>0$.  This is in line with our expectations following inspection of the MRL plot.
+
+We examine diagnostics plots to see whether these support our initial choice of threshold:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{ggplot}\hlstd{(rain.fit)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dplotGPD-1} 
+
+\end{knitrout}
+The shaded regions in the P-P and Q-Q plots indicate pointwise 95\% tolerance
+intervals, based on 1000 simulated datasets. The shaded region in the return level plot shows 95\% pointwise confidence intervals, based on a normal approximation.
+
+The fit shown in these plots is good, with data and model agreeing well over the range of threshold exceedances.  We can see how a lower threshold (perhaps that suggested by the MRL plot but not the threshold stability plot) gives an estimated slightly less heavy tail and a poorer fit:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{ggplot}\hlstd{(}\hlkwd{evm}\hlstd{(rain,}\hlkwc{th}\hlstd{=}\hlnum{10}\hlstd{))}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dplotGPDpoorFit-1} 
+
+\end{knitrout}
+%
+\subsection{Maximum penalized likelihood estimation}
+\label{section:MPLE}
+%
+With small sample sizes, the GPD log-likelihood function
+often becomes flat and the optimiser can fail to converge.
+One way to overcome this is to penalize the likelihood by
+some function of the parameters. Experience suggests that
+the main problems may be overcome by putting fairly modest
+penalties on $\xi$.
+
+Thus, rather than maximize the log-likelihood $l(\phi, \xi | X)$
+we maximize
+\begin{eqnarray}
+l(\phi, \xi) - \lambda \xi^2 \label{eqn:MPL}
+\end{eqnarray}
+for some $\lambda$.
+
+\subsubsection{Choice of $\lambda$}
+If we exponentiate (\ref{eqn:MPL}), the result can be
+written as
+\begin{eqnarray}
+L(\phi, \xi | X) e^{-\xi^2/2\theta^2} \label{eqn:LP}
+\end{eqnarray}
+in which $\theta = \sqrt{\frac{1}{2\lambda}}$. The rightmost
+term in (\ref{eqn:LP}) is proportional to a Gaussian
+distribution centred at 0. Thus, maximum penalized
+likelihood estimation has a Bayesian interpretation
+and corresponds to maximum a posteriori estimation.
+
+For the GPD, $\xi = -1$ corresponds to the distribution
+being uniform, $\xi = 0$ corresponds to it being
+exponential, and $\xi = 1$ corresponds to it being so
+heavy-tailed that its expectation is infinite. For many applications, values of $\xi = -1$ and $\xi = 1$ may be
+implausible, and we would expect values of $\xi$ to be
+fairly close to 0. This implies a prior distribution
+that is Gaussian, centred at zero, with standard deviation $\theta = \frac{1}{2}$.
+
+Since convergence issues are generally associated with
+$\xi$, we can choose a diffuse prior for $\phi$, say
+$\phi \sim N(0, 10^4)$.
+
+In general, we attempt to use MLE or penalized MLE with
+diffuse priors for both $\phi$ and $\xi$.
+Prior distribution $\xi \sim N(0, \frac{1}{4})$
+independently of a diffuse prior on $\phi$ can be
+used when convergence issues arise:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{pp} \hlkwb{<-} \hlkwd{list}\hlstd{(}\hlkwd{c}\hlstd{(}\hlnum{0}\hlstd{,} \hlnum{0}\hlstd{),} \hlkwd{diag}\hlstd{(}\hlkwd{c}\hlstd{(}\hlnum{10}\hlopt{^}\hlnum{4}\hlstd{,} \hlnum{.25}\hlstd{)))}
+\hlstd{rain.pen} \hlkwb{<-} \hlkwd{evm}\hlstd{(rain,} \hlkwc{qu}\hlstd{=}\hlnum{.97}\hlstd{,} \hlkwc{priorParameters} \hlstd{= pp,} \hlkwc{prior}\hlstd{=}\hlstr{"gaussian"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+in which {\tt priorParameters} is a list containing the mean $(0, 0)^T$
+and covariance matrix of the prior Gaussian distribution.
+%
+\subsection{Covariate modelling }
+\label{section:covariateModels}
+%
+We can fit GPD models with covariates in $\phi$,
+in $\xi$, in neither, or in both. We use the {\tt winter} air pollution dataset to illustrate this model fitting, with NO2 as the response and O3 as the explanatory variable. Plots of this data in Section~\ref{section:winterData} suggested a negative association between these variables. A threshold corresponding to the 70\% quantile of the NO2 variable was chosen using the diagnostic techniques in the previous section (output not shown here).  As a starting point we fit the GPD with no covariates:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{airpoll} \hlkwb{<-} \hlkwd{evm}\hlstd{(NO2,} \hlkwc{data}\hlstd{=winter,} \hlkwc{qu}\hlstd{=}\hlnum{.7}\hlstd{,} \hlkwc{penalty}\hlstd{=}\hlstr{"none"}\hlstd{,} \hlkwc{family}\hlstd{=gpd)}
+\hlstd{airpoll}
+\end{alltt}
+\begin{verbatim}
+## Call: evm(y = NO2, data = winter, family = gpd, qu = 0.7, penalty = "none")
+## Family:       GPD 
+## 
+## Model fit by maximum likelihood.
+## 
+## Convergence:		TRUE
+## Threshold:		49
+## Rate of excess:		0.2763
+## 
+##   Log. lik   AIC     
+##   -470.9206  945.8413
+## 
+## 
+## Coefficients:
+##                   Value     SE      
+## phi: (Intercept)   2.23157   0.11010
+## xi: (Intercept)   -0.02790   0.07297
+\end{verbatim}
+\begin{alltt}
+\hlkwd{ggplot}\hlstd{(airpoll)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dsimplegpd-1} 
+
+\end{knitrout}
+
+ The plots show no systematic departure of the data from the model at this choice of threshold, so
+we proceed to fit various models with covariates:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{airpoll1} \hlkwb{<-} \hlkwd{update}\hlstd{(airpoll,} \hlkwc{phi}\hlstd{=} \hlopt{~}\hlstd{O3,} \hlkwc{xi}\hlstd{=} \hlopt{~}\hlstd{O3)}
+\hlstd{airpoll2} \hlkwb{<-} \hlkwd{update}\hlstd{(airpoll,} \hlkwc{phi}\hlstd{=} \hlopt{~}\hlstd{O3)}
+\hlstd{airpoll3} \hlkwb{<-} \hlkwd{update}\hlstd{(airpoll,} \hlkwc{xi}\hlstd{=} \hlopt{~}\hlstd{O3)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+
+The default model diagnostic plots for the model are different when there are covariates included in the model.  Here we look at diagnostics for the model with O3 included in the linear predictors for both $\phi$ and $\xi$:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{ggplot}\hlstd{(airpoll1)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dgpdCovDiagnostics-1} 
+
+\end{knitrout}
+
+Since there is a covariate in the model the probability and quantile plots are constructed using the model residuals, which are exponential under the fitted model. We also have a plot of the residuals against the fitted parameters for any parameter that is modelled using a covariate (in this case the scale parameter $\phi$ and shape parameter $\xi$). A well fitting model should have homogeneity of residuals across different values of the fitted parameter.  These diagnostic plots give no cause for concern.  There are no return level or histogram/density plots produced since the estimates of these quantities depend on the precise values taken by the covariates in the model.
+
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{AIC}\hlstd{(airpoll)}
+\end{alltt}
+\begin{verbatim}
+## [1] 945.8413
+\end{verbatim}
+\begin{alltt}
+\hlkwd{AIC}\hlstd{(airpoll1)}
+\end{alltt}
+\begin{verbatim}
+## [1] 932.6114
+\end{verbatim}
+\begin{alltt}
+\hlkwd{AIC}\hlstd{(airpoll2)}
+\end{alltt}
+\begin{verbatim}
+## [1] 930.7401
+\end{verbatim}
+\begin{alltt}
+\hlkwd{AIC}\hlstd{(airpoll3)}
+\end{alltt}
+\begin{verbatim}
+## [1] 937.6038
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+AIC is lowest for {\tt airpoll2} which has O3 as a covariate affecting the scale parameter of the GPD, but not the shape parameter.
+Since {\tt airpoll2}
+has the lowest AIC we prefer that model.
+
+We now examine more detailed model diagnostics for our preferred model, {\tt airpoll2}:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{g3} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(airpoll2,}\hlkwc{plot.}\hlstd{=}\hlnum{FALSE}\hlstd{)}
+\hlstd{g4} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwd{predict}\hlstd{(airpoll2,}\hlkwc{type}\hlstd{=}\hlstr{"lp"}\hlstd{,}\hlkwc{ci.fit}\hlstd{=}\hlnum{TRUE}\hlstd{))[[}\hlnum{1}\hlstd{]]} \hlopt{+}
+    \hlkwd{ggtitle}\hlstd{(}\hlstr{"Fitted (log)scale parameter"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dairpoll2diag-1} 
+\begin{kframe}\begin{alltt}
+\hlkwd{grid.arrange}\hlstd{(g3[[}\hlnum{1}\hlstd{]],g3[[}\hlnum{2}\hlstd{]],g3[[}\hlnum{3}\hlstd{]],g4,}\hlkwc{ncol}\hlstd{=}\hlnum{2}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dairpoll2diag-2} 
+\begin{kframe}\begin{alltt}
+\hlkwd{summary}\hlstd{(airpoll2)}
+\end{alltt}
+\begin{verbatim}
+## Call: evm(y = NO2, data = winter, family = gpd, qu = 0.7, penalty = "none", 
+##     phi = ~O3)
+## 
+## Family:       GPD 
+## 
+## Model fit by maximum likelihood.
+## 
+## Convergence:		TRUE
+## Threshold:		49
+## Rate of excess:		0.276
+## 
+##    Log lik.  Penalized log lik.       AIC
+##   -462.3701           -462.3701  930.7401
+## 
+## 
+## Coefficients:
+##                   Value     SE        t       
+## phi: (Intercept)   2.79794   0.16151  17.32411
+## phi: O3           -0.02869   0.00646  -4.44422
+## xi: (Intercept)   -0.12542   0.06637  -1.88968
+## 
+## 1000 simulated data sets compared against observed data QQ-plot.
+## Quantile of the observed MSE:  0.376 
+## 21 observations (14.286%) outside the 95% simulated envelope.
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+The {\tt summary} command reveals an alarming number of points to lie outside of the 95\% tolerance interval constructed for the Q-Q plot; the corresponding plot shows these points to be among those lying closest to the fitting threshold.  This suggests that we should re-visit the whole model selection procedure again at a higher threshold (details not shown here).  We eventually settle on the following model, fit at a threshold corresponding to the 90\% quantile:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{airpoll4} \hlkwb{<-} \hlkwd{update}\hlstd{(airpoll2,}\hlkwc{qu}\hlstd{=}\hlnum{0.9}\hlstd{)}
+\hlstd{g5} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(airpoll4,}\hlkwc{plot.}\hlstd{=}\hlnum{FALSE}\hlstd{)}
+\hlstd{g6} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwd{predict}\hlstd{(airpoll4,}\hlkwc{type}\hlstd{=}\hlstr{"lp"}\hlstd{,}\hlkwc{ci.fit}\hlstd{=}\hlnum{TRUE}\hlstd{))[[}\hlnum{1}\hlstd{]]} \hlopt{+}
+    \hlkwd{ggtitle}\hlstd{(}\hlstr{"Fitted (log)scale parameter"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dairpoll4diag-1} 
+\begin{kframe}\begin{alltt}
+\hlkwd{grid.arrange}\hlstd{(g5[[}\hlnum{1}\hlstd{]],g5[[}\hlnum{2}\hlstd{]],g5[[}\hlnum{3}\hlstd{]],g6,}\hlkwc{ncol}\hlstd{=}\hlnum{2}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dairpoll4diag-2} 
+\begin{kframe}\begin{alltt}
+\hlkwd{summary}\hlstd{(airpoll4)}
+\end{alltt}
+\begin{verbatim}
+## Call: evm(y = NO2, data = winter, family = gpd, qu = 0.9, penalty = "none", 
+##     phi = ~O3)
+## 
+## Family:       GPD 
+## 
+## Model fit by maximum likelihood.
+## 
+## Convergence:		TRUE
+## Threshold:		58
+## Rate of excess:		0.0996
+## 
+##   Log lik.  Penalized log lik.       AIC
+##    -166.49             -166.49  338.9801
+## 
+## 
+## Coefficients:
+##                   Value    SE       t      
+## phi: (Intercept)   2.4028   0.2886   8.3248
+## phi: O3           -0.0212   0.0140  -1.5196
+## xi: (Intercept)    0.0150   0.1547   0.0968
+## 
+## 1000 simulated data sets compared against observed data QQ-plot.
+## Quantile of the observed MSE:  0.012 
+## 1 observations (1.887%) outside the 95% simulated envelope.
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+The fit of this model is adequate, having apparently captured the dependence of the scale parameter on O3.  The final plot shows the nature of this relationship, with larger values of O3 giving lower values of $\phi$.  This concurs with the observed negative relationship between the variables shown in the original scatter plot, Section~\ref{section:winterData}.
+
+%
+\subsection{GPD parameter uncertainty}
+%
+We examine briefly here Information Matrix summaries and Bootstrap estimates of GPD parameter uncertainty, before going on to use a Bayesian simulation based approach to estimation of our GPD model parameters and associated uncertainty.
+%
+\subsubsection{Information matrix based approaches}
+%
+When the GPD model is fit by using the default  maximum likelihood estimation, an estimate of the covariance matrix of model parameters is returned.  The default procedure for estimating this covariance matrix is {\tt cov="observed"} in which case the observed information matrix is used, as given in Appendix A of Davison and Smith~\cite{davisonSmith}. The only other option is {\tt cov = "numeric"} in which case a numerical approximation of the Hessian is used (see the help for {\tt optim}). In some cases, particularly with small samples, the numerical approximation can be quite different from the closed form ({\tt cov="observed"}) result, and the value derived from the observed information should be preferred.
+
+For our fitted model, we compare the two approaches and find that the alternative methods give almost identical estimates of the Information matrix:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{airpoll2}\hlopt{$}\hlstd{cov}
+\end{alltt}
+\begin{verbatim}
+##              [,1]          [,2]          [,3]
+## [1,]  0.026083966 -7.906210e-04 -5.609481e-03
+## [2,] -0.000790621  4.167378e-05  2.497265e-05
+## [3,] -0.005609481  2.497265e-05  4.405064e-03
+\end{verbatim}
+\begin{alltt}
+\hlkwd{update}\hlstd{(airpoll2,}\hlkwc{cov}\hlstd{=}\hlstr{"numeric"}\hlstd{)}\hlopt{$}\hlstd{cov}
+\end{alltt}
+\begin{verbatim}
+##               [,1]          [,2]          [,3]
+## [1,]  0.0260203685 -7.882263e-04 -0.0055858130
+## [2,] -0.0007882263  4.159649e-05  0.0000237917
+## [3,] -0.0055858130  2.379170e-05  0.0044028665
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+For small samples, the underlying log-likelihood may be far from quadratic, and the resulting estimates of standard errors derived using either of these methods are liable to approximate poorly the true standard errors.
+
+%
+\subsubsection{Parametric Bootstrap approach}
+An alternative approach to uncertainty estimation is to use a parametric bootstrap -- which does capture the asymmetry of the log-likelihood surface around the maximum likelihood estimates.  This is carried out for our fitted model in {\tt texmex} as follows:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{boot} \hlkwb{<-} \hlkwd{evmBoot}\hlstd{(airpoll2,} \hlkwc{trace}\hlstd{=}\hlnum{1001}\hlstd{)}
+\hlkwd{summary}\hlstd{(boot)}
+\end{alltt}
+\begin{verbatim}
+## evmBoot(o = airpoll2, trace = 1001)
+##                  phi: (Intercept)      phi: O3 xi: (Intercept)
+## Original               2.79793633 -0.028689781     -0.12541904
+## Bootstrap mean         2.82273446 -0.028883106     -0.15813212
+## Bias                   0.02479813 -0.000193325     -0.03271307
+## SD                     0.17192037  0.006606455      0.08715857
+## Bootstrap median       2.82603191 -0.028865751     -0.15414872
+## 
+## Correlation:
+##                  phi: (Intercept)      phi: O3 xi: (Intercept)
+## phi: (Intercept)        1.0000000 -0.719959128    -0.556885528
+## phi: O3                -0.7199591  1.000000000     0.008656026
+## xi: (Intercept)        -0.5568855  0.008656026     1.000000000
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+We can compare these reported standard deviations with the correponding estimates derived from the Observed Information matrix estimate -- these are close although not identical, with the largest disagreement occurring for the shape parameter.  This is typical behaviour of the GPD model.
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{sqrt}\hlstd{(}\hlkwd{diag}\hlstd{(airpoll2}\hlopt{$}\hlstd{cov))}
+\end{alltt}
+\begin{verbatim}
+## [1] 0.161505314 0.006455523 0.066370657
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+We can also compare the bootstrap based estimate of the parameter correlation matrix with that derived from the Observed Information matrix:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{cov2cor}\hlstd{(airpoll2}\hlopt{$}\hlstd{cov)}
+\end{alltt}
+\begin{verbatim}
+##            [,1]        [,2]        [,3]
+## [1,]  1.0000000 -0.75831579 -0.52331083
+## [2,] -0.7583158  1.00000000  0.05828503
+## [3,] -0.5233108  0.05828503  1.00000000
+\end{verbatim}
+\begin{alltt}
+\hlkwd{cov2cor}\hlstd{(}\hlkwd{summary}\hlstd{(boot)}\hlopt{$}\hlstd{covariance)}
+\end{alltt}
+\begin{verbatim}
+##                  phi: (Intercept)      phi: O3 xi: (Intercept)
+## phi: (Intercept)        1.0000000 -0.719959128    -0.556885528
+## phi: O3                -0.7199591  1.000000000     0.008656026
+## xi: (Intercept)        -0.5568855  0.008656026     1.000000000
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+Estimates of this correlation matrix are similar although not identical, as anticipated.
+
+Focussing on the covariance matrix of the parameter estimates is misleading and does not let us explore the asymmetric nature of the uncertainty about the parameter estimates.  This can often be better seen in the bootstrap based confidence intervals for the model parameters shown in the following plots, although the asymmetry is not pronounced in this example:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{O3} \hlkwb{<-} \hlkwd{data.frame}\hlstd{(}\hlkwc{O3}\hlstd{=}\hlkwd{seq}\hlstd{(}\hlnum{10}\hlstd{,}\hlnum{60}\hlstd{,}\hlkwc{len}\hlstd{=}\hlnum{6}\hlstd{))}
+
+\hlstd{g7} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwd{predict}\hlstd{(boot,}    \hlkwc{newdata}\hlstd{=O3,}\hlkwc{type}\hlstd{=}\hlstr{"lp"}\hlstd{,}
+                     \hlkwc{ci.fit}\hlstd{=}\hlnum{TRUE}\hlstd{))[[}\hlnum{1}\hlstd{]]} \hlopt{+}
+    \hlkwd{ggtitle}\hlstd{(}\hlstr{"Bootstrap"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dbootstrapLinPredConfIntsLPplot-1} 
+\begin{kframe}\begin{alltt}
+\hlstd{g8} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwd{predict}\hlstd{(airpoll2,}\hlkwc{newdata}\hlstd{=O3,}\hlkwc{type}\hlstd{=}\hlstr{"lp"}\hlstd{,}
+                     \hlkwc{ci.fit}\hlstd{=}\hlnum{TRUE}\hlstd{))[[}\hlnum{1}\hlstd{]]} \hlopt{+}
+    \hlkwd{ggtitle}\hlstd{(}\hlstr{"Obs Info"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dbootstrapLinPredConfIntsLPplot-2} 
+\begin{kframe}\begin{alltt}
+\hlkwd{grid.arrange}\hlstd{(g7,g8,}\hlkwc{ncol}\hlstd{=}\hlnum{2}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dbootstrapLinPredConfIntsLPplot-3} 
+
+\end{knitrout}
+
+\subsection{Bayesian estimation}
+\label{sebsection:BayesEstimation}
+A further alternative approach to uncertainty estimation which accurately reflects the asymmetric nature of the uncertainty is offered by Bayesian simulation based methods.  In {\tt texmex} we can simulate from the posterior distributions of the parameters by using the {\tt evm} function again, this time using {\tt method = "simulate"} to tell the function to simulate from the joint posterior distribution of the parameters.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{airpollSim} \hlkwb{<-} \hlkwd{evm}\hlstd{(NO2,} \hlkwc{data}\hlstd{=winter,} \hlkwc{qu}\hlstd{=}\hlnum{.7}\hlstd{,}
+                  \hlkwc{phi}\hlstd{=}\hlopt{~}\hlstd{O3,} \hlkwc{method}\hlstd{=}\hlstr{"simulate"}\hlstd{,}
+                  \hlkwc{verbose}\hlstd{=}\hlnum{FALSE}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+
+Equivalently, the Bayesian estimation based on MCMC can also be instigated by the use of the function {\tt update} on the previously chosen model.  The method of estimation is changed from {\tt "optimize"} -- under which estimation is carried out using (penalized) maximum likelihood -- to {\tt "simulate"} -- under which a Metropolis algorithm is used to simulate from the joint posterior distribution of the parameters.  For our preferred model, {\tt airpoll2}, this is implemented as follows:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{airpollSim} \hlkwb{<-} \hlkwd{update}\hlstd{(airpoll2,}\hlkwc{method}\hlstd{=}\hlstr{"simulate"}\hlstd{,}\hlkwc{penalty}\hlstd{=}\hlstr{"gaussian"}\hlstd{,}
+                     \hlkwc{verbose}\hlstd{=}\hlnum{FALSE}\hlstd{)}
+\hlkwd{ggplot}\hlstd{(airpollSim)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dupdate-1} 
+\begin{kframe}\begin{alltt}
+\hlstd{airpollSim}
+\end{alltt}
+\begin{verbatim}
+## evm(y = NO2, data = winter, family = gpd, qu = 0.7, penalty = "gaussian", 
+##     phi = ~O3, method = "simulate", verbose = FALSE)
+## Family:       GPD 
+## Acceptance rate:  0.323
+## 
+## MAP estimates:
+## phi: (Intercept)          phi: O3  xi: (Intercept) 
+##       2.79793633      -0.02868978      -0.12541904 
+## 
+## Posterior means:
+## phi: (Intercept)          phi: O3  xi: (Intercept) 
+##       2.78061285      -0.02848133      -0.09586909
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+The plots of the Markov chains ought to look like ``fat hairy
+caterpillars'' if the algorithm has converged on its target
+distribution. Also, the cumulative means of the chains should
+converge, the acceptance rate should not be too high or too low, and the
+autocorrelation functions should rapidly decay to zero. We
+conclude from the plots that there is no evidence against convergence of our Markov chains, although we should probably thin our output further to obtain a chain that is closer to independent  (the default is to thin to every 4 observations).  Here we retain the burn-in value of 500 but now discard all but every 20th observation, resulting in an autocorrelation function which decays more rapidly to zero. This results in the retention of 2000 values after discarding the burn-in and applying the thinning.  (Note that the observations are not discarded destructively and we can use the {\tt thinAndBurn} function repeatedly to examine the impact of using different values of {\tt burn} and {\tt thin}.)
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{airpollSim} \hlkwb{<-} \hlkwd{thinAndBurn}\hlstd{(airpollSim,} \hlkwc{burn}\hlstd{=}\hlnum{500}\hlstd{,} \hlkwc{thin} \hlstd{=} \hlnum{20}\hlstd{)}
+\hlkwd{dim}\hlstd{(airpollSim}\hlopt{$}\hlstd{param)}
+\end{alltt}
+\begin{verbatim}
+## [1] 2000    3
+\end{verbatim}
+\begin{alltt}
+\hlkwd{summary}\hlstd{(airpollSim)}
+\end{alltt}
+\begin{verbatim}
+## Family:       GPD 
+## 
+## Posterior summary:
+##                  Posterior mean          SD
+## phi: (Intercept)     2.78342258 0.166869678
+## phi: O3             -0.02849374 0.006803171
+## xi: (Intercept)     -0.09787758 0.068435126
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+We can use the {\tt predict} method to obtain the linear predictors for the model parameters for each unique combination of any covariates that may be in the model.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{O3} \hlkwb{<-} \hlkwd{data.frame}\hlstd{(}\hlkwc{O3}\hlstd{=}\hlkwd{seq}\hlstd{(}\hlnum{20}\hlstd{,}\hlnum{50}\hlstd{,}\hlkwc{by}\hlstd{=}\hlnum{10}\hlstd{))}
+\hlkwd{predict}\hlstd{(airpollSim,}\hlkwc{newdata}\hlstd{=O3,}\hlkwc{type}\hlstd{=}\hlstr{"lp"}\hlstd{)}
+\end{alltt}
+\begin{verbatim}
+## Linear predictors:
+##    phi      xi O3
+## 1 2.21 -0.0979 20
+## 2 1.93 -0.0979 30
+## 3 1.64 -0.0979 40
+## 4 1.36 -0.0979 50
+\end{verbatim}
+\begin{alltt}
+\hlkwd{predict}\hlstd{(airpollSim,}\hlkwc{newdata}\hlstd{=O3,}\hlkwc{M}\hlstd{=}\hlnum{1000}\hlstd{)}
+\end{alltt}
+\begin{verbatim}
+## M = 1000 predicted return level: 89.2 79.3 72 66.5 20 30 40 50
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+To see linear predictors for the original dataset, simply omit the {\tt newdata} argument (output not shown):
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{predict}\hlstd{(airpollSim,}\hlkwc{type}\hlstd{=}\hlstr{"lp"}\hlstd{)}
+\hlkwd{predict}\hlstd{(airpollSim,}\hlkwc{M}\hlstd{=}\hlnum{1000}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+
+Setting the argument {\tt all = TRUE} returns the linear predictors for all of the simulated parameter values in the (thinned) chains:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{airpollParams} \hlkwb{<-} \hlkwd{predict}\hlstd{(airpollSim,} \hlkwc{newdata}\hlstd{=O3,} \hlkwc{type}\hlstd{=}\hlstr{"lp"}\hlstd{,} \hlkwc{all}\hlstd{=}\hlnum{TRUE}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+ The returned object contains a list called {\tt link} with one item for each unique value of the covariate(s).  The following shows the first five simulated values of $(\phi,\xi)$ for covariate {\tt O3 = 20}:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{airpollParams}\hlopt{$}\hlstd{obj}\hlopt{$}\hlstd{link[[}\hlnum{1}\hlstd{]][}\hlnum{1}\hlopt{:}\hlnum{5}\hlstd{,]}
+\end{alltt}
+\begin{verbatim}
+##           phi          xi O3
+## [1,] 2.144121  0.04958839 20
+## [2,] 2.420098 -0.25673228 20
+## [3,] 2.418063 -0.21307118 20
+## [4,] 2.271912 -0.21693735 20
+## [5,] 2.200129 -0.13687702 20
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+%
+%
+\subsection{Predicted return levels}
+\label{subsect:retLevelsPtEsts}
+%
+The general definition of an $m$-observation return level for the GPD is:
+\begin{eqnarray}
+x_m = u + \frac{\sigma}{\xi}\{(mp)^\xi -1 \}.\label{eqn:returnLevel}
+\end{eqnarray}
+Here $p$ is the probability of exceeding the GPD fitting threshold
+$u$ and $m$ is a large value, so that $x_m$ is termed the
+{\emph m-observation return level} and represents the maximum
+value of $x$ expected to be seen in $m$ observations.
+
+The effect of the O3 variable on the fitted GPD is seen clearly when we look at return levels and associated plots for different levels of this variable:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{O3} \hlkwb{<-} \hlkwd{data.frame}\hlstd{(}\hlkwc{O3}\hlstd{=}\hlkwd{seq}\hlstd{(}\hlnum{20}\hlstd{,}\hlnum{50}\hlstd{,}\hlkwc{by}\hlstd{=}\hlnum{10}\hlstd{))}
+\hlstd{pred} \hlkwb{<-} \hlkwd{predict}\hlstd{(airpoll2,}\hlkwc{newdata}\hlstd{=O3,}\hlkwc{M}\hlstd{=}\hlnum{5}\hlopt{:}\hlnum{1000}\hlstd{,}\hlkwc{ci.fit}\hlstd{=}\hlnum{TRUE}\hlstd{)}
+\hlstd{pred}\hlopt{$}\hlstd{obj[}\hlkwd{c}\hlstd{(}\hlnum{1}\hlstd{,}\hlnum{496}\hlstd{,}\hlnum{996}\hlstd{)]}
+\end{alltt}
+\begin{verbatim}
+## $M.5
+##         RL     2.5%    97.5% O3
+## 1 51.92864 51.31966 52.53763 20
+## 2 51.19821 50.64622 51.75019 30
+## 3 50.64995 50.09070 51.20920 40
+## 4 50.23843 49.68634 50.79052 50
+## 
+## $M.500
+##         RL     2.5%    97.5% O3
+## 1 82.98659 70.90954 95.06364 20
+## 2 74.50994 64.54292 84.47696 30
+## 3 68.14747 59.35096 76.94398 40
+## 4 63.37187 55.48075 71.26299 50
+## 
+## $M.1000
+##         RL     2.5%     97.5% O3
+## 1 86.29465 71.95139 100.63791 20
+## 2 76.99293 65.27717  88.70869 30
+## 3 70.01117 59.83792  80.18442 40
+## 4 64.77074 55.77008  73.77141 50
+\end{verbatim}
+\begin{alltt}
+\hlstd{pred}\hlopt{$}\hlstd{call}
+\end{alltt}
+\begin{verbatim}
+## predict.evmOpt(object = airpoll2, M = 5:1000, newdata = O3, ci.fit = TRUE)
+\end{verbatim}
+\begin{alltt}
+\hlstd{g9} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(pred)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dretLevelO3-1} 
+\begin{kframe}\begin{alltt}
+\hlstd{xAxis} \hlkwb{<-} \hlkwd{scale_x_continuous}\hlstd{(}\hlkwc{breaks}\hlstd{=}\hlkwd{c}\hlstd{(}\hlnum{5}\hlstd{,}\hlnum{20}\hlstd{,}\hlnum{50}\hlstd{,}\hlnum{200}\hlstd{,}\hlnum{500}\hlstd{,}\hlnum{1000}\hlstd{),}\hlkwc{trans}\hlstd{=}\hlstr{"log"}\hlstd{)}
+\hlstd{yAxis} \hlkwb{<-} \hlkwd{scale_y_continuous}\hlstd{(}\hlkwc{limits}\hlstd{=}\hlkwd{c}\hlstd{(}\hlnum{50}\hlstd{,}\hlnum{105}\hlstd{))}
+\hlkwd{grid.arrange}\hlstd{(g9[[}\hlnum{1}\hlstd{]]} \hlopt{+} \hlstd{xAxis} \hlopt{+} \hlstd{yAxis,}
+             \hlstd{g9[[}\hlnum{2}\hlstd{]]} \hlopt{+} \hlstd{xAxis} \hlopt{+} \hlstd{yAxis,}
+             \hlstd{g9[[}\hlnum{3}\hlstd{]]} \hlopt{+} \hlstd{xAxis} \hlopt{+} \hlstd{yAxis,}
+             \hlstd{g9[[}\hlnum{4}\hlstd{]]} \hlopt{+} \hlstd{xAxis} \hlopt{+} \hlstd{yAxis,}\hlkwc{ncol}\hlstd{=}\hlnum{2}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dretLevelO3-2} 
+
+\end{knitrout}
+
+The {\it Return period} is in units of {\it numbers of observations}, in this case, number of winter days. {\it Return level} is in the same units as NO2 variable to which the GPD model has been fit.
+
+This plot shows how the different values of scale parameter affect the size of return levels associated with different return periods but not the shape of this function.  The shape parameter $\xi$ is common to each of the four models used for prediction here -- this is emphasised if we allow the axes for plotting to differ for the four levels of O3:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{grid.arrange}\hlstd{(g9[[}\hlnum{1}\hlstd{]],g9[[}\hlnum{2}\hlstd{]],g9[[}\hlnum{3}\hlstd{]],g9[[}\hlnum{4}\hlstd{]],}\hlkwc{ncol}\hlstd{=}\hlnum{2}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dretLevelO3sameAxesFALSE-1} 
+
+\end{knitrout}
+
+We can see that the underlying shapes of the four curves are identical, the main differences emphasised here is the greater uncertainty associated with the highest value of O3 examined here, which is beyond the range observed in the dataset.
+
+The default method for estimating these confidence intervals is to use the Information Matrix and quadratic approximation, however this can lead to poor estimates as this approach gives symmetric intervals centered on the point estimates.
+If we are to extrapolate far beyond the range of the data, then it can be preferable to recognise the inherent reduction in certainty that occurs as we move away from the data where the information dwells.  This is better reflected in the asymmetric confidence/credible intervals obtained by using either the bootstrap or Bayesian simuation based approach:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{O3} \hlkwb{<-} \hlkwd{data.frame}\hlstd{(}\hlkwc{O3}\hlstd{=}\hlkwd{c}\hlstd{(}\hlnum{20}\hlstd{,}\hlnum{50}\hlstd{))}
+\hlstd{M} \hlkwb{<-} \hlkwd{seq}\hlstd{(}\hlnum{5}\hlstd{,}\hlnum{1000}\hlstd{,}\hlkwc{len}\hlstd{=}\hlnum{40}\hlstd{)}
+\hlstd{g11} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwd{predict}\hlstd{(airpoll2,}\hlkwc{newdata}\hlstd{=O3,}\hlkwc{M}\hlstd{=M,}\hlkwc{ci.fit}\hlstd{=}\hlnum{TRUE}\hlstd{),}\hlkwc{main}\hlstd{=}\hlstr{"Obs Info"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dbootstrapRetLevelConfIntsLPplot-1} 
+\begin{kframe}\begin{alltt}
+\hlstd{g12} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwd{predict}\hlstd{(boot,}\hlkwc{newdata}\hlstd{=O3,}\hlkwc{M}\hlstd{=M,}\hlkwc{ci.fit}\hlstd{=}\hlnum{TRUE}\hlstd{),}\hlkwc{main}\hlstd{=}\hlstr{"Bootstrap"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dbootstrapRetLevelConfIntsLPplot-2} 
+\begin{kframe}\begin{alltt}
+\hlstd{g13} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwd{predict}\hlstd{(airpollSim,}\hlkwc{newdata}\hlstd{=O3,}\hlkwc{M}\hlstd{=M,}\hlkwc{ci.fit}\hlstd{=}\hlnum{TRUE}\hlstd{),}\hlkwc{main}\hlstd{=}\hlstr{"Simulated"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dbootstrapRetLevelConfIntsLPplot-3} 
+\begin{kframe}\begin{alltt}
+\hlkwd{grid.arrange}\hlstd{(g11[[}\hlnum{1}\hlstd{]]} \hlopt{+} \hlstd{xAxis}\hlopt{+}\hlstd{yAxis,g11[[}\hlnum{2}\hlstd{]]} \hlopt{+} \hlstd{xAxis}\hlopt{+}\hlstd{yAxis,}
+             \hlstd{g12[[}\hlnum{1}\hlstd{]]} \hlopt{+} \hlstd{xAxis}\hlopt{+}\hlstd{yAxis,g12[[}\hlnum{2}\hlstd{]]} \hlopt{+} \hlstd{xAxis}\hlopt{+}\hlstd{yAxis,}
+             \hlstd{g13[[}\hlnum{1}\hlstd{]]} \hlopt{+} \hlstd{xAxis}\hlopt{+}\hlstd{yAxis,g13[[}\hlnum{2}\hlstd{]]} \hlopt{+} \hlstd{xAxis}\hlopt{+}\hlstd{yAxis,}\hlkwc{ncol}\hlstd{=}\hlnum{2}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dbootstrapRetLevelConfIntsLPplot-4} 
+
+\end{knitrout}
+The asymmetry in the bootstrap based confidence intervals and the Bayesian simulation based credible intervals for high return levels at large values of the covariate is marked here.
+%*********************************************************************
+%
+\section{Generalized Extreme Value models}
+%
+Whereas GPD models have an asymptotic motivation as models for threshold exceedances, the Generalised Extreme Value (GEV) distribution is derived as the limiting distribution for observations arising as maxima of IID observations.
+
+We introduce the GEV distribution now, but refer to Coles~\cite{coles} for more details of this family of distributions, and how it arises.
+%
+\subsection{Extreme value modelling and asymptotic motivation for the GEV}
+%
+In this section, we show how to fit the generalised Extreme Value  Distribution,
+GEV($\mu, \sigma, \xi$) to
+data points arising as sample maxima.
+The GEV has distribution function
+\begin{eqnarray}
+\label{eqn:GEVDistnFun}
+G(x)=\exp\left[-\left\{1+\xi\left(\frac{x-\mu}{\sigma}\right)\right\}^{-1/\xi}\right],
+\end{eqnarray}
+\mbox{ for } $x$ satisfying $1+\xi(x-u)/\sigma>0$.  The location parameter $\mu$ satisfies $-\infty <\mu<\infty$, scale parameter $\sigma>0$ and shape parameter $\xi$ satisfies $-\infty <\xi<\infty$.  The range of possible values taken
+by realisations from the GEV depends on the parameter values, with the
+distribution having a finite upper end point (short tailed) if the
+shape parameter is negative ($x\leq \mu-\sigma/\xi$ if $\xi<0$) and an
+infinite tail otherwise ($x<\infty$ if $\xi\geq 0$).  When $\xi=0$, the GEV corresponds exactly to the Gumbel distribution.
+
+Extreme value theory tells us that under appropriate normalisation of
+the sample maxima, as the underlying sample size from which maxima are taken tends to infinity, the limiting distribution of the sample maxima must fall in the Generalised Extreme Value family of distributions
+(given certain conditions concerning non-degeneracy of the limit
+distribution and smoothness of the distribution of the original
+variable).
+%
+\subsection{Parameterization}
+%
+As for the GPD (Section~\ref{sect:parameterization}), the usual parameterization of the GEV (equation~(\ref{eqn:GEVDistnFun})) is in terms of its
+location, scale and shape parameters $\mu$, $\sigma$ and $\xi$ respectively. For the same reasons as those given for the GPD in Section~\ref{sect:parameterization}, we choose to  reparameterize in terms of $\phi = \log\sigma$.  Comments made in this section regarding this parameterization in the context of the GPD apply equally to the GEV.
+%
+\subsection{GEV fitting in {\tt texmex}}
+%
+We use the annual maxima sea-level observations in the dataset {\tt portpirie} to illustrate the fitting of the GEV in {\tt texmex}.  The function {\tt evm} (Extreme Value Model) is called, this time with the argument {\tt family=gev}, which fits the GEV model rather than the default family, GPD.  Diagnostic plots are constructed in the usual way:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{port} \hlkwb{<-} \hlkwd{evm}\hlstd{(SeaLevel,}\hlkwc{data}\hlstd{=portpirie,}\hlkwc{family}\hlstd{=gev)}
+\hlkwd{ggplot}\hlstd{(port)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dportpirieFit-1} 
+\begin{kframe}\begin{alltt}
+\hlstd{port}
+\end{alltt}
+\begin{verbatim}
+## Call: evm(y = SeaLevel, data = portpirie, family = gev)
+## Family:       GEV 
+## 
+## Model fit by maximum likelihood.
+## 
+## Convergence:		TRUE
+## 
+##   Log. lik  AIC      
+##   4.339058  -2.678116
+## 
+## 
+## Coefficients:
+##                   Value     SE      
+## mu: (Intercept)    3.87473   0.02793
+## phi: (Intercept)  -1.61930   0.10225
+## xi: (Intercept)   -0.05014   0.09824
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+The fit of the GEV to the portpirie sea-level annual maxima appears to be good.
+
+There is no analogue of threshold choice for the GPD (by using MRL plots and threshold stability plots), and as such there are fewer diagnostics to support the fitting of the GEV distribution.  Where poor fit is observed, it may be due to having taken maxima of an insufficient number of observations (for example, if the data are annual maxima then it may be that one year of data is not a large enough sample size from which to draw maxima).  Sometimes, but not always, it is possible to go back to the original data from which the maxima have been constructed and take maxima of a larger number of observations. This usually results in a smaller number of observed maxima so there is an obvious trade-off between bias and variance here.
+
+Covariates may be included in the GEV models in the same manner as illulstrated in Section~\ref{section:covariateModels} for the GPD.  As an exercise, we try fitting {\tt Year} as a covariate to the {\tt portpirie} sea level observations:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{port1} \hlkwb{<-} \hlkwd{update}\hlstd{(port,}\hlkwc{mu}\hlstd{=}\hlopt{~}\hlstd{Year)}
+\end{alltt}
+\begin{verbatim}
+## Error in solve.default(o$hessian) : 
+##   system is computationally singular: reciprocal condition number = 1.73108e-16
+## Error in diag(o$cov) : invalid 'nrow' value (too large or NA)
+\end{verbatim}
+\begin{alltt}
+\hlstd{port2} \hlkwb{<-} \hlkwd{update}\hlstd{(port,}\hlkwc{phi}\hlstd{=}\hlopt{~}\hlstd{Year)}
+\hlstd{port3} \hlkwb{<-} \hlkwd{update}\hlstd{(port,}\hlkwc{xi}\hlstd{=}\hlopt{~}\hlkwd{I}\hlstd{((Year}\hlopt{-}\hlnum{1955}\hlstd{)}\hlopt{/}\hlnum{1955}\hlstd{),}\hlkwc{start}\hlstd{=}\hlkwd{c}\hlstd{(}\hlkwd{coef}\hlstd{(port),}\hlnum{0.001}\hlstd{))}
+\hlkwd{ggplot}\hlstd{(port3)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dportpirieCov-1} 
+
+\end{knitrout}
+An examination of the AIC for each of these fitted models ({\tt AIC(port)} etc.) reveals there to be no evidence of an effect of Year on any of the GEV model parameters.
+%
+\subsection{Variants on basic GEV model fitting}
+%
+The various different model estimation strategies outlined for the GDP model above can be applied equally to the estimation of GEV models.  We can use MCMC to estimate the GEV model parameters, just as for the GPD in Section~\ref{sebsection:BayesEstimation}:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{evm}\hlstd{(SeaLevel,}\hlkwc{data}\hlstd{=portpirie,}\hlkwc{family}\hlstd{=gev,}\hlkwc{method}\hlstd{=}\hlstr{"simulate"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+Output may be processed and examined in the same manner as for the GPD model, and we refer to the details of Section~\ref{sebsection:BayesEstimation} for outline examples in this area.
+
+Informative priors or penalties may be applied to model parameters as follows:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{pp} \hlkwb{<-} \hlkwd{list}\hlstd{(}\hlkwd{c}\hlstd{(}\hlnum{0}\hlstd{,} \hlnum{0}\hlstd{,} \hlnum{0}\hlstd{),} \hlkwd{diag}\hlstd{(}\hlkwd{c}\hlstd{(}\hlnum{10}\hlopt{^}\hlnum{4}\hlstd{,} \hlnum{10}\hlopt{^}\hlnum{4}\hlstd{,} \hlnum{.25}\hlstd{)))}
+\hlkwd{update}\hlstd{(port,} \hlkwc{priorParameters} \hlstd{= pp,} \hlkwc{prior}\hlstd{=}\hlstr{"gaussian"}\hlstd{)}
+\end{alltt}
+\begin{verbatim}
+## Call: evm(y = SeaLevel, data = portpirie, family = gev, priorParameters = pp, 
+##     prior = "gaussian")
+## Family:       GEV 
+## 
+## Model fit by penalized maximum likelihood.
+## 
+## Convergence:		TRUE
+## 
+##   Log lik.  Penalized log lik.  AIC      
+##   4.338405  4.327974            -2.676810
+## 
+## 
+## Coefficients:
+##                   Value     SE      
+## mu: (Intercept)    3.87434   0.02776
+## phi: (Intercept)  -1.62061   0.10152
+## xi: (Intercept)   -0.04655   0.09535
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+This was illustrated in more detail for the GPD model in Section~\ref{section:MPLE}.
+
+Currently, there is no implementation in {\tt texmex} of the Observed Information Matrix estimator of the covariance matrix of parameter estimates, instead estimates of this matrix are obtained using a numerical approximation to the Hessian matrix.
+
+Uncertainty estimation via the parametric bootstrap is carried out for our fitted model in {\tt texmex} in the same manner as for the GPD, as follows:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{boot} \hlkwb{<-} \hlkwd{evmBoot}\hlstd{(port,} \hlkwc{trace}\hlstd{=}\hlnum{1001}\hlstd{)}
+\hlkwd{summary}\hlstd{(boot)}
+\end{alltt}
+\begin{verbatim}
+## evmBoot(o = port, trace = 1001)
+##                  mu: (Intercept) phi: (Intercept) xi: (Intercept)
+## Original             3.874731480      -1.61930145    -0.050140222
+## Bootstrap mean       3.877141452      -1.64532071    -0.057227614
+## Bias                 0.002409972      -0.02601926    -0.007087392
+## SD                   0.026927400       0.10183731     0.094997649
+## Bootstrap median     3.876474714      -1.64201589    -0.053412388
+## 
+## Correlation:
+##                  mu: (Intercept) phi: (Intercept) xi: (Intercept)
+## mu: (Intercept)        1.0000000        0.3378463      -0.3316707
+## phi: (Intercept)       0.3378463        1.0000000      -0.3655992
+## xi: (Intercept)       -0.3316707       -0.3655992       1.0000000
+\end{verbatim}
+\begin{alltt}
+\hlkwd{ggplot}\hlstd{(boot)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dbootstrapGEV-1} 
+
+\end{knitrout}
+This plot shows the bootstrap distributions of the model parameter estimates, for the GEV fitted to the {\tt portpirie} dataset.
+%
+\subsection{Return level estimation}
+%
+Quantiles of the fitted GEV distribution can be estimated by using the estimated model parameters in the following equation:
+\begin{eqnarray}
+x_p = \left\{
+\begin{array}{ll}
+  \mu - \frac{\sigma}{\xi}[1-\{-\log(1-p)\}^{-\xi}, & \mbox{ for }\xi\neq 0;\\
+  \mu - \sigma\log\{-\log(1-p)\}, & \mbox{ for }\xi=0.
+\end{array}
+\right.
+\label{eqn:GEVreturnLevel}
+\end{eqnarray}
+Here $p$ is the probability satisfying $G(x_p)=1-p$ (where $G(x)$ is defined in equation~(\ref{eqn:GEVDistnFun})).  This has the interpretation of $x_p$ being the {\it return level} associated with return period $1/p$. For example, for annual maxima data, it is the level which is expected to be exceeded on average once every $1/p$ years.
+
+In {\tt texmex}, return levels are estimated for the GEV as we showed for the GPD:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{portRL} \hlkwb{<-} \hlkwd{predict}\hlstd{(port,}\hlkwc{M}\hlstd{=}\hlkwd{seq}\hlstd{(}\hlnum{50}\hlstd{,}\hlnum{1000}\hlstd{,}\hlkwc{by}\hlstd{=}\hlnum{50}\hlstd{),}\hlkwc{ci.fit}\hlstd{=}\hlnum{TRUE}\hlstd{)}
+\hlstd{g14} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(portRL)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dGEVretLevel-1} 
+\begin{kframe}\begin{alltt}
+\hlstd{g14[[}\hlnum{1}\hlstd{]]} \hlopt{+} \hlkwd{scale_x_continuous}\hlstd{(}\hlkwc{trans}\hlstd{=}\hlstr{"log"}\hlstd{,}\hlkwc{breaks}\hlstd{=}\hlkwd{c}\hlstd{(}\hlnum{50}\hlstd{,}\hlnum{100}\hlstd{,}\hlnum{200}\hlstd{,}\hlnum{500}\hlstd{,}\hlnum{1000}\hlstd{))}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmex1dGEVretLevel-2} 
+\begin{kframe}\begin{alltt}
+\hlstd{portRL}\hlopt{$}\hlstd{obj[}\hlkwd{c}\hlstd{(}\hlnum{1}\hlstd{,}\hlnum{10}\hlstd{,}\hlnum{20}\hlstd{)]}
+\end{alltt}
+\begin{verbatim}
+## $M.50
+##          RL    2.5%    97.5%
+## mu 4.576567 4.34373 4.809405
+## 
+## $M.500
+##          RL     2.5%    97.5%
+## mu 4.932018 4.393014 5.471022
+## 
+## $M.1000
+##          RL     2.5%  97.5%
+## mu 5.030884 4.376568 5.6852
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+
+\bibliography{texmex}
+\bibliographystyle{plain}
+\end{document}
+
+

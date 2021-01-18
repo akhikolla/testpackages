@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<meta name="author" content="Paul Northrop" />
+
+<meta name="date" content="2020-09-02" />
+
+<title>Rusting Faster: Simulation using Rcpp</title>
+
+
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css" data-origin="pandoc">
+code.sourceCode > span { display: inline-block; line-height: 1.25; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode { white-space: pre; position: relative; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+code.sourceCode { white-space: pre-wrap; }
+code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    for (var j = 0; j < rules.length; j++) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") continue;
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') continue;
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Rusting Faster: Simulation using Rcpp</h1>
+<h4 class="author">Paul Northrop</h4>
+<h4 class="date">2020-09-02</h4>
+
+
+<div id="TOC">
+<ul>
+<li><a href="#cpp_fun">Providing a C++ function to <code>ru_rcpp</code></a></li>
+<li><a href="#examples-ru_rcpp">Examples : <code>ru_rcpp</code></a><ul>
+<li><a href="#standard-normal-density">Standard normal density</a></li>
+<li><a href="#mvn">Multivariate normal density</a></li>
+<li><a href="#log-normal-density-after-box-cox-transformation">Log-normal density after Box-Cox transformation</a></li>
+<li><a href="#generalized-pareto-posterior-density">Generalized Pareto posterior density</a></li>
+</ul></li>
+<li><a href="#examples-find_lambda_one_d_rcpp-and-find_lambda_rcpp">Examples : <code>find_lambda_one_d_rcpp</code> and <code>find_lambda_rcpp</code></a><ul>
+<li><a href="#gamma-density-example-for-find_lambda_one_d_rcpp">Gamma density: example for <code>find_lambda_one_d_rcpp</code></a></li>
+<li><a href="#generalized-pareto-posterior-density-example-for-find_lambda_rcpp">Generalized Pareto posterior density: example for <code>find_lambda_rcpp</code></a></li>
+</ul></li>
+<li><a href="#references">References</a></li>
+</ul>
+</div>
+
+<p>The <strong>rust</strong> package implements the multivariate generalized ratio-of-uniforms method of simulating random variates from a <span class="math inline">\(d\)</span>-dimensional continuous distribution. The user specifies (the log of) a positive target function <span class="math inline">\(f(x)\)</span> proportional to the density function of the distribution. For an introduction to <em>rust</em> see the vignette <a href="rust-a-vignette.html">Introducing rust</a>.</p>
+<p>This vignette describes a new feature of <strong>rust</strong>: the option for the user to provide a C++ function to evaluate the target log-density, rather than an R function. The <strong>Rcpp</strong> <span class="citation">(Eddelbuettel and Francois 2011, <span class="citation">@RcppDEbook</span>)</span> and <strong>RcppArmadillo</strong> <span class="citation">(Eddelbuettel and Sanderson 2014)</span> packages are used to speed up simulation from the target density. The improvement results from faster function evaluations and (in particular) from performing using C++ the looping in the ratio-of-uniforms algorithm. The new function <code>ru_rcpp</code> requires the target log-density to be specified using (externals pointers to) C++ functions, whereas the existing <code>ru</code> requires input R functions. Otherwise, the functionality of these two functions is the same. There are also Rcpp-based versions of functions for setting Box-Cox transformation parameters: <code>find_lambda_rcpp</code> and <code>find_lambda_one_d_rcpp</code></p>
+<p>In this vignette we describe in general terms the general setup of the Rcpp-based functions and use examples to illustrate their use. For more information about these examples see the vignette <a href="rust-a-vignette.html">Introducing rust</a></p>
+<div id="cpp_fun" class="section level2">
+<h2>Providing a C++ function to <code>ru_rcpp</code></h2>
+<p>The general way that <strong>rust</strong> enables users to provide their own C++ functions uses external pointers and is based on the <a href="https://gallery.rcpp.org/">Rcpp Gallery</a> article <a href="https://gallery.rcpp.org/articles/passing-cpp-function-pointers/">Passing user-supplied C++ functions</a> by Dirk Eddelbuettel. For a detailed case study of the general approach see the <strong>RcppDE</strong> package <span class="citation">(Eddelbuettel 2016)</span> vignette at the <a href="https://CRAN.R-project.org/package=RcppDE">RcppDE page on CRAN</a>.</p>
+<p>The user writes a C++ function to calculate <span class="math inline">\(\log f(x)\)</span>. The current implementation in <strong>rust</strong> requires this function to have a particular structure: it must take a constant reference to an <code>Rcpp::NumericVector</code>, say <code>x</code>, a constant reference to an <code>Rcpp::List</code>, say <code>pars</code>, and return a <code>double</code> precision scalar. <code>x</code> is the argument <span class="math inline">\(x\)</span> of <span class="math inline">\(f(x)\)</span>. <code>pars</code> is a list containing the values of parameters whose values are not specified inside the function. This allows the user to change the values of any parameters in the target density without editing the function. If there are no such parameters then the user must still include the argument <code>pars</code> in their function, even though the list provided to the function when it is called will be empty.</p>
+<p>A simple way for the user to provide their C++ functions to create them in a file, say <code>user_fns.cpp</code>. Example content is provided below. The full file is available on the <a href="https://github.com/paulnorthrop/rust/blob/master/src/user_fns.cpp">rust Github page</a>. The functions in this file are compiled and made available to R, either using the <code>Rcpp::sourceCpp</code> function (e.g. <code>Rcpp::sourceCpp(&quot;user_fns.cpp&quot;)</code>) or using RStudio’s Source button on the editor toolbar. The example content below also includes the function <code>create_xptr</code>, which creates an external pointer to a C++ function. See <a href="https://gallery.rcpp.org/articles/passing-cpp-function-pointers/">Passing user-supplied C++ functions</a>. It is this external pointer that is passed to <code>ru_rcpp</code> to perform ratio-of-uniforms sampling. If the user has written a C++ function, say <code>new_name</code>, then they need to add to <code>create_xptr</code> two lines of code:</p>
+<pre><code>else if (fstr == &quot;new_name&quot;)  
+  return(Rcpp::XPtr&lt;funcPtr&gt;(new funcPtr(&amp;new_name))) ;</code></pre>
+<p>to create an external pointer for <code>new_name</code> using <code>create_xptr</code>. The following excerpt from the example <code>user_fns.cpp</code> file contains code for a standard normal density. Note that for this particular example we don’t need RcppArmadillo: we could replace <code>#include &lt;RcppArmadillo.h&gt;</code> with <code>#include &lt;Rcpp.h&gt;</code> and delete <code>using namespace arma;</code>. However, RcppArmadillo is used in the the <a href="#mvn">multivariate normal example</a> below and will be useful in many examples.</p>
+<pre><code>// [[Rcpp::depends(RcppArmadillo)]]
+
+#include &lt;RcppArmadillo.h&gt;
+
+using namespace arma;
+using namespace Rcpp;
+
+// [[Rcpp::interfaces(r, cpp)]]
+
+// User-supplied C++ functions for logf.
+
+// Note that currently the only interface available in rust is
+// double fun(const Rcpp::NumericVector&amp; x, const Rcpp::List&amp; pars).
+// However, as shown in the function logdmvnorm below RcppArmadillo
+// functions can be used inside the function.
+
+// Each function must be prefaced by the line: // [[Rcpp::export]]
+
+// One-dimensional standard normal.
+
+// [[Rcpp::export]]  
+double logdN01(const Rcpp::NumericVector&amp; x, const Rcpp::List&amp; pars) {  
+  return (-pow(x[0], 2.0) / 2.0) ;
+}
+
+// A function to create external pointers for any of the functions above.  
+// See http://gallery.rcpp.org/articles/passing-cpp-function-pointers/  
+// If you write a new function above called new_name then add the following
+//
+// else if (fstr == &quot;new_name&quot;)  
+//   return(Rcpp::XPtr&lt;funcPtr&gt;(new funcPtr(&amp;new_name))) ;  
+
+// [[Rcpp::export]]  
+SEXP create_xptr(std::string fstr) {  
+  typedef double (*funcPtr)(const Rcpp::NumericVector&amp; x,  
+                  const Rcpp::List&amp; pars) ;  
+  if (fstr == &quot;logdN01&quot;)  
+    return(Rcpp::XPtr&lt;funcPtr&gt;(new funcPtr(&amp;logdN01))) ;  
+  else  
+    return(Rcpp::XPtr&lt;funcPtr&gt;(R_NilValue)) ;  
+}  
+
+// We could create the external pointers when this file is sourced using   
+// the embedded R code below and/or (re)create them using create_xptr() in 
+// an R session or R package..
+
+/*** R
+ptr_N01 &lt;- create_xptr(&quot;logdN01&quot;)
+*/</code></pre>
+</div>
+<div id="examples-ru_rcpp" class="section level2">
+<h2>Examples : <code>ru_rcpp</code></h2>
+<p>All the examples in the documentation for <code>ru</code> are replicated in the documentation for <code>ru_rcpp</code>. Here we consider a subset of the examples from the <a href="rust-a-vignette.html">Introducing rust</a> vignette, to illustrate how to provide user-supplied C++ functions to <code>ru_rcpp</code> and to compare the performances of <code>ru</code> and <code>ru_rcpp</code>. We use the <strong>microbenchmark</strong> package <span class="citation">(Mersmann 2015)</span> to make the comparison.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1"></a><span class="kw">library</span>(rust)</span>
+<span id="cb3-2"><a href="#cb3-2"></a><span class="kw">library</span>(Rcpp)</span>
+<span id="cb3-3"><a href="#cb3-3"></a><span class="co"># Is microbenchmark available?</span></span>
+<span id="cb3-4"><a href="#cb3-4"></a>got_microbenchmark &lt;-<span class="st"> </span><span class="kw">requireNamespace</span>(<span class="st">&quot;microbenchmark&quot;</span>, <span class="dt">quietly =</span> <span class="ot">TRUE</span>)</span>
+<span id="cb3-5"><a href="#cb3-5"></a><span class="cf">if</span> (got_microbenchmark) {</span>
+<span id="cb3-6"><a href="#cb3-6"></a>  <span class="kw">library</span>(microbenchmark)</span>
+<span id="cb3-7"><a href="#cb3-7"></a>}  </span>
+<span id="cb3-8"><a href="#cb3-8"></a><span class="co"># Set the size of the simulated sample</span></span>
+<span id="cb3-9"><a href="#cb3-9"></a>n &lt;-<span class="st"> </span><span class="dv">1000</span></span></code></pre></div>
+<p>It is assumed that the user has already compiled their C++ functions and made them available to their R session, either using the <code>Rcpp::sourceCpp</code> function (e.g. <code>Rcpp::sourceCpp(&quot;user_fns.cpp&quot;)</code>) or using RStudio’s Source button on the editor toolbar.</p>
+<div id="standard-normal-density" class="section level3">
+<h3>Standard normal density</h3>
+<p>We start with a simple example: the (1-dimensional) standard normal density, based on the C++ function <code>logdN01</code> in the example <code>user_fns.cpp</code> file above.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1"></a><span class="co"># Normal density ===================</span></span>
+<span id="cb4-2"><a href="#cb4-2"></a></span>
+<span id="cb4-3"><a href="#cb4-3"></a><span class="co"># Create a pointer to the logdN01 C++ function</span></span>
+<span id="cb4-4"><a href="#cb4-4"></a><span class="co"># (not necessary if this was created when the file of C++ functions was sourced)</span></span>
+<span id="cb4-5"><a href="#cb4-5"></a>ptr_N01 &lt;-<span class="st"> </span><span class="kw">create_xptr</span>(<span class="st">&quot;logdN01&quot;</span>)</span>
+<span id="cb4-6"><a href="#cb4-6"></a></span>
+<span id="cb4-7"><a href="#cb4-7"></a><span class="co"># Use ru and ru_rcpp starting from the same random number seed and check</span></span>
+<span id="cb4-8"><a href="#cb4-8"></a><span class="co"># that the simulated values are the same.</span></span>
+<span id="cb4-9"><a href="#cb4-9"></a><span class="kw">set.seed</span>(<span class="dv">47</span>)</span>
+<span id="cb4-10"><a href="#cb4-10"></a>x_old &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> <span class="cf">function</span>(x) <span class="op">-</span>x <span class="op">^</span><span class="st"> </span><span class="dv">2</span> <span class="op">/</span><span class="st"> </span><span class="dv">2</span>, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n, <span class="dt">init =</span> <span class="fl">0.1</span>)</span>
+<span id="cb4-11"><a href="#cb4-11"></a><span class="kw">head</span>(x_old<span class="op">$</span>sim_vals)</span>
+<span id="cb4-12"><a href="#cb4-12"></a><span class="co">#&gt;            [,1]</span></span>
+<span id="cb4-13"><a href="#cb4-13"></a><span class="co">#&gt; [1,]  0.7764728</span></span>
+<span id="cb4-14"><a href="#cb4-14"></a><span class="co">#&gt; [2,]  0.5310434</span></span>
+<span id="cb4-15"><a href="#cb4-15"></a><span class="co">#&gt; [3,] -0.1046049</span></span>
+<span id="cb4-16"><a href="#cb4-16"></a><span class="co">#&gt; [4,]  1.2111509</span></span>
+<span id="cb4-17"><a href="#cb4-17"></a><span class="co">#&gt; [5,]  1.1391379</span></span>
+<span id="cb4-18"><a href="#cb4-18"></a><span class="co">#&gt; [6,]  0.5180914</span></span>
+<span id="cb4-19"><a href="#cb4-19"></a><span class="kw">set.seed</span>(<span class="dv">47</span>)</span>
+<span id="cb4-20"><a href="#cb4-20"></a>x_new &lt;-<span class="st"> </span><span class="kw">ru_rcpp</span>(<span class="dt">logf =</span> ptr_N01, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n, <span class="dt">init =</span> <span class="fl">0.1</span>)</span>
+<span id="cb4-21"><a href="#cb4-21"></a><span class="kw">head</span>(x_new<span class="op">$</span>sim_vals)</span>
+<span id="cb4-22"><a href="#cb4-22"></a><span class="co">#&gt;            [,1]</span></span>
+<span id="cb4-23"><a href="#cb4-23"></a><span class="co">#&gt; [1,]  0.7764728</span></span>
+<span id="cb4-24"><a href="#cb4-24"></a><span class="co">#&gt; [2,]  0.5310434</span></span>
+<span id="cb4-25"><a href="#cb4-25"></a><span class="co">#&gt; [3,] -0.1046049</span></span>
+<span id="cb4-26"><a href="#cb4-26"></a><span class="co">#&gt; [4,]  1.2111509</span></span>
+<span id="cb4-27"><a href="#cb4-27"></a><span class="co">#&gt; [5,]  1.1391379</span></span>
+<span id="cb4-28"><a href="#cb4-28"></a><span class="co">#&gt; [6,]  0.5180914</span></span>
+<span id="cb4-29"><a href="#cb4-29"></a></span>
+<span id="cb4-30"><a href="#cb4-30"></a><span class="co"># Compare performances of ru and ru_rcpp</span></span>
+<span id="cb4-31"><a href="#cb4-31"></a><span class="cf">if</span> (got_microbenchmark) {</span>
+<span id="cb4-32"><a href="#cb4-32"></a>  res &lt;-<span class="st"> </span><span class="kw">microbenchmark</span>(</span>
+<span id="cb4-33"><a href="#cb4-33"></a>    <span class="dt">old =</span> <span class="kw">ru</span>(<span class="dt">logf =</span> <span class="cf">function</span>(x) <span class="op">-</span>x <span class="op">^</span><span class="st"> </span><span class="dv">2</span> <span class="op">/</span><span class="st"> </span><span class="dv">2</span>, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n, <span class="dt">init =</span> <span class="fl">0.1</span>),</span>
+<span id="cb4-34"><a href="#cb4-34"></a>    <span class="dt">new =</span> <span class="kw">ru_rcpp</span>(<span class="dt">logf =</span> ptr_N01, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n, <span class="dt">init =</span> <span class="fl">0.1</span>)</span>
+<span id="cb4-35"><a href="#cb4-35"></a>  )</span>
+<span id="cb4-36"><a href="#cb4-36"></a>  <span class="kw">print</span>(res, <span class="dt">signif =</span> <span class="dv">4</span>)</span>
+<span id="cb4-37"><a href="#cb4-37"></a>}</span>
+<span id="cb4-38"><a href="#cb4-38"></a><span class="co">#&gt; Unit: milliseconds</span></span>
+<span id="cb4-39"><a href="#cb4-39"></a><span class="co">#&gt;  expr    min     lq   mean median     uq   max neval</span></span>
+<span id="cb4-40"><a href="#cb4-40"></a><span class="co">#&gt;   old 18.800 20.170 21.950 21.160 23.350 45.39   100</span></span>
+<span id="cb4-41"><a href="#cb4-41"></a><span class="co">#&gt;   new  2.087  2.261  2.698  2.345  2.461 16.47   100</span></span></code></pre></div>
+<p>As we would hope, <code>ru_rcpp</code> is faster than <code>ru</code>. If we start from the same random number seed we get the same simulated values from <code>ru</code> and <code>ru_rcpp</code>.</p>
+</div>
+<div id="mvn" class="section level3">
+<h3>Multivariate normal density</h3>
+<p>To execute this example we add the following function to <code>user_fns.cpp</code></p>
+<pre><code>// d-dimensional normal with zero-mean and covariance matrix sigma.
+
+// [[Rcpp::export]]
+double logdmvnorm(const Rcpp::NumericVector&amp; x, const Rcpp::List&amp; pars) {
+  arma::mat sigma = as&lt;arma::mat&gt;(pars[&quot;sigma&quot;]) ;
+  arma::vec y = Rcpp::as&lt;arma::vec&gt;(x) ;
+  double qform = arma::as_scalar(y.t() * arma::inv(sigma) * y) ;
+  return -qform / 2.0  ;
+}</code></pre>
+<p>and add</p>
+<pre><code>else if (fstr == &quot;logdmvnorm&quot;)
+  return(Rcpp::XPtr&lt;funcPtr&gt;(new funcPtr(&amp;logdmvnorm))) ;</code></pre>
+<p>to the function <code>create_xptr</code> in <code>user_fns.cpp</code>.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1"></a><span class="co"># Three-dimensional normal with positive association ----------------</span></span>
+<span id="cb7-2"><a href="#cb7-2"></a>rho &lt;-<span class="st"> </span><span class="fl">0.9</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a>covmat &lt;-<span class="st"> </span><span class="kw">matrix</span>(rho, <span class="dv">3</span>, <span class="dv">3</span>) <span class="op">+</span><span class="st"> </span><span class="kw">diag</span>(<span class="dv">1</span> <span class="op">-</span><span class="st"> </span>rho, <span class="dv">3</span>)</span>
+<span id="cb7-4"><a href="#cb7-4"></a><span class="co"># R function</span></span>
+<span id="cb7-5"><a href="#cb7-5"></a>log_dmvnorm &lt;-<span class="st"> </span><span class="cf">function</span>(x, <span class="dt">mean =</span> <span class="kw">rep</span>(<span class="dv">0</span>, d), <span class="dt">sigma =</span> <span class="kw">diag</span>(d)) {</span>
+<span id="cb7-6"><a href="#cb7-6"></a>  x &lt;-<span class="st"> </span><span class="kw">matrix</span>(x, <span class="dt">ncol =</span> <span class="kw">length</span>(x))</span>
+<span id="cb7-7"><a href="#cb7-7"></a>  d &lt;-<span class="st"> </span><span class="kw">ncol</span>(x)</span>
+<span id="cb7-8"><a href="#cb7-8"></a>  <span class="op">-</span><span class="st"> </span><span class="fl">0.5</span> <span class="op">*</span><span class="st"> </span>(x <span class="op">-</span><span class="st"> </span>mean) <span class="op">%*%</span><span class="st"> </span><span class="kw">solve</span>(sigma) <span class="op">%*%</span><span class="st"> </span><span class="kw">t</span>(x <span class="op">-</span><span class="st"> </span>mean)</span>
+<span id="cb7-9"><a href="#cb7-9"></a>}</span>
+<span id="cb7-10"><a href="#cb7-10"></a><span class="co"># Create a pointer to the logdmvnorm C++ function</span></span>
+<span id="cb7-11"><a href="#cb7-11"></a>ptr_mvn &lt;-<span class="st"> </span><span class="kw">create_xptr</span>(<span class="st">&quot;logdmvnorm&quot;</span>)</span>
+<span id="cb7-12"><a href="#cb7-12"></a></span>
+<span id="cb7-13"><a href="#cb7-13"></a><span class="cf">if</span> (got_microbenchmark) {</span>
+<span id="cb7-14"><a href="#cb7-14"></a>  res &lt;-<span class="st"> </span><span class="kw">microbenchmark</span>(</span>
+<span id="cb7-15"><a href="#cb7-15"></a>    <span class="dt">old =</span> <span class="kw">ru</span>(<span class="dt">logf =</span> log_dmvnorm, <span class="dt">sigma =</span> covmat, <span class="dt">d =</span> <span class="dv">3</span>, <span class="dt">n =</span> n,</span>
+<span id="cb7-16"><a href="#cb7-16"></a>             <span class="dt">init =</span> <span class="kw">c</span>(<span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">0</span>)), </span>
+<span id="cb7-17"><a href="#cb7-17"></a>    <span class="dt">new =</span> <span class="kw">ru_rcpp</span>(<span class="dt">logf =</span> ptr_mvn, <span class="dt">sigma =</span> covmat, <span class="dt">d =</span> <span class="dv">3</span>, <span class="dt">n =</span> n,</span>
+<span id="cb7-18"><a href="#cb7-18"></a>                  <span class="dt">init =</span> <span class="kw">c</span>(<span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">0</span>))</span>
+<span id="cb7-19"><a href="#cb7-19"></a>  )  </span>
+<span id="cb7-20"><a href="#cb7-20"></a>  <span class="kw">print</span>(res, <span class="dt">signif =</span> <span class="dv">4</span>)</span>
+<span id="cb7-21"><a href="#cb7-21"></a>}  </span>
+<span id="cb7-22"><a href="#cb7-22"></a><span class="co">#&gt; Unit: milliseconds</span></span>
+<span id="cb7-23"><a href="#cb7-23"></a><span class="co">#&gt;  expr     min     lq    mean  median      uq    max neval</span></span>
+<span id="cb7-24"><a href="#cb7-24"></a><span class="co">#&gt;   old 212.100 219.90 226.300 225.300 230.500 290.30   100</span></span>
+<span id="cb7-25"><a href="#cb7-25"></a><span class="co">#&gt;   new   7.819   8.28   9.034   8.606   9.098  12.58   100</span></span></code></pre></div>
+<p>Again, the improvement in speed obtained using Rcpp is clear.</p>
+</div>
+<div id="log-normal-density-after-box-cox-transformation" class="section level3">
+<h3>Log-normal density after Box-Cox transformation</h3>
+<p>In this example we use a log transform (Box-Cox parameter <span class="math inline">\(\lambda = 0\)</span>) so that the ratio-of-uniforms sampling is based on a normal distribution. The C++ function to calculate the log-density of a lognormal distribution is:</p>
+<pre><code>// Lognormal(mu, sigma).
+
+// [[Rcpp::export]]
+double logdlnorm(const Rcpp::NumericVector&amp; x, const Rcpp::List&amp; pars) {
+  double mu = pars[&quot;mu&quot;] ;
+  double sigma = pars[&quot;sigma&quot;] ;
+  if (x[0] &gt; 0)
+    return -log(x[0]) - pow(log(x[0]) - mu, 2.0) / (2.0 * pow(sigma, 2.0)) ;
+  else
+    return R_NegInf ;
+}</code></pre>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1"></a>ptr_lnorm &lt;-<span class="st"> </span><span class="kw">create_xptr</span>(<span class="st">&quot;logdlnorm&quot;</span>)</span>
+<span id="cb9-2"><a href="#cb9-2"></a><span class="cf">if</span> (got_microbenchmark) {</span>
+<span id="cb9-3"><a href="#cb9-3"></a>  res &lt;-<span class="st"> </span><span class="kw">microbenchmark</span>(</span>
+<span id="cb9-4"><a href="#cb9-4"></a>   <span class="dt">old =</span> <span class="kw">ru</span>(<span class="dt">logf =</span> dlnorm, <span class="dt">log =</span> <span class="ot">TRUE</span>, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n, <span class="dt">lower =</span> <span class="dv">0</span>, <span class="dt">init =</span> <span class="fl">0.1</span>,</span>
+<span id="cb9-5"><a href="#cb9-5"></a>            <span class="dt">trans =</span> <span class="st">&quot;BC&quot;</span>, <span class="dt">lambda =</span> <span class="dv">0</span>),</span>
+<span id="cb9-6"><a href="#cb9-6"></a>   <span class="dt">new =</span> <span class="kw">ru_rcpp</span>(<span class="dt">logf =</span> ptr_lnorm, <span class="dt">mu =</span> <span class="dv">0</span>, <span class="dt">sigma =</span> <span class="dv">1</span>, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n,</span>
+<span id="cb9-7"><a href="#cb9-7"></a>                 <span class="dt">lower =</span> <span class="dv">0</span>, <span class="dt">init =</span> <span class="fl">0.1</span>, <span class="dt">trans =</span> <span class="st">&quot;BC&quot;</span>, <span class="dt">lambda =</span> <span class="dv">0</span>)</span>
+<span id="cb9-8"><a href="#cb9-8"></a>  )</span>
+<span id="cb9-9"><a href="#cb9-9"></a>  <span class="kw">print</span>(res, <span class="dt">signif =</span> <span class="dv">4</span>)</span>
+<span id="cb9-10"><a href="#cb9-10"></a>}  </span>
+<span id="cb9-11"><a href="#cb9-11"></a><span class="co">#&gt; Unit: milliseconds</span></span>
+<span id="cb9-12"><a href="#cb9-12"></a><span class="co">#&gt;  expr    min     lq   mean median     uq    max neval</span></span>
+<span id="cb9-13"><a href="#cb9-13"></a><span class="co">#&gt;   old 30.040 32.200 35.470 33.900 36.350 93.920   100</span></span>
+<span id="cb9-14"><a href="#cb9-14"></a><span class="co">#&gt;   new  4.304  4.531  5.164  4.788  5.056  8.499   100</span></span></code></pre></div>
+</div>
+<div id="generalized-pareto-posterior-density" class="section level3">
+<h3>Generalized Pareto posterior density</h3>
+<p>The C++ function to calculate the log-posterior density is:</p>
+<pre><code>// Generalized Pareto posterior based on an MDI prior truncated to
+// shape parameter xi &gt;= -1.
+
+// [[Rcpp::export]]
+double loggp(const Rcpp::NumericVector&amp; x, const Rcpp::List&amp; ss) {
+  Rcpp::NumericVector gpd_data = ss[&quot;gpd_data&quot;] ;
+  int m = ss[&quot;m&quot;] ;
+  double xm = ss[&quot;xm&quot;] ;
+  double sum_gp = ss[&quot;sum_gp&quot;] ;
+  if (x[0] &lt;= 0 || x[1] &lt;= -x[0] / xm)
+    return R_NegInf ;
+  double loglik ;
+  Rcpp::NumericVector sdat = gpd_data / x[0] ;
+  Rcpp::NumericVector zz = 1 + x[1] * sdat ;
+  if (std::abs(x[1]) &gt; 1e-6) {
+    loglik = -m * log(x[0]) - (1.0 + 1.0 / x[1]) * sum(log(zz)) ;
+  } else {
+    double t1, t2, sdatj ;
+    double total = 0;
+    for(int j = 0; j &lt; m; ++j) {
+      sdatj = sdat[j] ;
+      for(int i = 1; i &lt; 5; ++i) {
+        t1 = pow(sdatj, i) ;
+        t2 = (i * sdatj - i - 1) ;
+        total += pow(-1.0, i) * t1 * t2 * pow(x[1], i) / i / (i + 1) ;
+      }
+    }
+    loglik = -m * log(x[0]) - sum_gp / x[0] - total ;
+  }
+  // MDI prior.
+  if (x[1] &lt; -1)
+    return R_NegInf ;
+  double logprior = -log(x[0]) - x[1] - 1 ;
+  return (logprior + loglik) ;
+}</code></pre>
+<p>We simulate some data from a Generalized Pareto distribution, calculate summary statistics involved in the likelihood and calculate an initial value in the search for the posterior mode.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1"></a><span class="kw">set.seed</span>(<span class="dv">46</span>)</span>
+<span id="cb11-2"><a href="#cb11-2"></a><span class="co"># Sample data from a GP(sigma, xi) distribution</span></span>
+<span id="cb11-3"><a href="#cb11-3"></a>gpd_data &lt;-<span class="st"> </span><span class="kw">rgpd</span>(<span class="dt">m =</span> <span class="dv">100</span>, <span class="dt">xi =</span> <span class="fl">-0.5</span>, <span class="dt">sigma =</span> <span class="dv">1</span>)</span>
+<span id="cb11-4"><a href="#cb11-4"></a><span class="co"># Calculate summary statistics for use in the log-likelihood</span></span>
+<span id="cb11-5"><a href="#cb11-5"></a>ss &lt;-<span class="st"> </span><span class="kw">gpd_sum_stats</span>(gpd_data)</span>
+<span id="cb11-6"><a href="#cb11-6"></a><span class="co"># Calculate an initial estimate</span></span>
+<span id="cb11-7"><a href="#cb11-7"></a>init &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="kw">mean</span>(gpd_data), <span class="dv">0</span>)</span></code></pre></div>
+<p>Again we see that <code>ru_rcpp</code> is substantially faster than <code>ru</code>.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1"></a><span class="co"># Arguments for ru_rcpp</span></span>
+<span id="cb12-2"><a href="#cb12-2"></a>ptr_gp &lt;-<span class="st"> </span><span class="kw">create_xptr</span>(<span class="st">&quot;loggp&quot;</span>)</span>
+<span id="cb12-3"><a href="#cb12-3"></a>for_ru_rcpp &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="kw">list</span>(<span class="dt">logf =</span> ptr_gp, <span class="dt">init =</span> init, <span class="dt">d =</span> <span class="dv">2</span>, <span class="dt">n =</span> n,</span>
+<span id="cb12-4"><a href="#cb12-4"></a>                 <span class="dt">lower =</span> <span class="kw">c</span>(<span class="dv">0</span>, <span class="op">-</span><span class="ot">Inf</span>)), ss)</span>
+<span id="cb12-5"><a href="#cb12-5"></a></span>
+<span id="cb12-6"><a href="#cb12-6"></a><span class="cf">if</span> (got_microbenchmark) {</span>
+<span id="cb12-7"><a href="#cb12-7"></a>  res &lt;-<span class="st"> </span><span class="kw">microbenchmark</span>(</span>
+<span id="cb12-8"><a href="#cb12-8"></a>   <span class="dt">old =</span> <span class="kw">ru</span>(<span class="dt">logf =</span> gpd_logpost, <span class="dt">ss =</span> ss, <span class="dt">d =</span> <span class="dv">2</span>, <span class="dt">n =</span> n, <span class="dt">init =</span> init,</span>
+<span id="cb12-9"><a href="#cb12-9"></a>            <span class="dt">lower =</span> <span class="kw">c</span>(<span class="dv">0</span>, <span class="op">-</span><span class="ot">Inf</span>)),</span>
+<span id="cb12-10"><a href="#cb12-10"></a>   <span class="dt">new =</span> <span class="kw">do.call</span>(ru_rcpp, for_ru_rcpp)</span>
+<span id="cb12-11"><a href="#cb12-11"></a>  )</span>
+<span id="cb12-12"><a href="#cb12-12"></a>  <span class="kw">print</span>(res, <span class="dt">signif =</span> <span class="dv">4</span>)</span>
+<span id="cb12-13"><a href="#cb12-13"></a>}  </span>
+<span id="cb12-14"><a href="#cb12-14"></a><span class="co">#&gt; Unit: milliseconds</span></span>
+<span id="cb12-15"><a href="#cb12-15"></a><span class="co">#&gt;  expr   min    lq  mean median    uq    max neval</span></span>
+<span id="cb12-16"><a href="#cb12-16"></a><span class="co">#&gt;   old 81.74 88.82 92.02  91.54 93.93 145.90   100</span></span>
+<span id="cb12-17"><a href="#cb12-17"></a><span class="co">#&gt;   new 17.24 17.89 18.86  18.31 19.27  24.16   100</span></span></code></pre></div>
+</div>
+</div>
+<div id="examples-find_lambda_one_d_rcpp-and-find_lambda_rcpp" class="section level2">
+<h2>Examples : <code>find_lambda_one_d_rcpp</code> and <code>find_lambda_rcpp</code></h2>
+<p>We repeat two examples from the <a href="rust-a-vignette.html">Introducing rust</a> vignette.</p>
+<div id="gamma-density-example-for-find_lambda_one_d_rcpp" class="section level3">
+<h3>Gamma density: example for <code>find_lambda_one_d_rcpp</code></h3>
+<p>We make use of the <a href="http://dirk.eddelbuettel.com/code/rcpp/Rcpp-sugar.pdf">Rcpp sugar</a> function <code>dgamma</code>.</p>
+<pre><code>// Gamma(alpha, 1).
+
+// [[Rcpp::export]]
+double logdgamma(const Rcpp::NumericVector&amp; x, const Rcpp::List&amp; pars) {
+  double shp = pars[&quot;alpha&quot;] ;
+  return Rcpp::dgamma(x, shp, 1.0, 1)[0] ;
+}</code></pre>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1"></a>alpha &lt;-<span class="st"> </span><span class="dv">1</span></span>
+<span id="cb14-2"><a href="#cb14-2"></a>max_phi &lt;-<span class="st"> </span><span class="kw">qgamma</span>(<span class="fl">0.999</span>, <span class="dt">shape =</span> alpha)</span>
+<span id="cb14-3"><a href="#cb14-3"></a>ptr_gam &lt;-<span class="st"> </span><span class="kw">create_xptr</span>(<span class="st">&quot;logdgamma&quot;</span>)</span>
+<span id="cb14-4"><a href="#cb14-4"></a>lambda &lt;-<span class="st"> </span><span class="kw">find_lambda_one_d_rcpp</span>(<span class="dt">logf =</span> ptr_gam, <span class="dt">alpha =</span> alpha,</span>
+<span id="cb14-5"><a href="#cb14-5"></a>                                 <span class="dt">max_phi =</span> max_phi)</span>
+<span id="cb14-6"><a href="#cb14-6"></a>lambda</span>
+<span id="cb14-7"><a href="#cb14-7"></a><span class="co">#&gt; $lambda</span></span>
+<span id="cb14-8"><a href="#cb14-8"></a><span class="co">#&gt; [1] 0.2727968</span></span>
+<span id="cb14-9"><a href="#cb14-9"></a><span class="co">#&gt; </span></span>
+<span id="cb14-10"><a href="#cb14-10"></a><span class="co">#&gt; $gm</span></span>
+<span id="cb14-11"><a href="#cb14-11"></a><span class="co">#&gt; [1] 0.5689906</span></span>
+<span id="cb14-12"><a href="#cb14-12"></a><span class="co">#&gt; </span></span>
+<span id="cb14-13"><a href="#cb14-13"></a><span class="co">#&gt; $init_psi</span></span>
+<span id="cb14-14"><a href="#cb14-14"></a><span class="co">#&gt; [1] -0.2016904</span></span>
+<span id="cb14-15"><a href="#cb14-15"></a><span class="co">#&gt; </span></span>
+<span id="cb14-16"><a href="#cb14-16"></a><span class="co">#&gt; $sd_psi</span></span>
+<span id="cb14-17"><a href="#cb14-17"></a><span class="co">#&gt; [1] 0.7835109</span></span>
+<span id="cb14-18"><a href="#cb14-18"></a><span class="co">#&gt; </span></span>
+<span id="cb14-19"><a href="#cb14-19"></a><span class="co">#&gt; $user_args</span></span>
+<span id="cb14-20"><a href="#cb14-20"></a><span class="co">#&gt; list()</span></span></code></pre></div>
+</div>
+<div id="generalized-pareto-posterior-density-example-for-find_lambda_rcpp" class="section level3">
+<h3>Generalized Pareto posterior density: example for <code>find_lambda_rcpp</code></h3>
+<p>In this example we supply an external pointer to a C++ function <code>phi_to_theta</code> that ensures that both parameters of the model are strictly positive, a requirement for the Box-Cox transformation to be applicable. The function <code>phi_to_theta</code> must have the same structure as the function used to calculate <span class="math inline">\(\log f\)</span>. See <a href="#cpp_fun">Providing a C++ function to <code>ru_rcpp</code></a> for details. See the <a href="rust-a-vignette.html">Introducing rust</a> vignette for the form of the transformation.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1"></a>temp &lt;-<span class="st"> </span><span class="kw">do.call</span>(gpd_init, ss)</span>
+<span id="cb15-2"><a href="#cb15-2"></a>min_phi &lt;-<span class="st"> </span><span class="kw">pmax</span>(<span class="dv">0</span>, temp<span class="op">$</span>init_phi <span class="op">-</span><span class="st"> </span><span class="dv">2</span> <span class="op">*</span><span class="st"> </span>temp<span class="op">$</span>se_phi)</span>
+<span id="cb15-3"><a href="#cb15-3"></a>max_phi &lt;-<span class="st"> </span><span class="kw">pmax</span>(<span class="dv">0</span>, temp<span class="op">$</span>init_phi <span class="op">+</span><span class="st"> </span><span class="dv">2</span> <span class="op">*</span><span class="st"> </span>temp<span class="op">$</span>se_phi)</span>
+<span id="cb15-4"><a href="#cb15-4"></a></span>
+<span id="cb15-5"><a href="#cb15-5"></a><span class="co"># Create external pointers</span></span>
+<span id="cb15-6"><a href="#cb15-6"></a>ptr_gp &lt;-<span class="st"> </span><span class="kw">create_xptr</span>(<span class="st">&quot;loggp&quot;</span>)</span>
+<span id="cb15-7"><a href="#cb15-7"></a>ptr_phi_to_theta_gp &lt;-<span class="st"> </span><span class="kw">create_phi_to_theta_xptr</span>(<span class="st">&quot;gp&quot;</span>)</span>
+<span id="cb15-8"><a href="#cb15-8"></a><span class="co"># Note: log_j is set to zero by default inside find_lambda_rcpp()</span></span>
+<span id="cb15-9"><a href="#cb15-9"></a>lambda &lt;-<span class="st"> </span><span class="kw">find_lambda_rcpp</span>(<span class="dt">logf =</span> ptr_gp, <span class="dt">ss =</span> ss, <span class="dt">d =</span> <span class="dv">2</span>, <span class="dt">min_phi =</span> min_phi,</span>
+<span id="cb15-10"><a href="#cb15-10"></a>                           <span class="dt">max_phi =</span> max_phi, <span class="dt">user_args =</span> <span class="kw">list</span>(<span class="dt">xm =</span> ss<span class="op">$</span>xm),</span>
+<span id="cb15-11"><a href="#cb15-11"></a>                           <span class="dt">phi_to_theta =</span> ptr_phi_to_theta_gp)</span>
+<span id="cb15-12"><a href="#cb15-12"></a>lambda</span>
+<span id="cb15-13"><a href="#cb15-13"></a><span class="co">#&gt; $lambda</span></span>
+<span id="cb15-14"><a href="#cb15-14"></a><span class="co">#&gt; [1] 0.1624226 0.3678549</span></span>
+<span id="cb15-15"><a href="#cb15-15"></a><span class="co">#&gt; </span></span>
+<span id="cb15-16"><a href="#cb15-16"></a><span class="co">#&gt; $gm</span></span>
+<span id="cb15-17"><a href="#cb15-17"></a><span class="co">#&gt; [1] 1.10542493 0.03225836</span></span>
+<span id="cb15-18"><a href="#cb15-18"></a><span class="co">#&gt; </span></span>
+<span id="cb15-19"><a href="#cb15-19"></a><span class="co">#&gt; $init_psi</span></span>
+<span id="cb15-20"><a href="#cb15-20"></a><span class="co">#&gt; [1]  0.1054021 -0.2184344</span></span>
+<span id="cb15-21"><a href="#cb15-21"></a><span class="co">#&gt; </span></span>
+<span id="cb15-22"><a href="#cb15-22"></a><span class="co">#&gt; $sd_psi</span></span>
+<span id="cb15-23"><a href="#cb15-23"></a><span class="co">#&gt;       Var1       Var2 </span></span>
+<span id="cb15-24"><a href="#cb15-24"></a><span class="co">#&gt; 0.12670792 0.02477219 </span></span>
+<span id="cb15-25"><a href="#cb15-25"></a><span class="co">#&gt; </span></span>
+<span id="cb15-26"><a href="#cb15-26"></a><span class="co">#&gt; $phi_to_theta</span></span>
+<span id="cb15-27"><a href="#cb15-27"></a><span class="co">#&gt; &lt;pointer: 0x000000000035fb60&gt;</span></span>
+<span id="cb15-28"><a href="#cb15-28"></a><span class="co">#&gt; </span></span>
+<span id="cb15-29"><a href="#cb15-29"></a><span class="co">#&gt; $log_j</span></span>
+<span id="cb15-30"><a href="#cb15-30"></a><span class="co">#&gt; &lt;pointer: 0x000000000035fa80&gt;</span></span>
+<span id="cb15-31"><a href="#cb15-31"></a><span class="co">#&gt; </span></span>
+<span id="cb15-32"><a href="#cb15-32"></a><span class="co">#&gt; $user_args</span></span>
+<span id="cb15-33"><a href="#cb15-33"></a><span class="co">#&gt; $user_args$xm</span></span>
+<span id="cb15-34"><a href="#cb15-34"></a><span class="co">#&gt; [1] 1.846219</span></span></code></pre></div>
+</div>
+</div>
+<div id="references" class="section level2">
+<h2>References</h2>
+<script type="text/x-mathjax-config">
+   MathJax.Hub.Config({  "HTML-CSS": { minScaleAdjust: 125, availableFonts: [] }  });
+</script>
+<div id="refs" class="references">
+<div id="ref-RcppDEbook">
+<p>Eddelbuettel, D. 2013. <em>Seamless R and C++ Integration with Rcpp</em>. New York: Springer.</p>
+</div>
+<div id="ref-RcppDE">
+<p>———. 2016. <em>RcppDE: Global Optimization by Differential Evolution in C++</em>. <a href="https://CRAN.R-project.org/package=RcppDE">https://CRAN.R-project.org/package=RcppDE</a>.</p>
+</div>
+<div id="ref-Rcpp">
+<p>Eddelbuettel, D., and R. Francois. 2011. “Rcpp: Seamless R and C++ Integration.” <em>Journal of Statistical Software</em> 40 (8): 1–18. <a href="https://doi.org/10.18637/jss.v040.i08">https://doi.org/10.18637/jss.v040.i08</a>.</p>
+</div>
+<div id="ref-arma">
+<p>Eddelbuettel, D., and C. Sanderson. 2014. “RcppArmadillo: Accelerating R with High-Performance C++ Linear Algebra.” <em>Computational Statistics and Data Analysis</em> 71: 1054–63. <a href="https://doi.org/10.1016/j.csda.2013.02.005">https://doi.org/10.1016/j.csda.2013.02.005</a>.</p>
+</div>
+<div id="ref-microbenchmark">
+<p>Mersmann, Olaf. 2015. <em>Microbenchmark: Accurate Timing Functions</em>. <a href="https://CRAN.R-project.org/package=microbenchmark">https://CRAN.R-project.org/package=microbenchmark</a>.</p>
+</div>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

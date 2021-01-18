@@ -1,0 +1,413 @@
+---
+title: DeLorean analysis of Shalek et al. primary mouse bone-marrow-derived dendritic cells data
+author: John Reid
+bibliography: DeLorean.bib
+output:
+  html_document:
+    toc: true
+    fig_caption: true
+---
+
+```{r build, echo=FALSE, eval=FALSE}
+#
+# Execute this block to render the Rmarkdown.
+#
+devtools::load_all('../..')
+devtools::load_all('../../../DeLoreanData/')
+# fit.model <- FALSE
+fit.model <- TRUE
+rmarkdown::render('Shalek-DeLorean.Rmd')
+```
+
+
+```{r config, echo=FALSE, message=FALSE}
+library(knitr)
+library(knitcitations)
+library(rmarkdown)
+library(functional)
+#
+# knitr options
+#
+opts_chunk$set(
+    fig.path = 'figures/Shalek-',
+    stop_on_error = TRUE,
+    fig.width = 12.5,
+    fig.height = 8)
+#
+# Citations
+#
+cleanbib()
+cite_options(
+    # hyperlink = 'to.doc',
+    hyperlink = TRUE,
+    # style = 'html',
+    # citation_format = 'text',
+    citation_format = "pandoc",
+    cite.style = "numeric",
+    check.entries = TRUE)
+    # hyperlink = TRUE)
+bib <- read.bibtex("DeLorean.bib")
+if (file.exists("config.R")) {
+    source("config.R")
+}
+source(system.file("scripts/shared.R", package="DeLorean"))
+```
+
+```{r loadLibs, echo=FALSE, message=FALSE}
+# suppressMessages(loadfonts())
+library(DeLorean)
+#
+# Stylesheet
+#
+options(markdown.HTML.stylesheet = system.file(file.path('Rmd', 'foghorn.css'),
+                                               package="DeLorean"))
+font.family <- "Verdana"
+font.theme <- theme_update(text=element_text(family=font.family))
+theme_set(font.theme)
+```
+
+`r date()`
+
+
+
+# Data
+
+Shalek et al.'s data `r citet(bib[["shalek_single-cell_2014"]])`
+is available in the `DeLorean` R package.
+```{r loadLib, eval=fit.model}
+library(DeLorean)
+library(DeLoreanData)
+library(dplyr)
+library(ggplot2)
+data(ShalekDeLorean)
+```
+
+
+Build the `DeLorean` object.
+```{r buildDL, eval=fit.model}
+dl <- de.lorean(
+    shalek.A.expr,
+    shalek.A.gene.meta,
+    shalek.A.cell.meta)
+dl$cell.meta <- mutate(dl$cell.meta,
+                       precocious=cell %in% c('LPS_1h_S51', 'LPS_1h_S52'))
+```
+Filter out the cells we want for the time course.
+```{r filterTimeCourse, eval=fit.model}
+time.course.cells <- (
+    dl$cell.meta
+    %>% filter(! is.na(total),
+               "" == assay,
+               "LPS" == stimulant | "" == stimulant,
+               "" == ko,
+               FALSE == disrupted,
+               total > 1e6,
+               "" == replicate))
+dl <- filter_cells(dl, cells=time.course.cells$cell)
+```
+Re-level the cells by their capture time. This improves the ordering in later
+plots.
+```{r relevelCells}
+dl$cell.meta$cell <- factor(
+    dl$cell.meta$cell,
+    levels=(shalek.A.cell.meta %>% arrange(capture))$cell)
+```
+
+
+# Estimate hyperparameters
+
+Examine data for empirical Bayes estimation of hyperparameters.
+```{r empiricalBayes, eval=fit.model}
+model.name <- getOption("Shalek.model", 'lowrank')
+dl <- estimate.hyper(
+    dl,
+    sigma.tau=getOption("Shalek.sigma.tau", 1),
+    length.scale=getOption("Shalek.length.scale", 5),
+    model.name=model.name)
+if (! dl$opts$model.estimates.cell.sizes) {
+    dl <- adjust.by.cell.sizes(dl)
+    ggplot(dl$cell.sizes %>% left_join(dl$cell.meta), aes(x=capture, y=S.hat)) + geom_boxplot()
+}
+```
+```{r child=report.file("data")}
+```
+```{r child=report.file("hyper-parameters")}
+```
+
+
+## Choose genes and cells
+
+Only use induced genes that have been assigned to a cluster.
+```{r useInducedGenes, eval=fit.model}
+induced.genes <- dl$gene.meta %>% filter(! is.na(cluster))
+dl <- filter_genes(dl, genes=induced.genes$gene)
+```
+Choose genes: take those with highest variance between time points
+relative to the noise level.
+```{r filterGenes, eval=fit.model}
+shalek.key.genes <- unique(toupper(c(
+    #
+    # Cluster I d (core antiviral module; enriched for annotated antiviral and
+    #             interferon response genes; for example,-
+    "Ifit1", "Irf7",
+    #
+    # Cluster III c (peaked inflammatory module; showing rapid,
+    # yet transient, induction under LPS; for example,
+    "Tnf", "Il1a", "Cxcl2",
+    #
+    # Cluster III d (sustained inflammatory module; exhibiting
+    # continued rise in expression under LPS; for example,
+    "Mmp14", "Marco", "Il6",
+    #
+    # Cluster III b (‘maturity’ module; containing markers of
+    # dendritic cell maturation; for example,
+    "Cd83", "Ccr7", "Ccl22",
+    #
+    # At 2 h following LPS,
+    "Ifnb1",
+    # was bimodally expressed
+    #
+    # Genes encoding key inflammatory cytokines (for example,
+    "Tnf", "Cxcl1",
+    #
+    # Figure 4: core antiviral targets.
+    "Rsad2", "Stat2"
+)))
+clusters <- c("Id", "IIIb", "IIIc", "IIId")
+# clusters <- c("Id")
+dl <- analyse.variance(dl, adjust.cell.sizes=TRUE)
+gene.variances <- dl$gene.var  # Save copy for later
+max.genes <- getOption("Shalek.max.genes", 74)
+genes.for.stan <- (
+    dl$gene.var
+    %>% left_join(dl$gene.meta)
+    %>% mutate(key=gene %in% shalek.key.genes)
+    %>% filter(cluster %in% clusters)
+    %>% arrange(- psi.hat / omega.hat)
+    %>% head(max.genes))
+dl <- filter_genes(dl, genes=genes.for.stan$gene)
+# How many come from each cluster?
+qplot(genes.for.stan$cluster)
+```
+
+Choose a few cells but make sure we have the precocious cells.
+```{r filterCells, eval=fit.model}
+seed <- getOption("Shalek.seed", 1)
+set.seed(seed)
+max.cells <- getOption("Shalek.max.cells", 0)
+if (max.cells != 0) {
+    sampled.cells <- sample(colnames(dl$expr), max.cells)
+    if (! "LPS_1h_S51" %in% sampled.cells) {
+        sampled.cells[1] <- "LPS_1h_S51"
+    }
+    if (! "LPS_1h_S52" %in% sampled.cells) {
+        sampled.cells[2] <- "LPS_1h_S52"
+    }
+    dl <- filter_cells(dl, cells=sampled.cells)
+}
+```
+Save expression data and meta data.
+```{r saveInput, eval=fit.model}
+saveRDS(list(expr=dl$expr,
+             cell.meta=dl$cell.map,
+             gene.meta=dl$gene.map,
+             gene.variances=gene.variances),
+        file='Data/Shalek-input.rds')
+```
+
+
+# Fit model
+
+```{r options}
+num.inits <- getOption("Shalek.num.inits", default.num.cores())
+inf.method <- getOption("Shalek.method", "vb")
+```
+Define and compile the model, find the best initialisation, and fit the model.
+The model name is "`r model.name`", the inference method is "`r inf.method`"
+with `r num.inits` initialisations, the seed is `r seed` and the data have
+`r dim(dl)[1]` genes and `r dim(dl)[2]` cells.
+```{r fitModel, eval=fit.model}
+dl <- prepare.for.stan(dl)
+dl <- compile.model(dl)
+dl <- find.good.ordering(dl, seriation.find.orderings)
+# dl <- find.good.ordering(dl, seriation.find.orderings, num.cores=2)
+# dl <- find.good.ordering(dl, magda.find.orderings)
+plot(dl, type='orderings')
+dl <- pseudotimes.from.orderings(dl, num.to.keep=num.inits)
+system.time(dl <- fit.model(dl, method=inf.method, num.inits=num.inits))
+if ("vb" == inf.method) {
+    pseudotimes.pair.plot(dl)
+}
+```
+Analyse different ordering methods
+```{r orderingMethods}
+mn.list <- sapply(dl$order.inits, function(i) i$method.name)
+mn.mat <- stringr::str_split_fixed(mn.list, ':', 4)
+colnames(mn.mat) <- c('method', 'scaled', 'dim.red', 'dims')
+mn.df <- as.data.frame(mn.mat) %>%
+    mutate(ll=sapply(dl$order.inits, function(i) i$ll))
+ggplot2::ggplot(mn.df, aes(x=method, y=ll)) + geom_boxplot()
+ggplot2::ggplot(mn.df, aes(x=dim.red, y=ll)) + geom_boxplot()
+ggplot2::ggplot(mn.df, aes(x=dims, y=ll)) + geom_boxplot()
+ggplot2::ggplot(mn.df, aes(x=scaled, y=ll)) + geom_boxplot()
+
+```
+```{r examConv, eval=("sample" == inf.method)}
+dl <- examine.convergence(dl)
+```
+```{r child=report.file("convergence"), eval=("sample" == inf.method)}
+```
+
+
+# Analyse posterior
+
+Examine posterior and optimise best sample.
+```{r posterior}
+dl <- process.posterior(dl)
+dl <- analyse.noise.levels(dl)
+```
+```{r child=report.file("posterior")}
+```
+
+
+# Profiles
+
+Calculate expression profiles.
+```{r makePredictions}
+dl <- make.predictions(dl)
+```
+```{r child=report.file("profiles")}
+```
+
+
+# Cluster analysis
+
+```{r clusterAnalysis}
+clustered <- dl$gene.meta %>% filter(! is.na(cluster))
+fitted.time.course.cells <- filter(time.course.cells, cell %in% dl$cell.map[['cell']])$cell
+clustered.expr <- shalek.A.expr[as.character(clustered$gene),
+                                as.character(fitted.time.course.cells)]
+# rownames(clustered.expr)
+# colnames(clustered.expr)
+clustered.expr.l <- melt.expr(dl, clustered.expr) %>% left_join(dl$gene.meta)
+names(clustered.expr.l)
+# sample_n(clustered.expr.l, 14)
+module.scores <- (
+    clustered.expr.l
+    %>% group_by(cluster, cell)
+    %>% dplyr::summarise(module.score=mean(x))
+    %>% left_join(dl$samples.l$tau
+                  %>% filter(dl$best.sample == iter)
+                  %>% dplyr::select(cell, tau)))
+module.scores
+stopifnot(all(! is.na(module.scores)))
+# Find the precocious cells
+core.antiviral <- (
+    module.scores
+    %>% left_join(dl$cell.meta %>% dplyr::select(cell, capture))
+    %>% filter("Id" == cluster)
+    %>% arrange(-module.score))
+precocious <- core.antiviral %>% filter("1h" == capture) %>% head(2)
+precocious
+precocious$cell
+module.scores <- (
+    module.scores %>% mutate(type=ifelse(cell %in% precocious$cell,
+                                         "precocious",
+                                         "not precocious"))
+)
+plots <- list()
+plots$core.antiviral <- (
+    ggplot(core.antiviral,
+           aes(x=module.score, color=capture))
+    + geom_density()
+)
+print(plots$core.antiviral)
+ggsave('Shalek-core-antiviral.pdf', plots$core.antiviral + plos.theme,
+       width=2*fig.width, height=2*fig.height)
+# Plot the core antiviral, the maturity, the peaked inflammation and
+# the sustained inflammation module scores against pseudotime.
+plots$module <- (
+    ggplot(module.scores
+           %>% filter(! is.na(tau),
+                      cluster %in% c("Id", "IIIb", "IIIc", "IIId")),
+           aes(x=tau, y=module.score, colour=cluster))
+    + stat_smooth()
+    + geom_point()
+)
+ggsave('Shalek-module.pdf', plots$module + plos.theme,
+       width=2*fig.width, height=2*fig.height)
+print(plots$module)
+# Same with just core antiviral coloured by capture
+plots$core <- (
+    ggplot(module.scores
+           %>% left_join(dl$cell.meta %>% dplyr::select(cell, capture))
+           %>% filter(! is.na(tau),
+                      cluster == "Id"),
+           aes(x=tau, y=module.score, colour=capture, shape=type))
+    + stat_smooth(aes(group="", color=NULL))
+    + geom_point(alpha=.5)
+)
+print(plots$core)
+do.call(ggsave,
+        c(list('Shalek-core.pdf', plots$core + bioinf.config),
+          bioinf.sizes))
+
+#
+# Profile plots
+plots$profiles <- plot(dl, type='profiles', genes=dl$genes.high.psi[1:4])
+# Resize points and set transparency
+plots$profiles$layers[[3]]$aes_params$size <- 0.5
+plots$profiles$layers[[3]]$aes_params$alpha <- 0.5
+ggsave('Shalek-profiles.png', plots$profiles + plos.theme,
+       width=6, height=3, units="in", dpi=600)
+# Examine what pseudotimes the model estimated for the precocious genes
+dplyr::filter(dl$samples.l$tau, dl$best.sample == iter, precocious)
+```
+
+
+## Check precocious
+
+```{r checkPrecocious}
+S51.dists <- with(
+    dl,
+    reshape2::melt(expr - expr[,"LPS_1h_S51"], varnames=c("gene", "cell"))
+    %>% mutate(gene=factor(gene, levels=levels(gene.map$gene)))
+    %>% mutate(cell=factor(cell, levels=levels(cell.map$cell)))
+    %>% left_join(gene.map)
+    %>% left_join(cell.map))
+names(S51.dists)
+# bad.genes <- c(51, 53, 73)
+bad.genes <- c()
+dl$gene.map[bad.genes,]
+gp <- (
+    ggplot(S51.dists %>% filter(! g %in% bad.genes),
+           aes(x=g, y=c, fill=value))
+    + geom_tile()
+    + scale_fill_gradient2()
+)
+png('S51-dists.png', width=960, height=960)
+print(gp)
+dev.off()
+print(gp)
+```
+
+
+# Evaluate held out genes
+
+Evaluate the held out genes that weren't used to fit the model.
+```{r heldOutGenes}
+held.out.genes <- with(dl, gene.variances
+                           %>% left_join(gene.meta)
+                           %>% filter(! gene %in% gene.map$gene)
+                           %>% filter(cluster %in% clusters)
+                           # %>% filter(cluster != "Id")
+                           %>% arrange(-psi.hat/omega.hat)
+                           %>% head(getOption('Shalek.held.out', 100))
+)
+# Get an expression matrix of held out genes in the cells of interest
+held.out.expr <- shalek.A.expr[as.character(held.out.genes$gene),
+                               as.character(dl$cell.map$cell)]
+```
+
+
+## Roug

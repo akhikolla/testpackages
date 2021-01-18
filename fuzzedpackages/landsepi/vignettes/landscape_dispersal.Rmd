@@ -1,0 +1,237 @@
+---
+title: "3 - Parameterising landscape and dispersal in landsepi"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{3 - Parameterising landscape and dispersal in landsepi}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+To simulate epidemics in a heterogeneous landscape, *landsepi* needs (among others) these three elements which are 
+related one each other:  
+- the spatial coordinates of fields composing the landscape (represented as polygons),  
+- the allocation of croptypes in the different fields,  
+- a dispersal matrix for between-field pathogen migration.  
+
+*landsepi* includes built-in landscapes (and associated dispersal matrices for rust pathogens) and an algorithm to 
+allocate croptypes, but is it possible to use your own landscape, dispersal matrix and croptype allocation. 
+
+## Using your own landscape
+
+Any landscape can be used to simulate epidemics in *landsepi*, provided that it is in *sp* or *sf* format and 
+contains, at least, polygon coordinates.
+
+```{r, eval=FALSE}
+library(sf)
+mylandscape <- st_read(dsn = "myshapefile.shp")
+library(landsepi)
+simul_params <- createSimulParams(outputDir = getwd())
+simul_params <- setLandscape(simul_params, mylandscape)
+simul_params@Landscape
+```
+
+Then you can simply call the method __allocateLandscapeCroptypes__ to allocate croptypes to the fields of 
+the landscape with controlled proportions and spatio-temporal aggregation (*see tutorial on how to [run a simple 
+simulation](run_simple_simul.html)*). Otherwise, you can use your own allocation (see below).
+
+
+## Using your own croptype allocation
+
+You must define for each year of simulation the index of the croptype ("croptypeID") cultivated in each feature 
+(polygons). Each feature has a field identified by "year_XX" (XX <- seq(1:Nyears+1)) and containing the croptype ID. 
+Note that the allocation must contain one more year than the real number of simulated years (for simulation purpose, 
+the content of the allocation in year Nyears+1 does not affect the result).
+  
+
+| Features/fields | year_1 | year_2 | ... year_Nyears+1 |
+|---------------- | ------ | ------ | ----------------- |
+| polygons1       | 13     | 10     | 13                |
+| polygonsX       | 2      | 1      | 2                 |
+| ...             |        |        |                   |
+
+An example for sf landscape:  
+```{r, eval=FALSE}
+mylandscape$year_1 <- c(13,2,4,1,1) # croptypes ID allocated to the different polygons
+mylandscape$year_2 <- c(2,2,13,1,1)
+```
+
+Then simply add your landscape to the simulation parameters:  
+```{r, eval=FALSE}
+simul_params <- setLandscape(simul_params, mylandscape)
+simul_params@Landscape
+```
+
+
+## Computing the dispersal matrix
+
+To simulate pathogen dispersal, *landsepi* needs a vectorized matrix giving the probability 
+of propagule dispersal from any field of the landscape to any other field. 
+**This matrix must be computed before running any simulation with *landsepi*.** 
+It is a square matrix whose size is the number of fields in the landscape and whose elements are, 
+for each line $i$ and each column $i'$ the probability $\mu_{ii'}$ that propagules migrate 
+from field $i$ (whose area is $A_i$) to field $i'$ (whose area is $A_{i'}$). This probability 
+is computed from:  
+$$\mu_{ii'} = \frac { \int_{A_i} \int_{A_{i'}} g(\mid\mid z'-z \mid\mid).dz.dz' } { A_i }$$  
+with $\mid\mid z'-z \mid\mid$ the Euclidian distance between locations $z$ and $z'$ in fields $i$ and $i'$, 
+respectively, and $g(.)$ the two-dimensional dispersal kernel of the propagules. Note that 
+$\sum_i \mu_{ii'} = 1$.  
+
+*landsepi* includes built-in dispersal matrices to represent rust dispersal in the 
+five built-in landscapes. These have been computed from a power-law dispersal kernel:
+$$g(\mid\mid z'-z \mid\mid) = \frac {(b-2).(b-1)} {2.\pi.a^2} . (1+ \frac {\mid\mid z'-z \mid\mid} {a})^{-b}$$
+with $a$ the scale parameter and $b$ a parameter related to the width of the dispersal kernel.
+
+**A new dispersal matrix must be computed to run simulations with a different landscape or a 
+different dispersal kernel.**  
+
+The computation of $\mu_{ii'}$ is performed using the CaliFloPP algorithm from the R package *RCALI*.
+The *RCALI* package has a limited number of built-in dispersal kernels. 
+However, users can code for their own dispersal kernel. 
+See section "Details" in the documentation of the function `califlopp` to learn how to implement 
+your own kernel.   
+Then, (let say the name of your kernel is `f`) use `dispf=f` in the function `califlopp`.  
+
+***
+
+#### An example
+
+Here is an example of how to compute a dispersal matrix using the dispersal kernel of oilseed 
+rape pollen (available in *RCALI*: use `dispf=1` in the arguments of function `califlopp`).
+```{r, eval=FALSE}
+install.packages("RCALI")
+library(RCALI)
+```
+In this example, the dispersal matrix will be computed for the first landscape supplied in *landsepi*.
+```{r, eval=FALSE}
+library(landsepi)
+```
+```{r, eval=FALSE}
+landscape <- landscapeTEST1
+Npoly <- length(landscape)
+Npoly
+plot(landscape)
+```
+
+The function `califlopp` needs a specific format for the coordinates of each polygon 
+(i.e. fields) composing the landscape.
+```{r, eval=FALSE}
+file_land <- "land_rcali.txt"  ## input for califlopp
+file_disp <- "disp_rcali.txt"  ## output for califlopp
+
+## Formatting the polygons-file for califlopp
+cat(Npoly, file=file_land)
+for (k in 1:Npoly) {
+  ## extract coordinates of polygon vertices
+  coords <- landscape@polygons[[k]]@Polygons[[1]]@coords  
+  n <- nrow(coords)
+  cat(NULL, file=file_land, append=T, sep="\n")
+  cat(c(k,k,n), file=file_land, append=T, sep="\t")
+  cat(NULL, file=file_land, append=T, sep="\n")
+  cat(coords[1:n,1], file=file_land, append=T, sep="\t")
+  cat(NULL,file=file_land,append=T,sep="\n")
+  cat(coords[1:n,2], file=file_land, append=T, sep="\t")
+}
+cat(NULL, file=file_land, append=T, sep="\n")
+```
+Then the function `califlopp` calculates the flow of particles between polygons 
+using an integration method. See `?califlopp` for details.
+```{r, eval=FALSE}
+param <- list(input=2, output=0, method="cub", dp=6000, dz=6000
+              , warn.poly=FALSE, warn.conv=FALSE, verbose=FALSE)
+califlopp(file=file_land, dispf=1, param=param, resfile=file_disp)
+```
+The output of califlopp must then be reformatted to generate the dispersal matrix that will 
+be further used in *landsepi*. 
+The vector of field areas can also be generated.
+```{r, eval=FALSE}
+## Import califlopp results
+disp_df <- getRes(file_disp)
+emitter <- c(disp_df$poly1, disp_df$poly2)
+receiver <- c(disp_df$poly2, disp_df$poly1)
+
+## Write a text file containing a vector of areas of all polygons
+area_e <- c(disp_df$area1, disp_df$area2)
+area_r <- c(disp_df$area2, disp_df$area1)
+area <- as.vector(by(area_e, emitter, mean))
+write(area, file="area.txt", sep=",")
+
+## Generation of the dispersal matrix
+name_f <- "mean.flow"
+flow_mean <- c(disp_df[,name_f], disp_df[,name_f])
+flow_f <- cbind(emitter, receiver, flow_mean, area_e, area_r)
+
+## Remove the doublons (i.e. half the lines where emitter == receiver)
+flow_f[1:nrow(disp_df),][(disp_df$poly2 - disp_df$poly1) == 0,] <- NA
+flow_f <- flow_f[is.na(apply(flow_f, 1, sum)) == F,]
+flow_f <- as.data.frame(flow_f)
+colnames(flow_f) <- c("emitter", "receiver", "flow", "area_e", "area_r")
+flow_f <- flow_f[order(flow_f$emitter),]
+
+## lines: emitter
+## columns: receiver
+matrix_f <- NULL
+for(k in 1:Npoly){
+  ## flow divided by the emitter area
+  matrix_f <- cbind(matrix_f, flow_f$flow[flow_f$receiver==k] / area)
+}
+
+## In order to have sum == 1
+flowtot_f <- apply(matrix_f,1,sum)
+for(k in 1:Npoly){
+  matrix_f[k,] <- (matrix_f[k,] / flowtot_f[k])
+}
+
+write(as.vector(matrix_f), file="dispersal.txt", sep=",")
+```
+
+Then, to read the file, use:
+```{r, eval=FALSE}
+disp_patho <- scan("dispersal.txt", sep=",")
+```
+
+## Plotting landscape and dispersal
+
+Landscape structure can be plotted using the basic function `plot()`, or using the landsepi function 
+`plotland()`:
+```{r, eval=FALSE}
+landscape <- landscapeTEST1
+plot(landscape)
+plotland(landscape)
+```
+
+To highlight a specific field:
+```{r, eval=FALSE}
+poly <- 10
+colFields <- rep("white", length(landscape))
+colFields[poly] <- "red"
+plot(landscape, col = colFields)
+```
+
+To check the dispersal matrix and represent in a graphic the flow emitted by a specific polygon, use:
+```{r, eval=FALSE}
+## convert dispersal in matrix
+mat <- matrix(disp_patho, nrow=sqrt(length(disp_patho)))
+poly <- 1
+dispToPlot <- log10(mat[poly,])
+
+## Colour palette
+nCol <- 11
+whiteYellowRed <- colorRampPalette(c("white", "#FFFF99", "#990000"))
+col_disp <- whiteYellowRed(nCol)
+intvls <- seq(min(dispToPlot) - 1, max(dispToPlot) + 1, length.out=nCol)
+intvls_disp <- findInterval(dispToPlot, intvls)
+
+## Plot
+plot(land, col = col_disp[intvls_disp], main=paste("Dispersal from polygon", poly))
+```
+
+

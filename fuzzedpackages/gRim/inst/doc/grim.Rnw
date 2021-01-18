@@ -1,0 +1,1215 @@
+% \VignetteIndexEntry{grim - Graphical Interaction Models}
+% \VignetteDepends{gRbase}
+% \VignetteKeyword{Graphical Models}
+% \VignetteKeyword{Hierarchical log-linear models}
+% \VignetteKeyword{Graphical Gaussian models}
+
+\documentclass[12pt]{article}
+
+%% For Danish letters.
+\usepackage[T1]{fontenc}
+\usepackage[latin1]{inputenc}
+\usepackage{GMIR}
+\usepackage{Sweave,amsmath,amsfonts,bm,color}
+%%\usepackage[authoryear,round]{natbib}
+\bibliographystyle{plainnat}
+\usepackage{a4wide}
+%%\usepackage[inline,nomargin,draft]{fixme}
+%%\usepackage{natbib}
+\usepackage{boxedminipage}
+\usepackage{shortvrb}
+\MakeShortVerb|
+
+
+
+<<echo=FALSE,print=FALSE>>=
+require( gRbase )
+prettyVersion <- packageDescription("gRim")$Version
+prettyDate <- format(Sys.Date())
+@
+
+\title{On the usage of the \pkg{gRim} package}
+\author{S{\o}ren H{\o}jsgaard}
+\date{\pkg{gRim} version \Sexpr{prettyVersion} as of \Sexpr{prettyDate}}
+
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+\SweaveOpts{prefix.string=figures/GRIM, keep.source=T}
+\setkeys{Gin}{width=0.5\textwidth,height=2in} %sæt figurstørrelse i Sweave
+\renewenvironment{Schunk}{\linespread{.85}\scriptsize}{}
+
+\definecolor{myGray}{rgb}{0.95,0.95,0.95}
+\makeatletter
+\renewenvironment{Schunk}{
+  \begin{lrbox}{\@tempboxa}
+    \begin{boxedminipage}
+      {\columnwidth}\small}
+    {\end{boxedminipage}
+  \end{lrbox}%
+  \colorbox{myGray}{\usebox{\@tempboxa}}
+}
+\makeatother
+
+
+\maketitle
+\tableofcontents
+
+\parindent0pt\parskip5pt
+
+
+\def\dmod{\texttt{dmod}}
+\def\cmod{\texttt{cmod}}
+\def\mmod{\texttt{mmod}}
+
+\def\imodo{\texttt{iModel}}
+\def\dmodo{\texttt{dModel}}
+\def\cmodo{\texttt{cModel}}
+\def\mmodo{\texttt{mModel}}
+
+
+\def\rformula#1{\texttt{\~{ }#1}}
+\def\carcass{\texttt{carcass}}
+\def\reinis{\texttt{reinis}}
+\def\mildew{\texttt{mildew}}
+
+
+@
+<<echo=FALSE>>=
+dir.create("figures")
+oopt <- options()
+options("digits"=4, "width"=80)
+options(useFancyQuotes="UTF-8")
+@ %def
+
+
+\section{Introduction}
+
+@
+<<echo=F>>=
+options("width"=85)
+library(gRim)
+library(Rgraphviz)
+ps.options(family="serif")
+@ %def
+
+
+The \grim\ package is an \R\ package for \emph{gRaphical interaction
+  models} (hence the name).  \grim\ implements 1) graphical
+log--linear models for discrete data, that is for contingency tables
+and 2) Gaussian graphical models for continuous data (multivariate
+normal data) and 3) mixed homogeneous interaction models for mixed
+data (data consisiting of both discrete and continuous variables).
+
+The package is at an early stage of development and so is this
+document.
+
+
+\section{Introductory examples}
+\label{sec:introex}
+
+The main functions for creating models of the various types are:
+
+\begin{itemize}
+\item Discrete data: The \comi{dmod()} function creates a hierarchical
+  log--linear model.
+\item Continuous data: The \comi{cmod()} function creates a Gaussian
+  graphical model.
+\item Mixed data: The \comi{mmod()} function creates a mixed
+  interaction model.
+\end{itemize}
+
+The arguments to the model functions are:
+
+@
+<<>>=
+args(dmod)
+args(cmod)
+args(mmod)
+@ %def
+
+
+The model objects created by these functions are of the respective
+classes \dmodo, \cmodo\ and \mmodo. All models are also of the class
+\imodo.  We focus the presentation on models for discrete data, but
+most of the topics we discuss apply to all types of models.
+
+
+
+\subsection{A Discrete Model}
+\label{sec:xxx}
+
+
+The \comi{reinis} data from \grbase\ is a $2^6$ contingency table.
+
+@
+<<>>=
+data(reinis)
+str(reinis)
+@ %def
+
+Models are specified as generating classes. A generating class can be
+a list or a right--hand--sided formula. In addition, various model
+specification shortcuts are available.  Some of these are described in
+Section~\ref{sec:shortcut}.
+
+The following two
+specifications of a log--linear model are equivalent:
+
+@
+<<print=F>>=
+data(reinis)
+dm1<-dmod(list(c("smoke","systol"),c("smoke","mental","phys")), data=reinis)
+dm1<-dmod(~smoke:systol + smoke:mental:phys, data=reinis)
+dm1
+@ %def
+
+The output reads as follows: |-2logL| is minus twice the maximized
+log--likelihood and |mdim| is the number of parameters in the model
+(no adjustments have been made for sparsity of data).
+The |ideviance| and |idf| gives the deviance and degrees of
+freedom between the model and the independence model for the same
+variables and |deviance| and |df| is the deviance and degrees of
+freedom between the model and the saturated model for the same
+variables.
+
+Section~\ref{sec:intomodel} describes model objects in more
+detail. Here we just notice that the generating class of the model is
+contained in the slot \code{glist}:
+
+Notice that the generating class does not appear directly. However the
+generating class can be retrieved using \comi{formula()} and \comi{terms()}:
+
+@
+<<>>=
+formula(dm1)
+str(terms(dm1))
+@ %def
+
+A summary of a model is provided by the \comi{summary()} function:
+
+@
+<<>>=
+summary(dm1)
+@ %def
+
+\footnote{The summary() method leaves a bit to be desired...}
+
+
+
+\subsection{Model specification shortcuts}
+\label{sec:shortcut}
+
+Below we illustrate various other ways of specifying log--linear
+models.
+
+\begin{itemize}
+\item A saturated model can be specified using \verb|~.^.| whereas
+\verb|~.^2| specifies the model with all--two--factor
+interactions. Using \verb|~.^1| specifies the independence model.
+
+\item If we want, say, at most two--factor interactions in the
+model we can use the |interactions| argument.
+
+\item Attention can be restricted to a subset of the variables
+using the |marginal| argument.
+
+\item Variable names can be abbreviated.
+
+\end{itemize}
+
+The following models illustrate these abbreviations:
+
+@
+<<print=F>>=
+dm2 <- dmod(~.^2, margin=c("smo","men","phy","sys"),
+            data=reinis)
+formula(dm2)
+@ %def
+
+@
+<<print=F>>=
+dm3 <- dmod(list(c("smoke", "systol"), c("smoke", "mental", "phys")),
+            data=reinis, interactions=2)
+formula(dm3)
+@ %def
+
+\subsection{Plotting models}
+\label{sec:xxx}
+
+There are two methods for plotting the dependence graph of a model:
+Using \comi{iplot()} and \comi{plot()}. The convention for both
+methods is that discrete variables are drawn as grey dots and
+continuous variables as white dots.  1) \comi{iplot()} creates an
+\code{igraph} object and plots this. 2) 2) \comi{plot()} creates a
+\code{graphNEL} object and plots this.
+
+@
+<<fig=T>>=
+iplot(dm1)
+@ %def
+
+
+
+
+
+\subsection{A Continuous Model}
+\label{sec:xxx}
+
+For Gaussian models there are at most second order interactions. Hence
+we may specify the saturated model in different ways:
+
+@
+<<>>=
+data(carcass)
+cm1 <- cmod(~Fat11:Fat12:Fat13, data=carcass)
+cm1 <- cmod(~Fat11:Fat12 + Fat12:Fat13 + Fat11:Fat13, data=carcass)
+cm1
+@ %def
+
+\footnote{Harmonize cmod() output with that of dmod()}
+
+@
+<<fig=T>>=
+iplot(cm1)
+@ %def
+
+
+\subsection{A Mixed Model}
+
+@
+<<>>=
+data(milkcomp1)
+mm1 <- mmod(~.^., data=milkcomp1)
+mm1
+@ %def
+
+\footnote{Harmonize mmod() output with that of dmod()}
+
+@
+<<fig=T>>=
+iplot(mm1)
+@ %def
+
+
+
+
+\section{Model editing - \code{update()}}
+
+The \comi{update()} function enables \dmodo\ objects to be modified by the addition
+or deletion of interaction terms or edges, using the arguments \code{aterm}, \code{dterm},
+\code{aedge} or \code{dedge}. Some examples follow:
+
+
+\begin{itemize}
+\item Set a marginal saturated model:
+
+@
+<<>>=
+ms <- dmod(~.^., marginal=c("phys","mental","systol","family"), data=reinis)
+formula(ms)
+@ %def
+
+\item Delete one edge:
+
+@
+<<>>=
+ms1 <- update(ms, list(dedge=~phys:mental))
+formula(ms1)
+@ %def
+
+\item Delete two edges:
+
+@
+<<>>=
+ms2<- update(ms, list(dedge=~phys:mental+systol:family))
+formula(ms2)
+@ %def
+
+\item Delete all edges in a set:
+
+@
+<<>>=
+ms3 <- update(ms, list(dedge=~phys:mental:systol))
+formula(ms3)
+@ %def
+
+\item Delete an interaction term
+
+@
+<<>>=
+ms4 <- update(ms, list(dterm=~phys:mental:systol) )
+formula(ms4)
+@ %def
+
+\item Add three interaction terms:
+
+@
+<<>>=
+ms5 <- update(ms, list(aterm=~phys:mental+phys:systol+mental:systol) )
+formula(ms5)
+@ %def
+
+\item Add two edges:
+
+@
+<<>>=
+ms6 <- update(ms, list(aedge=~phys:mental+systol:family))
+formula(ms6)
+@ %def
+\end{itemize}
+
+A brief explanation of these operations may be helpful. To obtain a hierarchical model when
+we delete a term from a model, we must delete any higher-order relatives to the term.
+Similarly, when we add an interaction term we must also add all lower-order relatives that
+were not already present. Deletion of an edge is equivalent to deleting the corresponding
+two-factor term. Let $m-e$ be the result of deleting edge $e$ from a model $m$. Then the
+result of adding $e$ is defined as the maximal model $m^*$ for which $m^*-e=m$.
+
+
+
+\section{Testing for conditional independence}
+\label{sec:citest}
+
+Tests of general conditional independence hypotheses of the form $u
+\cip v \cd W$ can be performed using the \comics{ciTest()}{\grim}
+function.
+
+@
+<<print=T>>=
+cit <- ciTest(reinis, set=c("systol","smoke","family","phys"))
+@ %def
+
+The general syntax of the \code{set} argument is of the form $(u,v,W)$
+where $u$ and $v$ are variables and $W$ is a set of variables.
+The \code{set} argument can also be given as a right--hand sided formula.
+
+% Notice that in this case the results are identical to those of
+% \comics{testdelete()}{\grim}, since we have specified the correct
+% conditioning set. If we had conditioned on more variables
+
+% @
+% <<print=T>>=
+% cit2 <- CItest(mildew, set=c("locc","a367","mp58","c365","p53a","la10"))
+% @ %def
+
+% different results would be obtained.
+
+In model terms, the test performed by \comic{ciTest()} corresponds to
+the test for removing the edge $\{ u, v \}$ from the saturated model
+with variables $\{u, v\} \cup W$.  If we (conceptually) form a factor
+$S$ by crossing the factors in $W$, we see that the test can be
+formulated as a test of the conditional independence $u \cip v\cd S$
+in a three way table. The deviance decomposes into independent
+contributions from each stratum:
+\begin{eqnarray*}
+\nonumber
+ D & =& 2 \sum_{ijs} n_{ijs}\log \frac{n_{ijs}}{\hat m_{ijs}} \\
+   &= & \sum_s 2 \sum_{ij} n_{ijs}\log \frac{n_{ijs}}{\hat m_{ijs}}= \sum_s D_s
+\end{eqnarray*}
+where the contribution $D_s$ from the $s$th slice is the deviance for the independence model of $u$ and $v$ in that slice. For example,
+
+@
+<<>>=
+cit$slice
+@ %def
+
+
+The $s$th slice is a $|u|\times|v|$ table $\{n_{ijs}\}_{i=1\dots |u|,
+  j=1 \dots |v|}$. The number of degrees of freedom corresponding to
+the test for independence in this slice is
+\begin{displaymath}
+df_s=(\#\{i: n_{i\cdot  s}>0\}-1)(\#\{j: n_{\cdot js}>0\}-1)
+\end{displaymath}
+where $n_{i\cdot s}$ and
+$n_{\cdot js}$ are the marginal totals.
+
+% So the correct number of degrees of freedom
+% for the test in the present example is $3$, as calculated by \comic{CItest()} and \comic{testdelete()}.
+
+An alternative to the asymptotic $\chi^2$ test is to determine the
+reference distribution using Monte Carlo methods. The marginal totals
+are sufficient statistics under the null hypothesis, and in a
+conditional test the test statistic is evaluated in the conditional
+distribution given the sufficient statistics. Hence one can generate
+all possible tables with those given margins, calculate the desired
+test statistic for each of these tables and then see how extreme the
+observed test statistic is relative to those of the calculated
+tables. A Monte Carlo approximation to this procedure is to randomly
+generate large number of tables with the given margins, evaluate the
+statistic for each simulated table and then see how extreme the
+observed test statistic is in this distribution.  This is called a
+\comi{Monte Carlo exact test} and it provides a \comi{Monte Carlo
+  $p$--value}:
+
+@
+<<>>=
+ciTest(reinis, set=c("systol","smoke","family","phys"), method='MC')
+@ %def
+
+\section{Fundamental methods for inference}
+\label{sec:fundamental}
+
+This section describes some fundamental methods for inference in
+\grim. As basis for the description consider the following model shown
+in Fig.~\ref{fig:fundamentalfig1}:
+
+@
+<<print=T>>=
+dm5 <- dmod(~ment:phys:systol+ment:systol:family+phys:systol:smoke,
+            data=reinis)
+@ %def
+
+@
+<<fundamentalfig1,fig=T,include=F,echo=F>>=
+iplot(dm5)
+@ %def
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[]{figures/GRIM-fundamentalfig1}
+  \caption{A decomposable graphical model for the \reinis\ data.}
+  \label{fig:fundamentalfig1}
+\end{figure}
+
+
+\subsection{Testing for addition and deletion of edges}
+\label{sec:xxx}
+
+Let $\calM_0$ be a model and let $e=\{u,v\}$ be an edge in $\calM_0$.
+The candidate model  formed by deleting $e$ from $\calM_0$ is $\calM_1$.
+The \code{testdelete()} function can be used to test for deletion of
+an edge from a model:
+
+@
+<<>>=
+testdelete(dm5, ~smoke:systol)
+testdelete(dm5, ~family:systol)
+@ %def
+
+
+In the first case the $p$--value suggests that the edge can not be
+deleted. In the second case the $p$--value suggests that the edge can
+be deleted. The reported AIC
+value is the difference in AIC between the candidate model and the
+original model. A negative value of AIC suggest that the candidate
+model is to be preferred.
+
+
+Next, let $\calM_0$ be a model and let $e=\{u,v\}$ be an edge not in
+$\calM_0$. The candidate model  formed by adding $e$ to $\calM_0$ is
+denoted $\calM_1$.
+The \code{testadd()} function can be used to test for deletion of
+an edge from a model:
+
+@
+<<>>=
+testadd(dm5, ~smoke:mental)
+@ %def
+
+The $p$--value suggests that no significant improvedment of the model
+is obtained by adding the edge. The reported AIC value is the
+difference in AIC between the candidate model and the original
+model. A negative value of AIC would have suggested that the candidate
+model is to be preferred.
+
+\footnote{A function for testing addition / deletion of more general
+  terms is needed.}
+
+
+
+\subsection{Finding edges}
+\label{sec:xxx}
+
+The \code{getInEdges()} function will return a list of all the edges
+in the dependency graph $\calG$ defined by the model. If we set
+\code{type='decomposable'} then the edges returned are as follows: An
+edge $e=\{u,v\}$ is returned if $\calG$ minus the edge $e$ is
+decomposable. In connection with model selection this is convenient
+because it is thereby possibly to restrict the search to decomposable
+models.
+
+@
+<<print=T>>=
+ed.in <- getInEdges(ugList(terms(dm5)), type="decomposable")
+@ %def
+
+The \code{getOutEdges()} function will return a list of all the edges
+which are not in the dependency graph $\calG$ defined by the model. If we set
+\code{type='decomposable'} then the edges returned are as follows: An
+edge $e=\{u,v\}$ is returned if $\calG$ plus the edge $e$ is
+decomposable. In connection with model selection this is convenient
+because it is thereby possibly to restrict the search to decomposable
+models.
+
+
+@
+<<print=T>>=
+ed.out <- getOutEdges(ugList(terms(dm5)), type="decomposable")
+@ %def
+
+
+\subsection{Testing several edges}
+\label{sec:labeledges}
+
+@
+<<>>=
+args(testInEdges)
+args(testOutEdges)
+@ %def
+
+
+
+The functions \code{labelInEdges()} and \code{labelOutEdges()} will
+test for deletion of edges and addition of edges. The default is to
+use AIC for evaluating each edge. It is possible to specify the penalty parameter for AIC to being other
+values than 2 and it is possible to base the evaluation on
+significance tests instead of AIC. Setting \code{headlong=TRUE} causes
+the function to exit once an improvement is found.
+For example:
+
+@
+<<>>=
+testInEdges(dm5, getInEdges(ugList(terms(dm5)), type="decomposable"),
+             k=log(sum(reinis)))
+@ %def
+
+
+
+
+
+
+\section{Stepwise model selection}
+\label{sec:stepwise}
+
+Two functions are currently available for model selection:
+\code{backward()} and \code{forward()}. These functions employ the
+functions in Section~\ref{sec:labeledges})
+
+
+\subsection{Backward search}
+\label{sec:xxx}
+
+For example, we start with the saturated model and do a backward search.
+
+@
+<<fig=T>>=
+dm.sat <- dmod(~.^., data=reinis)
+dm.back <- backward(dm.sat)
+iplot(dm.back)
+@ %def
+
+Default is to search among decomposable models if the initial model is
+decomposable. Default is also to label all edges (with AIC values);
+however setting \code{search='headlong'} will cause the labelling to
+stop once an improvement has been found.
+
+\subsection{Forward search}
+\label{sec:xxx}
+
+Forward search works similarly; for example we start from the
+independence model:
+
+@
+<<fig=T>>=
+dm.i   <- dmod(~.^1, data=reinis)
+dm.forw <- forward(dm.i)
+iplot(dm.forw)
+@ %def
+
+% \subsection{Backward and forward search}
+% \label{sec:xxx}
+
+% The \code{stepwise()} function will perform a stepwise model
+% selection. Start from the saturated model:
+
+% @
+% <<>>=
+% dm.s2<-stepwise(dm.sat, details=1)
+% @ %def
+
+% The default selection criterion is AIC (as opposed to significance
+% test); the default penalty parameter in AIC is $2$ (which gives
+% genuine AIC). The default search direction is backward (as opposed to
+% forward). Default is to restrict the search to decomposable models if
+% the starting model is decomposable; as opposed to unrestricted
+% search. Default is not to do headlong search which means that all
+% edges are tested and the best edge is chosen to delete. Headlong on
+% the other hand means that once a deletable edge is encountered, then
+% this edge is deleted.
+
+
+% Likewise, we may do a forward search starting from the independence model:
+
+% @
+% <<>>=
+% dm.i2<-stepwise(dm.i, direction="forward", details=1)
+% @ %def
+
+
+% @
+% <<stepwise01, fig=T, include=F>>=
+% par(mfrow=c(1,2))
+% dm.s2
+% dm.i2
+% plot(dm.s2)
+% plot(dm.i2)
+% @ %def
+
+% \begin{figure}[h]
+%   \centering
+%   \includegraphics{figures/GRIM-stepwise01}
+%   \caption{Models for the \reinis\ data obtained by backward (left) and forward (right) stepwise model selection.}
+%   \label{fig:stepwise01}
+% \end{figure}
+
+
+% Stepwise model selection is in practice only feasible for moderately sized
+% problems.
+
+
+
+
+\subsection{Fixing edges/terms in model as part of model selection}
+\label{sec:xxx}
+
+The stepwise model selection can be controlled by fixing specific
+edges. For example we can specify edges which are not to be considered
+in a bacward selection:
+
+@
+<<>>=
+fix <- list(c("smoke","phys","systol"), c("systol","protein"))
+fix <- do.call(rbind, unlist(lapply(fix, names2pairs),recursive=FALSE))
+fix
+dm.s3 <- backward(dm.sat, fixin=fix, details=1)
+@ %def
+
+There is an important detail here: The matrix \code{fix} specifies a
+set of edges. Submitting these in a call to \comic{backward} does
+not mean that these edges are forced to be in the model. It means that
+those edges in \code{fixin} which are in the model will not be removed.
+
+Likewise in forward selection:
+
+@
+<<>>=
+dm.i3 <- forward(dm.i, fixout=fix, details=1)
+@ %def
+
+Edges in \code{fix} will not be added to the model but if they are in
+the starting model already, they will remain in the final model.
+
+
+% @
+% <<stepwise02, fig=T, include=F>>=
+% par(mfrow=c(1,2))
+% dm.s3
+% dm.i3
+% plot(dm.s3)
+% plot(dm.i3)
+% @ %def
+
+% \begin{figure}[h]
+%   \centering
+%   \includegraphics{figures/GRIM-stepwise02}
+%   \caption{Models for the \reinis\ data obtained by backward (left)
+%     and forward (right) stepwise model selection when certain edges
+%     are restricted in the selection procedure. }
+%   \label{fig:stepwise02}
+% \end{figure}
+
+
+
+
+\section{Further topics on models for contingency tables}
+\label{sec:xxx}
+
+
+\subsection{Adjusting for sparsity}
+\label{sec:xxx}
+
+\footnote{Comment on adjustment for sparsity in testadd() and testdelete()}
+
+
+% \subsection{Sparse Contingency Tables}
+% \label{sec:xxx}
+
+
+
+% @
+% <<fig=T>>=
+%  data(mildew)
+%  dm1 <- dmod(~.^., data=mildew)
+%  dm1
+%  dm2 <- stepwise(dm1)
+%  dm2
+%  plot(dm2)
+% @ %def
+
+
+
+% \subsection{A space--efficient implementation of IPS for contingency tables}
+% \label{sec:xxx}
+
+% \footnote{effloglin() is not the best name. Perhaps loglineff() is a bit
+%   better. Should start with loglin...}
+
+% Consider a hierarchical log--linear model with generating class $\calA
+% = \{a_1, \dots, a_M\}$ over a set of variables $\Delta$.  The
+% Iterative Proportional Scaling (IPS) algorithm (as described e.g.\ in
+% \cite{lauritzen:96}, p.\ 83) as a commonly used method for fitting
+% such models. The updating steps are of the form
+% \begin{displaymath}
+%   p(i) \leftarrow p(i)\frac{n(i_{a_k})/n}{p(i_{a_k})} \mbox{ for } k=1,\dots,M.
+% \end{displaymath}
+
+% The IPS algorithm is implemented in the \comic{loglin()} function.
+% The IPS algorithm is \emph{inefficient} in the sense that it requires
+% the entire table to be fitted. For example, if there are $81$ variables
+% each with $10$ levels then a table with $10^{81}$ will need to be created.
+% (Incidently, $10^{81}$ is one of the figures reported as the number of
+% atoms in the universe. It is a large number!).
+
+% A more \emph{efficient} IPS algorithm is described by
+% \cite{jirousek:preucil:95}, and this is implemented in the
+% \comic{effloglin()} function. The implementation of
+% \comi{effloglin()} is made entirely in \R\ and therefore the word
+% \emph{efficient} should be understood in terms of space
+% requirement (for small problems, \comi{loglin()} is much faster than
+% \comi{effloglin()}).
+
+% The algorithm goes as follows: It is assumed that $\calA$ is minimally
+% specified, i.e.\ that no element in $\calA$ is contained in another
+% element in $\calA$.  Form the dependency graph $\calG(\calA)$ induced by
+% $\calA$. Let $\calG'$ denoted a triangulation of $\calG(\calA)$ and  let
+% $\calC=\{C_1,\dots,C_N\}$ denote the cliques of $\calG'$.
+% Each $a\in \calA$ is then contained in exactly one clique $C\in
+% \calC$. Let $\calA_C=\{a\in \calA:a\subset C\}$ so that $\calA_{C_1},
+% \dots, \calA_{C_N}$ is a disjoint partitioning of $\calA$.
+
+% Any probability $p$ satisfying the constraints of $\calA$ will also factorize
+% according to $\calG'$ so that
+% \begin{equation}
+%   \label{eq:effloglin1}
+%   p(i) = \prod_{C\in \calC} \psi_C(i_C)
+% \end{equation}
+
+
+% Using e.g.\ the computation architecture of
+% \cite{lauritzen:spiegelhalter:88} the clique marginals
+% \begin{equation}
+%   \label{eq:effloglin2}
+%   p_{C}(i_{C}), \quad C \in \calC
+% \end{equation}
+% can be obtained from (\ref{eq:effloglin1}). In practice calculation of
+% (\ref{eq:effloglin2}) is done using the \grain\ package.
+% For $C\in \calC$ and an $a \in \calA_C$ update $\psi_C$ in
+% (\ref{eq:effloglin1}) as
+% \begin{displaymath}
+%   \psi_C(i_C) \leftarrow \psi_C(i_C) \frac{n(i_a)/n}{p_a(i_a)}
+% \end{displaymath}
+% where $p_a$ is obtained by summing over variables in $C\setminus
+% a$ in $p_C$ from (\ref{eq:effloglin2}). Then find the new clique
+% marginals in (\ref{eq:effloglin2}), move on to the next $a$ in
+% $\calA_{C}$ and so on.
+
+
+
+
+% As an example, consider 4--cycle model for reinis data:
+
+% @
+% <<>>=
+% data(reinis)
+% ff    <- ~smoke:mental+mental:phys+phys:systol+systol:smoke
+% dmod(ff, data=reinis)
+% @ %def
+
+
+% This model can be fitted with \code{loglin()} as
+
+% @
+% <<>>=
+% glist <- rhsFormula2list(ff)
+% glist
+% fv1 <- loglin(reinis, glist, print=FALSE)
+% fv1[1:3]
+% @ %def
+
+% An alternative is \code{effloglin()} which uses the algorithm above
+% triangulated graph:
+
+% @
+% <<>>=
+% fv2 <- effloglin(reinis, glist, print=FALSE)
+% fv2[c('logL','nparm','df')]
+% @ %def
+
+% The real virtue of \code{effloglin()} lies in that it is possible to
+% submit data as a list of sufficient marginals:
+
+% @
+% <<>>=
+% stab <- lapply(glist, function(gg) tableMargin(reinis, gg))
+% fv3 <- effloglin(stab, glist, print=FALSE)
+% @ %def
+
+% A sanity check:
+
+% @
+% <<>>=
+% f1 <- loglin(reinis, glist, print=F, fit=T)$fit
+% f3 <- effloglin(stab, glist, print=F, fit=T)$fit
+% f1 <- tableMargin(f1, names(dimnames(f3)))
+% max(abs(f1-f3))
+% @ %def
+
+% Notice the timings
+
+% @
+% <<>>=
+% system.time({ for (ii in 1:100) loglin(reinis, glist, print=FALSE)})
+% system.time({ for (ii in 1:100) effloglin(stab, glist, print=FALSE)})
+% @ %def
+
+
+% @
+% <<>>=
+% system.time({ for (ii in 1:100) loglin(reinis, glist, fit=FALSE, print=FALSE)})
+% system.time({ for (ii in 1:100) effloglin(stab, glist, fit=FALSE, print=FALSE)})
+% @ %def
+
+
+
+
+% @
+% <<>>=
+% Rprof()
+% system.time({ for (ii in 1:100) effloglin(stab, glist, print=FALSE)})
+% Rprof(NULL)
+% summaryRprof()
+% @ %def
+
+
+\subsection{Dimension of a log--linear model}
+\label{sec:dimloglin}
+
+The \code{loglinDim()} is a general function for finding the dimension
+of a log--linear model. It works on the generating class of a model
+being represented as a list:
+
+@
+<<print=T>>=
+dim_loglin(terms(dm2), reinis)
+@ %def
+
+% Consider the model for the \code{mildew} data given by the formula
+% (see Figure~\ref{fig:dimension})
+
+% @
+% <<>>=
+% ff <- ~la10:locc:mp58:c365+mp58:c365:p53a:a367
+% @ %def
+
+% <<dimension,fig=T,include=F,echo=F>>=
+% plot(ug(ff))
+% @ %def
+
+% \begin{figure}[h]
+%   \centering
+%   \includegraphics[height=5cm]{figures/GRIM-dimension}
+%   \caption{A decomposable graphical model for the \code{mildew} data.}
+%   \label{fig:dimension}
+% \end{figure}
+
+
+% As the model defined above is decomposable it is possible to calculate
+% and adjusted dimension which accounts for sparsity of data with \code{loglinDecDim()}:
+
+% @
+% <<>>=
+% loglinDecDim(glist, mildew)
+% @ %def
+
+% These adjusments are accounted for when creating log--linear models:
+
+% @
+% <<>>=
+% dmod(ff, data=mildew)
+% @ %def
+
+
+
+\section{Miscellaneous}
+\label{sec:misc}
+
+
+
+
+
+\subsection{The Model Object}
+\label{sec:intomodel}
+
+
+It is worth looking at the information in the model object:
+
+@
+<<>>=
+dm3 <- dmod(list(c("smoke", "systol"), c("smoke", "mental", "phys")),
+            data=reinis)
+names(dm3)
+@ %def
+
+\begin{itemize}
+
+\item The model, represented as a list of generators, is
+
+@
+<<>>=
+str(terms(dm3))
+@ %def
+
+@
+<<>>=
+str(dm3$glistNUM)
+@ %def
+
+The numeric representation of the generators refers back to
+
+@
+<<>>=
+dm3$varNames
+@ %def
+
+Notice the model object does not contain a graph object. Graph objects
+are generated on the fly when needed.
+
+\item Information about the variables etc. is
+
+<<>>=
+str(dm3[c("varNames","conNames","conLevels")])
+@ %def
+
+\item Finally \code{isFitted} is a logical for whether the model is fitted;
+  \code{data} is the data (as a table) and \code{fitinfo} consists of
+  fitted values, logL, df etc.
+\end{itemize}
+
+
+
+%%\listoffixmes
+
+
+\end{document}
+
+
+
+% \section{Testing for addition and deletion of edges}
+% \label{sec:xxx}
+
+% Consider the saturated and the independence models for the
+% \code{carcass} data:
+
+% @
+% <<print=T>>=
+% data(carcass)
+% cm1 <- cmod(~.^., carcass)
+% cm2 <- cmod(~.^1, data=carcass)
+% @ %def
+
+
+% \subsection{\code{testdelete()}}
+% \label{sec:xxx}
+
+
+
+% Let $\calM_0$ be a model and let $e=\{u,v\}$ be an edge in $\calM_0$.
+% The candidate model  formed by deleting $e$ from $\calM_0$ is $\calM_1$.
+% The \code{testdelete()} function can be used to test for deletion of
+% an edge from a model:
+
+% @
+% <<>>=
+% testdelete(cm1,~M11:F11)
+% testdelete(cm1,~M12:F13)
+% @ %def
+
+% In the first case the $p$--value suggests that the edge can not be
+% deleted. In the second case the $p$--value suggests that the edge can
+% be deleted. The reported AIC
+% value is the difference in AIC between the candidate model and the
+% original model. A negative value of AIC suggest that the candidate
+% model is to be preferred.
+
+
+% \subsection{\code{testadd()}}
+% \label{sec:xxx}
+
+% Next, let $\calM_0$ be a model and let $e=\{u,v\}$ be an edge not in
+% $\calM_0$. The candidate model  formed by adding $e$ to $\calM_0$ is
+% denoted $\calM_1$.
+% The \code{testadd()} function can be used to test for deletion of
+% an edge from a model:
+
+% @
+% <<>>=
+% testadd(cm2, ~M11:F11)
+% testadd(cm2, ~M12:F13)
+% @ %def
+
+
+% In the first case the $p$--value suggests that no significant
+% improvedment of the model is obtained by adding the edge. In the
+% second case a significant improvement is optained by adding the edge.
+% The reported AIC
+% value is the difference in AIC between the candidate model and the
+% original model. A negative value of AIC suggest that the candidate
+% model is to be preferred.
+
+
+% \section{Finding edges}
+% \label{sec:xxx}
+
+% Consider the following model for the \carcass\ data:
+
+% @
+% <<fig=T>>=
+% data(carcass)
+% cm1 <- cmod(~LMP:M12:F12+LMP:F11:F12+F11:F12:F13, data=carcass)
+% plot(cm1)
+% @ %def
+
+% \subsection{\code{getInEdges()}}
+% \label{sec:xxx}
+
+
+% The edges in the model are
+
+% @
+% <<>>=
+% getInEdges(cm1)
+% @ %def
+
+% In connection with model selection it is sometimes convenient to get
+% only the edges which are contained in only one clique:
+
+% @
+% <<>>=
+% getInEdges(cm1, type="decomposable")
+% @ %def
+
+% \footnote{getInEdges/getOutEdges: type=''decomposable'' is a silly value for the argument}
+
+% \footnote{getInEdges/getOutEdges: Should be possible to have edges as a
+%   matrix instead. Perhaps even as default.}
+
+% \subsection{\code{getOutEdges()}}
+% \label{sec:xxx}
+
+% The edges not in the model are
+
+% @
+% <<>>=
+% getOutEdges(cm1)
+% @ %def
+
+% In connection with model selection it is sometimes convenient to get
+% only the edges which when added will be in only one clique of the new model:
+
+% @
+% <<>>=
+% getOutEdges(cm1, type="decomposable")
+% @ %def
+
+
+% \section{Evaluating edges in the model}
+% \label{sec:xxx}
+
+% @
+% <<fig=T>>=
+% data(carcass)
+% cm1 <- cmod(~LMP:M12:F12+LMP:F11:F12+F11:F12:F13+F12:M11:M13, data=carcass[1:20,])
+% plot(cm1)
+% @ %def
+
+% \subsection{\code{evalInEdges()}}
+% \label{sec:xxx}
+
+% @
+% <<>>=
+% in.ed <- getInEdges(cm1)
+% z<-evalInEdges(cm1, edgeList=in.ed)
+% @ %def
+
+% Hence there are four edges which lead to a decrease in AIC. If we set
+% \code{headlong=T} then the function exist as soon as one decrease in
+% AIC is found:
+
+% @
+% <<>>=
+% z<-evalInEdges(cm1, edgeList=in.ed, headlong=T)
+% @ %def
+
+
+% \subsection{\code{evalOutEdges()}}
+% \label{sec:xxx}
+
+% @
+% <<>>=
+% out.ed <- getOutEdges(cm1)
+% z<-evalOutEdges(cm1, edgeList=out.ed)
+% @ %def
+
+% Hence there are four edges which lead to a decrease in AIC. If we set
+% \code{headlong=T} then the function exist as soon as one decrease in
+% AIC is found:
+
+% @
+% <<>>=
+% z<-evalOutEdges(cm1, edgeList=out.ed, headlong=T)
+% @ %def
+
+
+% \section{Methods for model objects}
+% \label{sec:ccc}
+
+
+
+% A \comi{summary()} of a model:
+
+% @
+% <<>>=
+% summary(dm1)
+% @ %def
+
+
+
+% @
+% <<>>=
+% str(fitted(dm1))
+% str(dm1$data)
+% @ %def
+
+% Hence we can make a simple diagnostic plot of Pearson residuals as
+
+% @
+% <<pearson-1,fig=T,include=F>>=
+% X2 <- (fitted(dm1)-dm1$datainfo$data)/sqrt(fitted(dm1))
+% qqnorm(as.numeric(X2))
+% @ %def
+
+% \begin{figure}[h]
+%   \centering
+%   \includegraphics[]{figures/GRIM-pearson-1}
+%   \caption{A marginal model for a slice of the \reinis\ data.}
+%   \label{fig:pearson-1}
+% \end{figure}
+
+
+
+
+% @
+% <<>>=
+% str(dm1$glist)
+% @ %def

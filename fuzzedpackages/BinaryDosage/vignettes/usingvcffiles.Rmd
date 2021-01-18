@@ -1,0 +1,301 @@
+---
+title: "Using VCF files"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{Using VCF Files}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+This vignette documents the functions in the BinaryDosage package that convert VCF files to binary dosage files. 
+
+**Note:** The examples below use functions to access information in binary dosage files. Information about these functions can be found in the vignette [Using Binary Dosage Files](usingbdfiles.html). Data returned by the function <span style="font-family:Courier">getbdinfo</span> contains information about a binary dosage file. Information on the data return by <span style="font-family:Courier">getbdinfo</span> can be found in the vignette [Genetic File Information](geneticfileinfo.html).
+
+```{r setup, echo=FALSE}
+library(BinaryDosage)
+```
+# Introduction
+
+VCF files are a useful way to store genetic data. They have a well defined format and can be easily parsed. The output files returned from the imputation software [minimac](https://genome.sph.umich.edu/wiki/Minimac) are returned in this format. The minimac software also returns an information file that is supported by the BinaryDosage package. The [Michigan Imputation Server](https://imputationserver.sph.umich.edu/index.html) using minimac for imputation and returns VCF and information. Functions in the BinaryDosage package have default settings to use the files return from minimac.
+
+Uncompressed VCF files are text files and can be very large, 100s of GB. Because of this they are quite often compressed. Files returned from the Michigan Imputation Server are compressed using gzip. This makes the files much smaller but greatly increases the read time. The BinaryDosage package supports reading of gzip compressed VCF files.
+
+The BinaryDosage package was originally designed for use with files return from the Michigan Imputation Server. It was quickly learned that if any manipulation was done to these files by various tools such as [vcftools](https://vcftools.github.io), The conversion routine in the BinaryDosage package would not work. The routine was modified to support additional VCF file formats.
+
+The BinaryDosage package has a routine to convert VCF files into a binary format that maintains the dosage, genetic probabilities, and imputation statistics. This results in a file about 10-15% the size of the uncompressed VCF file with much faster, 200-300x, read times. In comparison, Using gzip to compress the VCF file reduces the size of the file to about 5% its original size but makes run times slower.
+
+Routines were written to help debug the conversion routine. It was discovered these routines were quite useful for accessing data in the VCF file and are now included in the package. This document contains instructions on how to use these routines.
+
+# Example files
+
+There are several sample files included with the BinaryDosage package. The file names will be found by using the <span style="font-family:Courier">system.file</span> command in the examples. This will be used many times in the examples.
+
+The binary dosage files created will be temporary files. They will be created using the <span style="font-family:Courier">tempfile</span> command. This will also be used many times in the examples. All output files will use the default format of 4. For information on other formats see the vignette [Binary Dosage Formats](bdformats.html).
+
+# Converting a VCF file to the Binary Dosage format
+
+The <span style="font-family:Courier">vcftobd</span> routine converts VCF files to the binary dosage format. Many different formats of VCF files by the BinaryDosage package. The following sections show how to convert VCF files in various formats to the binary dosage format.
+
+## Minimac files
+
+Since the binary dosage format was initially created for use with files produced by minimac, the default options for calling the routine to convert a VCF file to a binary dosage format are for this type of file.
+
+### Uncompressed VCF files
+
+Uncompressed VCF files are the easiest to convert to the binary dosage format since the default values for <span style="font-family:Courier">vcftobd</span> are set for this format.
+
+#### No imputation information file
+
+An imputation information file is not required to convert a VCF file into the binary dosage format. In this case, the parameter value for <span style="font-family:Courier">vcffiles</span> is set to the VCF file name.
+
+The following commands convert the VCF file *set1a.vcf* into the binary dosage format.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+vcf1afile <- system.file("extdata", "set1a.vcf", package = "BinaryDosage")
+bdfile1a_woinfo <- tempfile()
+vcftobd(vcffiles = vcf1afile, bdfiles = bdfile1a_woinfo)
+
+```
+
+#### Using the imputation information file
+
+The minimac program returns an imputation information file that can be passed to the <span style="font-family:Courier">vcftobd</span> routine. This is done by setting the parameter <span style="font-family:Courier">vcffiles</span> to a vector of characters containing the VCF and the imputation information file names.
+
+The following commands convert the VCF file *set1a.vcf* into the binary dosage format using the information file *set1a.info*.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+vcf1afile <- system.file("extdata", "set1a.vcf", package = "BinaryDosage")
+vcf1ainfo <- system.file("extdata", "set1a.info", package = "BinaryDosage")
+bdfile1a_winfo <- tempfile()
+vcftobd(vcffiles = c(vcf1afile, vcf1ainfo), bdfiles = bdfile1a_winfo)
+
+```
+
+The differences between the two binary dosage datasets can be checked by running the <span style="font-family:Courier">getbdinfo</span> routine on both files. The value of <span style="font-family:Courier">snpinfo</span> in the list returned from <span style="font-family:Courier">getbdinfo</span> will be an empty for the first file and will contain the imputation information for the second file..
+
+The following commands show the first file does not contain any imputation information and the the second one does. The imputation information for the second file is converted to a table for easier displaying.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+bdinfo1a_woinfo <- getbdinfo(bdfiles = bdfile1a_woinfo)
+bdinfo1a_woinfo$snpinfo
+
+bdinfo1a_winfo <- getbdinfo(bdfiles = bdfile1a_winfo)
+knitr::kable(data.frame(bdinfo1a_winfo$snpinfo), caption = "bdinfo1a_winfo$snpinfo")
+```
+
+### Compressed VCF files
+
+VCF files can be quite large, 100s of GB. Because of this they are often compressed. The funciton <span style="font-family:Courier">vcftobd</span> supports VCF files compressed using gunzip by adding the option <span style="font-family:Courier">gz = TRUE</span> to the function call. The compressed file can be converted using an imputation information. The imputation file must **NOT** be compressed.
+
+The following code reads in the data from the compressed VCF file *set1a.vcf.gz*. This the *set1a.vcf* file after it has been compressed using gunzip. The file will be read in twice, once without the imputation information file and once with the imputation information fie.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+vcf1afile_gz <- system.file("extdata", "set1a.vcf.gz", package = "BinaryDosage")
+vcf1ainfo <- system.file("extdata", "set1a.info", package = "BinaryDosage")
+
+bdfile1a_woinfo_gz <- tempfile()
+vcftobd(vcffiles = vcf1afile_gz, bdfiles = bdfile1a_woinfo_gz)
+
+bdfile1a_winfo_gz <- tempfile()
+vcftobd(vcffiles = c(vcf1afile_gz, vcf1ainfo), bdfiles = bdfile1a_winfo_gz)
+
+```
+
+### Checking the files
+
+The four binary dosage files created above should all have the same dosage and genotype probabilities in them. The following code calculates the alternate allele frequencies for each of the binary dosage files using the <span style="font-family:Courier">bdapply</span> function. The results are then displayed in a table showing the alternate allele frequencies are the same for each file. The value for SNPID was taken from the list return from <span style="font-family:Courier">getbdinfo</span>.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+
+bdinfo1a_woinfo_gz <- getbdinfo(bdfiles = bdfile1a_woinfo_gz)
+bdinfo1a_winfo_gz <- getbdinfo(bdfiles = bdfile1a_winfo_gz)
+
+aaf1a_woinfo <- unlist(bdapply(bdinfo = bdinfo1a_woinfo, getaaf))
+aaf1a_winfo <- unlist(bdapply(bdinfo = bdinfo1a_winfo, getaaf))
+aaf1a_woinfo_gz <- unlist(bdapply(bdinfo = bdinfo1a_woinfo_gz, getaaf))
+aaf1a_winfo_gz <- unlist(bdapply(bdinfo = bdinfo1a_winfo_gz, getaaf))
+
+aaf1a <- data.frame(SNPID = bdinfo1a_woinfo$snps$snpid,
+                    aaf1a_woinfo = aaf1a_woinfo,
+                    aaf1a_winfo = aaf1a_winfo,
+                    aaf1a_woinfo_gz = aaf1a_woinfo_gz,
+                    aaf1a_winfo_gz = aaf1a_winfo_gz)
+
+knitr::kable(aaf1a, caption = "Alternate Allele Frequencies", digits = 4)
+
+```
+
+## Other VCF file formats
+
+The <span style="font-family:Courier">vcftobd</span> function can support VCF files in formats other than those returned from minimac. This is done by examining the value of FORMAT for each SNP in the VCF file. The routine looks for the values "DS" and "GP", dosage and genotype probabilities, in the FORMAT column. If one or both of these values are found, the appropriate information is written to the binary dosage file.
+
+The file *set2a.vcf* contains only the dosage values. The following code converts it to a binary dosage file. The <span style="font-family:Courier">getsnp</span> function is then used to extract the first SNP and display the values for the first 10 subjects.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+vcf2afile <- system.file("extdata", "set2a.vcf", package = "BinaryDosage")
+bdfile2a <- tempfile()
+
+vcftobd(vcffiles = vcf2afile, bdfiles = bdfile2a)
+
+bdinfo2a <- getbdinfo(bdfiles = bdfile2a)
+snp1_2a <- data.frame(getsnp(bdinfo = bdinfo2a, snp = 1L, dosageonly = FALSE))
+
+snp1 <- cbind(SubjectID = bdinfo2a$samples$sid, snp1_2a)
+
+knitr::kable(snp1[1:10,], caption = "Dosage and Genotype Probabilities")
+```
+
+## Other vcftobd options
+
+There are other options for <span style="font-family:Courier">vcftobd</span>. These options effect how the information is written to the binary dosage file.
+
+### format and subformat options
+
+The format and subformat options determine the format of the binary dosage files. These format are documented in the [Binary Dosage Formats](bdformats.html).
+
+### snpidformat
+
+The <span style="font-family:Courier">snpidformat</span> options specifies how the SNP ID is written to the binary dosage file. The default value is 0. This tells the code to use the SNP IDs that are in the VCF file. Other values that can be supplied to the function creates a SNP ID from the chromosome, location, reference, and alternate allele values.
+
+When the snpidformat is set to 1, the SNP ID is written in the format
+
+<span style="font-family:Courier">Chromosome:Location</span>
+
+When the snpidformat is set to 2, the SNP ID is written in the format
+
+<span style="font-family:Courier">Chromosome:Location:Reference Allele:Alternate Allele</span>
+
+When the snpidformat is set to -1, the SNP ID is not written to the binary dosage file. When the binary dosage file is read, the SNP ID is generated using the format for snpidformat equal to 2. This reduces the size of the binary dosage file.
+
+**Note:** If the SNP IDs in the VCF are in snpidformat 1 or 2, the code recognizes this and writes the smaller binary dosage files.
+
+**Note:** If the SNP IDs in the VCF are in snpidformat 2, and the snpidformat option is set to 1, an error will be returned. This is because of possible information loss and the binary dosage file does not change.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+vcf1brsfile <- system.file("extdata", "set1b_rssnp.vcf", package = "BinaryDosage")
+bdfile1b.snpid0 <- tempfile()
+bdfile1b.snpid1 <- tempfile()
+bdfile1b.snpid2 <- tempfile()
+bdfile1b.snpidm1 <- tempfile()
+
+vcftobd(vcffiles = vcf1brsfile, bdfiles = bdfile1b.snpid0)
+vcftobd(vcffiles = vcf1brsfile, bdfiles = bdfile1b.snpid1, snpidformat = 1)
+vcftobd(vcffiles = vcf1brsfile, bdfiles = bdfile1b.snpid2, snpidformat = 2)
+vcftobd(vcffiles = vcf1brsfile, bdfiles = bdfile1b.snpidm1, snpidformat = -1)
+
+bdinfo1b.snpid0 <- getbdinfo(bdfiles = bdfile1b.snpid0)
+bdinfo1b.snpid1 <- getbdinfo(bdfiles = bdfile1b.snpid1)
+bdinfo1b.snpid2 <- getbdinfo(bdfiles = bdfile1b.snpid2)
+bdinfo1b.snpidm1 <- getbdinfo(bdfiles = bdfile1b.snpidm1)
+
+snpnames <- data.frame(format0 = bdinfo1b.snpid0$snps$snpid,
+                       format1 = bdinfo1b.snpid1$snps$snpid,
+                       format2 = bdinfo1b.snpid2$snps$snpid,
+                       formatm1 = bdinfo1b.snpidm1$snps$snpid)
+
+knitr::kable(snpnames, caption = "SNP Names by Format")
+
+```
+
+### bdoptions
+
+When using binary dosage format 4.x it is possible to store additional information about the SNPs in the file. This is information consists of the following values
+
+- Alternate allele frequency
+- Minor allele frequency
+- Average call
+- Imputation r-squared
+
+These values are normally provided in the imputation information file. However, it is possible to calculate the alternate and minor allele frequency without the imputation information file. This can be useful when a subset of subjects is extracted from the VCF file that returned from minimac. It is also possible to estimate the imputation r-squared. See the vignette [Estimating Imputed R-squares](r2estimates.html) for more information on the r-squared estimate.
+
+The value for bdoptions is a vector of character values that can be "aaf", "maf", "rsq", or and combination of these values. The values indicate to calculate alternate allele frequency, minor allele frequency, and imputation r-squared respectively.
+
+The following code converts the *set1a.vcf* file into a binary dosage file and calculates the alternate allele frequency and the minor allele frequency, and estimates the imputed r-squared. These values are then compared to the values in the binary dosage file that was generated by using the *set1a.info* information file.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+vcf1afile <- system.file("extdata", "set1a.vcf", package = "BinaryDosage")
+bdfile1a_calcinfo <- tempfile()
+vcftobd(vcffiles = vcf1afile, bdfiles = bdfile1a_calcinfo, bdoptions = c("aaf", "maf", "rsq"))
+
+bdcalcinfo <- getbdinfo(bdfile1a_calcinfo)
+
+snpinfo <- data.frame(aaf_info = bdinfo1a_winfo$snpinfo$aaf,
+                      aaf_calc = bdcalcinfo$snpinfo$aaf,
+                      maf_info = bdinfo1a_winfo$snpinfo$maf,
+                      maf_calc = bdcalcinfo$snpinfo$maf,
+                      rsq_info = bdinfo1a_winfo$snpinfo$rsq,
+                      rsq_calc = bdcalcinfo$snpinfo$rsq)
+
+knitr::kable(snpinfo, caption = "Information vs Calculated Information", digits = 3)
+
+```
+
+# Additional routines
+
+The following routines are available for accessing information contained in VCF files
+
+- <span style="font-family:Courier">getvcfinfo</span>
+- <span style="font-family:Courier">vcfapply</span>
+
+## getvcfinfo
+
+The <span style="font-family:Courier">getvcfinfo</span> routine returns information about a VCF file. For more information about the data returned see [Genetic File Information](geneticfileinfo.html). This information needs to be passed to vcfapply so it can efficiently read the VCF file.
+
+The parameters passed to <span style="font-family:Courier">getvcfinfo</span> are
+
+- <span style="font-family:Courier">filenames</span>
+- <span style="font-family:Courier">gz</span>
+- <span style="font-family:Courier">index</span>
+- <span style="font-family:Courier">snpidformat</span>
+
+<span style="font-family:Courier">filenames</span> is a character vector that can contain up to two values. The first value is the name of the VCF file. The second value is optional and is the name of the imputation information file.
+
+<span style="font-family:Courier">gz</span> is a logical value that indicates if the VCF file has been compressed using gzip. This only applies to the VCF file. Compression of the imputation information file is not supported.
+
+<span style="font-family:Courier">index</span> is a logical value that indicates if the VCF file should be indexed. Indexing the VCF file takes time but greatly reduces the time needed to read the file. Indexing can only be done on uncompressed VCF files.
+
+<span style="font-family:Courier">snpidformat</span> is an integer value from 0 to 2 that indicates how the SNP ID should be formatted. The value indicates which of the follow formats to use.
+
+- 0 - Value in VCF file
+- 1 - <span style="font-family:Courier">Chromosome:Location(bp)</span>
+- 2 - <span style="font-family:Courier">Chromosome:Location(bp):Reference Allele:Alternate Allele</span>
+
+## vcfapply
+
+The <span style="font-family:Courier">vcfapply</span> routine applies a function to all SNPs in the VCF file. The routine returns a list with length equal to the number of SNPs in the VCF file. Each element in the list is the value returned by the user supplied function. The routine takes the following parameters.
+
+- <span style="font-family:Courier">vcfinfo</span> - list with information about the VCF file returned by <span style="font-family:Courier">getvcfinfo</span>.
+- <span style="font-family:Courier">func</span> - user supplied function to be applied to each SNP in the VCF file.
+- <span style="font-family:Courier">...</span> - additional parameters needed by the user supplied function
+
+The user supplied function must have the following parameters.
+
+- <span style="font-family:Courier">vcfinfo</span> - A numeric vector with the dosage values for each subject.
+- <span style="font-family:Courier">p0</span> - A numeric vector with the probabilities the subject has no alternate alleles for each subject.
+- <span style="font-family:Courier">p1</span> - A numeric vector with the probabilities the subject has one alternate allele for each subject.
+- <span style="font-family:Courier">p2</span> - A numeric vector with the probabilities the subject has two alternate alleles for each subject.
+
+The user supplied function can have other parameters. These parameters need to passed to the <span style="font-family:Courier">vcfapply</span> routine.
+
+There is a function in the <span style="font-family:Courier">BinaryDosage</span> package named <span style="font-family:Courier">getaaf</span> that calculates the alternate allele frequencies and is the format needed by <span style="font-family:Courier">vcfapply</span> routine. The following uses <span style="font-family:Courier">getaaf</span> to calculate the alternate allele frequency for each SNP in the *set1a.vcf* file using the <span style="font-family:Courier">vcfapply</span> routine and compares it to the aaf in the information file.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+vcf1afile <- system.file("extdata", "set1a.vcf", package = "BinaryDosage")
+vcfinfo <- getvcfinfo(vcf1afile, index = TRUE)
+aaf <- unlist(vcfapply(vcfinfo = vcfinfo, getaaf))
+
+altallelefreq <- data.frame(SNP = vcfinfo$snps$snpid, aafinfo = aaf1a_winfo, aafcalc = aaf)
+knitr::kable(altallelefreq, caption = "Information vs Calculated aaf", digits = 3)
+
+```
+
+

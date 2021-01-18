@@ -1,0 +1,40 @@
+---
+title: "BeviMed with VCFs"
+author: "Daniel Greene"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{BeviMed with VCFs}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\usepackage[utf8]{inputenc}
+---
+```{r echo=FALSE}
+knitr::opts_chunk$set(dev="svg", fig.width=7, fig.height=7)
+```
+
+The `BeviMed` package comes with a script containing functions to simplify reading allele count matrices from VCF files. The functions depend on `tabix`, but have the advantage of allowing variants in local regions to be read in, reducing the amount of memory consumed at any one time. However, if you want to analyse many regions, it may be more efficient to read in larger parts of the file - in which case, a package such as `vcfR` might be more appropriate. 
+
+In order to make the functions available, we must source the script:
+```{r}
+library(BeviMed)
+source(paste0(system.file(package="BeviMed", "/scripts/vcf.R")))
+```
+
+The script creates the function `vcf2matrix`, which depends on the external program `tabix` (available from http://www.htslib.org/download/) for reading allele count matrices from VCF files. It uses arguments:
+
+* `vcf_file_name` - path to vcf file.
+* `chr` - `character` value giving chromosome.
+* `from`/`to` - `integer` values giving from/to coordinates for chromosome.
+* `samples` - `character` vector of sample names as used in the VCF.
+* `include_variant_info` - `boolean` value determining whether to return just a matrix of allele counts (`TRUE`, default) or a list of allele count matrix `G` and `data.frame` of variant information `info` (`FALSE`). The variant information `info` could be useful for filtering the variants, for example if the VCF has not been pre-filtered for rare variants. 
+* `description_columns` - `integer` value giving number of columns of description fields in the VCF file (i.e. before the genotype columns begin), defaults to `9`. 
+* `warn_if_AF_greater_than` - `numeric` value giving threshold allele frequency for generating a warning.
+
+You can invoke the function simply to obtain the allele count matrix and pass straight to `bevimed`, along with phenotype label:
+
+```{r eval=FALSE}
+ac_matrix <- vcf2matrix("my-vcf.vcf.gz", chr="2", from=1, to=1e4)
+pheno <- read.table(file="my-phenotype-data.txt", header=TRUE)
+
+bevimed(y=pheno$disease_status, G=ac_matrix)
+```

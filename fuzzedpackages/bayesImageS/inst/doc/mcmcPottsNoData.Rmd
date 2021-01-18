@@ -1,0 +1,133 @@
+---
+title: "mcmcPottsNoData"
+author: "Matt Moores"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    fig_caption: yes
+vignette: >
+  %\VignetteIndexEntry{mcmcPottsNoData}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteKeyword{Gibbs sampler}
+  %\VignetteKeyword{Swendsen-Wang}
+---
+
+```{r setup, include=FALSE}
+library(bayesImageS)
+set.seed(12)
+```
+
+This is a follow up to [my previous post](https://mattstats.wordpress.com/2013/12/13/swnodata/) about the Swendsen-Wang (SW) algorithm, where I mentioned that SW has better convergence properties than Gibbs when the inverse temperature parameter $\beta$ is large. This difference can be quantified by initialising the two algorithms at known starting points and measuring how many iterations it takes to converge. This is the second in a series of posts describing the functions and algorithms that I have implemented in the R package **bayesImageS**, which is [now available on CRAN](https://CRAN.R-project.org/package=bayesImageS).
+
+------
+The Potts model has a doubly-intractable likelihood, so its expectation and variance cannot be computed exactly. Instead, we can use Markov chain Monte Carlo (MCMC) algorithms such as SW or Gibbs sampling to simulate from its distribution for a given value of $\beta$. However, we need to know how many MCMC iterations to use, so that the chain will have converged to a steady state. Otherwise, any inference using the MCMC samples will be biased.
+
+In the following, the labels **z** of the Potts model can take *k* different values. This state space is not ordered, so algorithms such as perfect sampling (Propp & Wilson, 1996; Huber, 2016) cannot be applied. The Potts model is a member of the exponential family, so it has a sufficient statistic S(**z**) which is the count of like neighbours. The maximum value of S(**z**), which we will call $M$, is equal to $2(n - \sqrt{n})$ for a regular, square lattice. For example, $M = 112$ for an 8x8 lattice; $M = 31,000$ for 125x125; and $M = 1,998,000$ for 1000x1000.
+
+There are two exceptions where the distribution of the Potts model can be computed exactly. When $\beta=0$ the labels z are independent, hence the sufficient statistic S(**z**) follows a Binomial distribution with expectation $M/k$ and variance $M(1/k)(1 - 1/k)$. For an 8x8 lattice with k=3, the expectation is `64/3` with a variance of 24.89. As β approaches infinity, all of the labels have the same value almost surely. This means that the expectation approaches M asymptotically, while the variance approaches 0.
+
+We can use the endpoints of the distribution to estimate how long the SW and Gibbs algorithms take to converge. The algorithm is initialised at one endpoint, then we monitor S(**z**) at each iteration until the distribution of the samples has converged to the known expectation and variance. First, let's look at chequerboard Gibbs sampling for an 8×8 lattice with *k*=3:
+
+```{r fig.cap="Chequerboard Gibbs sampling for a regular 8x8 lattice with k=3 labels."}
+k <- 3
+n <- 8*8
+mask <- matrix(1,nrow=sqrt(n),ncol=sqrt(n))
+neigh <- getNeighbors(mask, c(2,2,0,0))
+block <- getBlocks(mask, 2)
+edges <- getEdges(mask, c(2,2,0,0))
+print(paste(sum(mask),"pixels"))
+print(paste("maximum sufficient statistic S(z) =",nrow(edges)))
+res.Gibbs <- mcmcPottsNoData(beta=5, k=3, neigh, block, niter=100)
+ts.plot(res.Gibbs$sum, ylim=c(nrow(edges)/3, nrow(edges)))
+abline(h=nrow(edges), col=2, lty=3)
+summary(res.Gibbs$sum[51:100])
+var(res.Gibbs$sum[51:100])
+```
+
+We can see that it only takes around 35 iterations for the Gibbs sampler to converge for a lattice of that size. Now for a 125×125 lattice:
+```{r fig.cap="Chequerboard Gibbs sampling for a regular 125x125 lattice with k=3 labels."}
+n <- 125*125
+mask <- matrix(1,nrow=sqrt(n),ncol=sqrt(n))
+neigh <- getNeighbors(mask, c(2,2,0,0))
+block <- getBlocks(mask, 2)
+edges <- getEdges(mask, c(2,2,0,0))
+print(paste(sum(mask),"pixels"))
+print(paste("maximum sufficient statistic S(z) =",nrow(edges)))
+res.Gibbs <- mcmcPottsNoData(beta=5, k=3, neigh, block, niter=2000)
+ts.plot(res.Gibbs$sum, ylim=c(nrow(edges)/3, nrow(edges)))
+abline(h=nrow(edges), col=2, lty=3)
+summary(res.Gibbs$sum[1001:2000])
+var(res.Gibbs$sum[1001:2000])
+```
+
+Even after 2000 iterations, the distribution of S(**z**) might not have converged to the known value. Now let's see how Swendsen-Wang performs for the same lattice:
+```{r}
+res.SW <- swNoData(beta=5, k=3, neigh, block, niter=50)
+ts.plot(res.SW$sum, ylim=c(nrow(edges)/3, nrow(edges)))
+abline(h=nrow(edges), col=2, lty=3)
+summary(res.SW$sum[26:50])
+var(res.SW$sum[26:50])
+```
+
+After 25 iterations, SW has already converged to the exact distribution. Even though this algorithm is much more expensive for each iteration, it more than makes up for that in efficiency when $\beta$ is large.
+
+```{r}
+n <- 1000*1000
+mask <- matrix(1,nrow=sqrt(n),ncol=sqrt(n))
+neigh <- getNeighbors(mask, c(2,2,0,0))
+block <- getBlocks(mask, 2)
+edges <- getEdges(mask, c(2,2,0,0))
+print(paste(sum(mask),"pixels"))
+print(paste("maximum sufficient statistic S(z) =",nrow(edges)))
+res.SW <- swNoData(beta=5, k=3, neigh, block, niter=100)
+ts.plot(res.SW$sum, ylim=c(nrow(edges)/3, nrow(edges)))
+abline(h=nrow(edges), col=2, lty=3)
+summary(res.SW$sum[81:100])
+var(res.SW$sum[81:100])
+```
+
+Now let's see what happens when we go in the other direction: initialising the lattice with all labels set to the same value, then updating with $\beta=0$:
+
+```{r}
+n <- 125*125
+mask <- matrix(1,nrow=sqrt(n),ncol=sqrt(n))
+neigh <- getNeighbors(mask, c(2,2,0,0))
+block <- getBlocks(mask, 2)
+edges <- getEdges(mask, c(2,2,0,0))
+system.time(res2.Gibbs <- mcmcPottsNoData(beta=0, k=3, neigh, block, niter=100, random=FALSE))
+ts.plot(res2.Gibbs$sum, ylim=range(c(res2.Gibbs$sum, nrow(edges))))
+abline(h=nrow(edges), col=2, lty=3)
+abline(h=nrow(edges)/3, col=4, lty=3)
+summary(res2.Gibbs$sum[51:100])
+var(res2.Gibbs$sum[51:100])
+```
+
+The distribution of all 500 samples are very close to the exact distribution with mean 10333.33 and variance 6888.89:
+```{r}
+muSz <- nrow(edges)/3
+sdSz <- sqrt(nrow(edges)*(1/3)*(2/3))
+hist(res2.Gibbs$sum[51:100], freq=FALSE, breaks=20, col=3,
+     xlim=range(c(res2.Gibbs$sum,muSz - 3*sdSz, muSz + 3*sdSz)))
+abline(v=nrow(edges)/3, col=4, lty=3, lwd=3)
+curve(dnorm(x, mean=nrow(edges)/3, sd=sqrt(nrow(edges)*(1/3)*(2/3))), 
+          col="darkblue", lwd=2, lty=2, add=TRUE, yaxt="n")
+```
+
+Now for Swendsen-Wang:
+```{r}
+system.time(res2.SW <- swNoData(beta=0, k=3, neigh, block, niter=100, random=FALSE))
+ts.plot(res2.SW$sum, ylim=range(c(res2.SW$sum, nrow(edges))))
+abline(h=nrow(edges), col=2, lty=3)
+abline(h=nrow(edges)/3, col=4, lty=3)
+summary(res2.SW$sum[51:100])
+var(res2.SW$sum[51:100])
+```
+
+```{r}
+hist(res2.SW$sum[51:100], freq=FALSE, breaks=20, col=3,
+     xlim=range(c(res2.Gibbs$sum,muSz - 3*sdSz, muSz + 3*sdSz)))
+abline(v=nrow(edges)/3, col=4, lty=3, lwd=3)
+curve(dnorm(x, mean=muSz, sd=sdSz), 
+          col="darkblue", lwd=2, lty=2, add=TRUE, yaxt="n")
+```

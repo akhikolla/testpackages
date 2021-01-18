@@ -1,0 +1,1 @@
+utils::globalVariables(c("combined_background", "pathway_list"))

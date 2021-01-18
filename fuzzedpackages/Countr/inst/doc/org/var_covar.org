@@ -1,0 +1,334 @@
+# Local Variables;
+# org-ref-default-bibliography: REFERENCES.bib
+#+LaTeX_CLASS_OPTIONS: [a4paper,twoside,11pt]
+#+TITLE: Computation of the variance-covariance matrix
+#+SUBTITLE: An example with the ~Countr~ package.
+#+PROPERTY: header-args:R :cache yes :session var-r :results output :exports both
+#+PROPERTY: header-args:R :tangle ./var_covar.R 
+#+LaTeX_CLASS: article_tarak
+#+OPTIONS: author:nil
+#+OPTIONS: toc:nil
+#+INCLUDE:"../custom_packages.org"
+#+LATEX_HEADER: \author[1]{Tarak Kharrat}
+#+LATEX_HEADER: \author[2]{Georgi N. Boshnakov}
+#+LATEX_HEADER: \affil[1]{Salford Business School, University of Salford, UK.}
+#+LATEX_HEADER: \affil[2]{School of Mathematics, University of Manchester, UK.}
+#+LATEX_HEADER: \newcommand{\countr}{\texttt{Countr}\xspace}
+#+LATEX_HEADER: \usepackage{rotating} % for sideways
+
+#+BEGIN_abstract
+Computing standard errors and confidence intervals for estimated parameters is a
+common task in regression analysis. These quantities allow the analyst to
+quantify the certainty (/confidence/) associated with the obtained estimates. In
+~Countr~ two different approaches have been implemented to do this job. First, using
+asymptotic MLE (Maximum Likelihood Estimator) theory, numeric computation of the
+inverse Hessian matrix can be used as a consistent estimator of the
+variance-covariance matrix, which in turn can be used to derive standard errors
+and confidence intervals. The second option available in ~Countr~ is to use
+bootsrap \citep{efron1979bootstrap}. In this document, we give the user an
+overview of how to do to the computation in ~Countr~.
+
+This vignette is part of package ~Countr~ \citep[see][]{CountrJssArticle}.
+#+END_abstract
+
+Before starting our analysis, we need to load the useful packages. On top of
+~Countr~, the ~dplyr~ package \citep{dplyr2016} will be used:
+#+NAME: load-pkg
+#+BEGIN_SRC R :results value silent
+library(Countr)
+library(dplyr)
+library(xtable)
+#+END_SRC
+
+
+* Maximum Likelihood estimator (MLE)
+
+** Theory
+
+Let $f(y, \mathbf{x}, \bm{\theta})$ be the probability density function of a
+renewal-count model, where $y$ is the count variable, $\mathbf{x}$ the vector of
+covariate values and $\bm{\theta}$ the vector of coefficients to be
+estimated ($q \times 1$ vector). Define the log-likelihood by $\mathcal{L} =
+\sum_{i=1}^{n} ln f(y_i|\mathbf{x}_i, \bm{\theta}_i)$. Under regularity
+conditions  \citep[see for example]{cameron2013regression}[Section 2.3], the MLE
+$\bm{\hat{\theta}}$ is the solution of the first-order conditions,
+\begin{equation}      
+     \frac{\partial \mathcal{L}}{\partial \bm{\theta}} 
+     = \sum_{i=1}^{n} \frac{\partial ln f_i}{\partial \bm{\theta}} = 0 
+     ,
+\end{equation}        
+where $f_i = f(y_i|\mathbf{x}_i, \bm{\theta}_i)$ and $\frac{\partial
+\mathcal{L}}{\partial \bm{\theta}}$ is a $q \times 1$ vector.
+
+Let $\bm{\theta}_0$ be the /true/ value of $\bm{\theta}$. Using MLE theory and
+assuming regularity conditions, we obtain $\bm{\hat{\theta}} \xrightarrow{p}
+\bm{\theta}_0$ and
+\begin{equation}      
+     \sqrt{n}(\bm{\hat{\theta}}_{ML} - \bm{\theta}_0) 
+     \xrightarrow{d} \mathcal{N}[\mathbf{0}, \mathbf{V}^{-1}] 
+     ,
+\end{equation}
+where the $q \times q$ matrix $\mathbf{V}$ matrix is defined as
+#+NAME: Info-mat
+\begin{equation}      
+     \mathbf{V} 
+     = - \lim_{n \rightarrow \infty} \frac{1}{n} \mathop{\mathbb{E}} 
+     \bigg[ \sum_{i=1}^n 
+                \frac{ \partial^2 \ln f_i }{ \partial \bm{\theta} \partial \bm{\theta}' }
+                \bigg|_{\bm{\theta}_0} 
+     \bigg]
+     .
+\end{equation}
+
+To use this result, we need a consistent estimator of the variance matrix
+$\mathbf{V}$. Many options are available: the one implemented in ~Countr~ is
+known as the /Hessian estimator/ and simply evaluates Equation [[(Info-mat]]) at
+$\bm{\hat{\theta}}$ without taking expectation and limit.
+
+
+** Implementation in ~Countr~
+
+The Hessian estimate of the variance-covariance matrix is computed by default by
+the fitting routine ~renewalCount()~, which saves it in the returned object as
+component ~vcov~. Its computation can be prevented by setting argument
+~computeHessian~ to ~FALSE~ when calling ~renewalCount()~.
+
+Following standard practice in ~R~, it is recommended to extract or recompute
+the variance-covariance matrix using function ~vcov()~. Here is an example
+with the fertility data:
+
+#+NAME: gamma-model-var-asymptotic
+#+BEGIN_SRC R
+data(fertility)
+form <- children ~ german + years_school + voc_train + university + Religion +
+                   year_birth + rural + age_marriage
+gam <- renewalCount(formula = form, data = fertility, dist = "gamma",
+                    computeHessian = TRUE, 
+                    control = renewal.control(trace = 0, method = "nlminb")
+                    )
+v1 <- gam$vcov
+v2 <- vcov(gam)
+all(v1 == v2)
+#+END_SRC
+
+#+RESULTS[377273dd3d5d931b61b5b4eb84498da5c1114543]: gamma-model-var-asymptotic
+: [1] TRUE
+
+The renewal method for ~vcov()~ simply extracts the variance-covariance matrix
+if it has already been computed. Otherwise, the function will re-compute it. The
+user can choose the computation method by specifying the ~method~ argument:
+~"asymptotic"~ for numerical hessian computation or ~"boot"~ for the bootstrap
+method. The bootstrap method can be customized by using the ~"..."~ argument, as
+will be discussed in Section [[Bootstrap]] .
+
+Parameters' standard errors and confidence intervals can be computed by calls to
+the generic functions ~se.coef()~ and ~confint()~, since they also have methods
+for renewal objects. The hessian method can be specified by setting the argument
+~type = "asymptotic"~.
+
+#+NAME: gamma-model-se
+#+BEGIN_SRC R
+se <- se.coef(gam, type = "asymptotic")
+se
+#+END_SRC
+
+#+RESULTS[75e0bcc1a6bd24e37fc281d49ba30785a83b3dca]: gamma-model-se
+:                   rate_          rate_germanyes       rate_years_school 
+:               0.2523375               0.0590399               0.0265014 
+:       rate_voc_trainyes      rate_universityyes   rate_ReligionCatholic 
+:               0.0358390               0.1296149               0.0578032 
+:     rate_ReligionMuslim rate_ReligionProtestant         rate_year_birth 
+:               0.0698429               0.0622954               0.0019471 
+:           rate_ruralyes       rate_age_marriage                  shape_ 
+:               0.0311876               0.0053274               0.0710611
+
+#+NAME: gamma-model-confint
+#+BEGIN_SRC R
+ci <- confint(gam, type = "asymptotic")
+ci
+#+END_SRC
+
+#+RESULTS[f9645fbc786b14869f28e43b4924a89e62af8ba4]: gamma-model-confint
+#+begin_example
+                             2.5 %     97.5 %
+rate_                    1.0621317  2.0512766
+rate_germanyes          -0.3054815 -0.0740495
+rate_years_school       -0.0202566  0.0836270
+rate_voc_trainyes       -0.2141792 -0.0736929
+rate_universityyes      -0.4000943  0.1079867
+rate_ReligionCatholic    0.0924771  0.3190616
+rate_ReligionMuslim      0.3857453  0.6595243
+rate_ReligionProtestant -0.0149604  0.2292330
+rate_year_birth         -0.0014721  0.0061603
+rate_ruralyes           -0.0056353  0.1166177
+rate_age_marriage       -0.0392385 -0.0183553
+shape_                   1.3000440  1.5785983
+#+end_example
+
+One can validate the result obtained here by comparing them to what is reported
+in \citet[Table 1]{winkelmann1995duration}.
+
+* Bootstrap  
+
+** Theory
+
+The type of bootstrap used in ~Countr~ is known as /nonparametric/ or bootstrap
+pairs. It is valid under the assumption that $(y_i, \mathbf{x}_i)$ is iid. The
+algorithm works as follows:
+
+1. Generate a pseudo-sample of size $n$, $(y^*_l, \mathbf{x}^*_l), \ l=1, \dots,
+   n$, by sampling /with replacement/ from the original pairs $(y_i,
+   \mathbf{x}_i), \ i =1, \dots, n$.
+
+2. Compute the estimator \(\hat{\bm{\theta}}_1\) from the pseudo-sample generated
+   in 1.
+
+3. Repeat steps 1 and 2 $B$ times giving $B$ estimates $\hat{\bm{\theta}}_1,
+   \dots, \hat{\bm{\theta}}_B$.
+
+4. The bootstrap estimate of the variance-covariance matrix is given by
+   $\hat{\mathbf{V}}_{Boot}[\bm{\hat{\theta}}] = \frac{1}{B -1}
+   \sum_{b=1}^B(\hat{\bm{\theta}}_b - \bar{\bm{\theta}})(\hat{\bm{\theta}}_b -
+   \bar{\bm{\theta}})'$,
+    where $\bar{\bm{\theta}} = [\bar{\theta}_1, \dots, \bar{\theta}_q]$ and 
+          $\bar{\theta}_j$ is the sample mean 
+          $\bar{\theta}_j = (1/B) \sum_{b=1}^B \hat{\bm{\theta}}_{j,b}$.
+
+Asymptotically ($B \rightarrow \infty$), the bootstrap variance-covariance
+matrix and standard errors are equivalent to their robust counterpart obtained
+by sandwich estimators. In practice, using $B=400$ is usually recommended
+\citep[Section 2.6.4]{cameron2013regression}}
+
+
+** Implementation in ~Countr~
+
+The bootstrap computations in ~Countr~ are based on the ~boot()~ function
+from the package with the same name \citep{boot2017}.
+
+The variance-covariance matrix is again computed with the renewal method for
+~vcov()~ by specifying the argument ~method = "boot"~.  The computation can be
+further customised by passing other options accepted by ~boot()~ other than
+~data~ and ~statistic~ which are provided by the ~Countr~ code.  Note that the
+matrix is only computed if it is not found in the passed ~renewal~ object.  The
+bootstrap sample is actually computed by a separate function
+~addBootSampleObject()~, which computes the bootstrap sample and adds it as
+component ~boot~ to the renewal object. Functions like ~vcov()~ and ~confint()~
+check if a bootstrap sample is already available and use it is.  It is a good
+idea to call ~addBootSampleObject()~ before attempting computations based on
+bootstrapping. We show below how to update the previously fitted gamma model
+with 400 bootstrap iterations using the parallel option and 14 CPUs.  if $B$ is
+large and depending on how fast the model can be fitted, this computation may be
+time consuming.
+#+NAME: gamma-model-boot-object
+#+BEGIN_SRC R
+gam <- addBootSampleObject(gam, R = 400, parallel = "multicore", ncpus = 14)
+#+END_SRC
+
+#+RESULTS[531a07c9b4260e5262522527f9248a93211d8f93]: gamma-model-boot-object
+
+Once the object is updated, the variance-covariance matrix is computed by ~vcov~
+in a straightforward way:
+#+NAME: gamma-model-vcov-boot
+#+BEGIN_SRC R :results none
+gam$vcov <- matrix()
+varCovar <- vcov(gam, method = "boot")
+#+END_SRC
+
+This arranges the above results in a table (see Table \ref{tab:varCovar}):
+#+BEGIN_SRC R :results output latex
+capboot <- "Bootstrap variance-covariance matrix of model \texttt{gam}."
+print(xtable(varCovar, digits = -1, caption = capboot, label = "tab:varCovar"), 
+      rotate.colnames = TRUE, floating.environment = "sidewaystable" )
+#+END_SRC
+
+#+RESULTS[cf65abe9cc28e38df6fb6c1a9df3da86afe35610]:
+#+BEGIN_EXPORT latex
+% latex table generated in R 3.4.2 by xtable 1.8-2 package
+% Tue Nov 14 14:26:02 2017
+\begin{sidewaystable}[ht]
+\centering
+\begin{tabular}{rrrrrrrrrrrrr}
+  \hline
+ & \begin{sideways} rate\_ \end{sideways} & \begin{sideways} rate\_germanyes \end{sideways} & \begin{sideways} rate\_years\_school \end{sideways} & \begin{sideways} rate\_voc\_trainyes \end{sideways} & \begin{sideways} rate\_universityyes \end{sideways} & \begin{sideways} rate\_ReligionCatholic \end{sideways} & \begin{sideways} rate\_ReligionMuslim \end{sideways} & \begin{sideways} rate\_ReligionProtestant \end{sideways} & \begin{sideways} rate\_year\_birth \end{sideways} & \begin{sideways} rate\_ruralyes \end{sideways} & \begin{sideways} rate\_age\_marriage \end{sideways} & \begin{sideways} shape\_ \end{sideways} \\ 
+  \hline
+rate\_ & 7.3E-02 & 5.0E-03 & -5.7E-03 & 8.8E-04 & 1.7E-02 & -7.2E-04 & -3.5E-03 & -6.3E-04 & -1.8E-04 & -2.0E-03 & -3.6E-04 & 8.6E-03 \\ 
+  rate\_germanyes & 5.0E-03 & 3.7E-03 & -7.0E-04 & -4.4E-04 & 1.8E-03 & -9.5E-04 & 1.2E-03 & -1.3E-03 & -3.9E-05 & -2.3E-04 & 6.8E-05 & 1.2E-05 \\ 
+  rate\_years\_school & -5.7E-03 & -7.0E-04 & 7.2E-04 & -1.6E-04 & -2.3E-03 & -5.1E-05 & 1.4E-04 & -4.9E-05 & 5.6E-06 & 1.2E-04 & -1.9E-05 & 6.3E-05 \\ 
+  rate\_voc\_trainyes & 8.8E-04 & -4.4E-04 & -1.6E-04 & 1.4E-03 & 1.7E-03 & 5.5E-05 & 2.1E-04 & 9.6E-06 & 9.9E-06 & 3.5E-04 & -3.0E-06 & 4.8E-04 \\ 
+  rate\_universityyes & 1.7E-02 & 1.8E-03 & -2.3E-03 & 1.7E-03 & 1.6E-02 & 5.2E-04 & 5.0E-04 & 5.3E-04 & 3.1E-06 & 4.0E-04 & 3.1E-05 & 4.1E-04 \\ 
+  rate\_ReligionCatholic & -7.2E-04 & -9.5E-04 & -5.1E-05 & 5.5E-05 & 5.2E-04 & 3.2E-03 & 1.6E-03 & 2.8E-03 & -2.4E-06 & 2.1E-04 & -3.1E-05 & -6.7E-05 \\ 
+  rate\_ReligionMuslim & -3.5E-03 & 1.2E-03 & 1.4E-04 & 2.1E-04 & 5.0E-04 & 1.6E-03 & 4.7E-03 & 1.4E-03 & -1.8E-05 & 3.8E-04 & 1.8E-05 & 8.1E-05 \\ 
+  rate\_ReligionProtestant & -6.3E-04 & -1.3E-03 & -4.9E-05 & 9.6E-06 & 5.3E-04 & 2.8E-03 & 1.4E-03 & 3.7E-03 & 1.7E-06 & 1.9E-04 & -4.4E-05 & -2.3E-04 \\ 
+  rate\_year\_birth & -1.8E-04 & -3.9E-05 & 5.6E-06 & 9.9E-06 & 3.1E-06 & -2.4E-06 & -1.8E-05 & 1.7E-06 & 3.7E-06 & -2.1E-07 & -2.3E-06 & -2.4E-05 \\ 
+  rate\_ruralyes & -2.0E-03 & -2.3E-04 & 1.2E-04 & 3.5E-04 & 4.0E-04 & 2.1E-04 & 3.8E-04 & 1.9E-04 & -2.1E-07 & 1.0E-03 & 1.3E-05 & 1.3E-04 \\ 
+  rate\_age\_marriage & -3.6E-04 & 6.8E-05 & -1.9E-05 & -3.0E-06 & 3.1E-05 & -3.1E-05 & 1.8E-05 & -4.4E-05 & -2.3E-06 & 1.3E-05 & 3.0E-05 & 8.9E-05 \\ 
+  shape\_ & 8.6E-03 & 1.2E-05 & 6.3E-05 & 4.8E-04 & 4.1E-04 & -6.7E-05 & 8.1E-05 & -2.3E-04 & -2.4E-05 & 1.3E-04 & 8.9E-05 & 1.3E-02 \\ 
+   \hline
+\end{tabular}
+\caption{Bootstrap variance-covariance matrix of model 	exttt{gam}.} 
+\label{tab:varCovar}
+\end{sidewaystable}
+#+END_EXPORT
+
+Bootstrap standard errors are also very easy to compute by calling ~se.coef()~
+with argument ~type="boot"~. As discussed before, if the ~boot~ object is not
+found in the ~renewal~ object, users can customise the ~boot()~ call by
+passing the appropriate arguments in ~"..."~.
+#+NAME: gamma-model-se-boot
+#+BEGIN_SRC R
+se_boot  <- se.coef(gam, type = "boot")
+se_boot
+#+END_SRC
+
+#+RESULTS[ab20eddcd420bf753e5a06924e4139077b39b448]: gamma-model-se-boot
+:                   rate_          rate_germanyes       rate_years_school 
+:               0.2705321               0.0610739               0.0268098 
+:       rate_voc_trainyes      rate_universityyes   rate_ReligionCatholic 
+:               0.0375714               0.1257020               0.0564330 
+:     rate_ReligionMuslim rate_ReligionProtestant         rate_year_birth 
+:               0.0684739               0.0608356               0.0019361 
+:           rate_ruralyes       rate_age_marriage                  shape_ 
+:               0.0322879               0.0054811               0.1133149
+
+Finally bootstrap confidence intervals can also be computed by ~confint()~
+using the same logic described for ~se.coef()~. Different types of
+confidence intervals are available (default is normal) and can be selected by
+choosing the appropriate type in ~bootType~. We refer the user to the ~boot~
+package \citep{boot2017} for more information.
+#+NAME: gamma-model-ci-boot
+#+BEGIN_SRC R
+ci_boot  <- confint(gam, level = 0.95, type = "boot", bootType = "norm")
+ci_boot
+#+END_SRC
+
+#+RESULTS[e4516bff46c7b58d2c71fe467fe1216c9a5f50c3]: gamma-model-ci-boot
+#+begin_example
+Bootstrap quantiles, type =  normal 
+
+                             2.5 %     97.5 %
+rate_                    1.0105534  2.0710199
+rate_germanyes          -0.3116866 -0.0722812
+rate_years_school       -0.0176548  0.0874376
+rate_voc_trainyes       -0.2211511 -0.0738740
+rate_universityyes      -0.4072628  0.0854802
+rate_ReligionCatholic    0.0985243  0.3197377
+rate_ReligionMuslim      0.3871631  0.6555759
+rate_ReligionProtestant -0.0133962  0.2250750
+rate_year_birth         -0.0016933  0.0058961
+rate_ruralyes           -0.0098069  0.1167594
+rate_age_marriage       -0.0401915 -0.0187062
+shape_                   1.1860640  1.6302501
+#+end_example
+
+* Save Image                                                  :ignoreheading:
+We conclude this analysis by saving the workspace to avoid re-running the
+computation in future exportation of the document:
+#+NAME: save-workspace
+#+BEGIN_SRC R  :exports code :cache no :results value silent
+save.image()
+#+END_SRC
+
+* Bibliography :ignoreheading:
+\bibliographystyle{apalike}
+\bibliography{var_covar}
+

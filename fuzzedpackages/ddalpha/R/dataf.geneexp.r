@@ -1,0 +1,1 @@
+dataf.geneexp <- function() return(getdata("geneexp"))

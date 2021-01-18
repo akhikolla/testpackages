@@ -1,0 +1,2 @@
+# textreg
+textreg CRAN package

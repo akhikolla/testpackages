@@ -1,0 +1,42 @@
+#' Dyslexia and IQ Predicting Reading Accuracy
+#'
+#'Data to verify the importance of non-verbal IQ in children's reading skills in dyslexic and non-dyslexic children.
+#'@usage data("ReadingSkills")
+#'@details   The data were collected by Pammer and Kevan (2004). The original precision score was transformed by Smithson and Verkuilen (2006) so that the values of \code{precision} are always between 0 to 1, enabling the use of beta regression.
+#'
+#'First, the original accuracy was scaled using the minimal and maximal score (\code{a} and \code{b}, respectively) that can be obtained in the test: \code{(original_accuracy - a) / (b - a)} (\code{a} and \code{b} are not provided). Subsequently, the scaled score is transformed to the unit interval using a continuity correction: \code{(scaled_accuracy * (n-1) - 0.5) / n}(either with some rounding or using \code{n = 50} rather than 44).
+#'
+#'The \code{dyslexia} variable that was a qualitative variable was transformed into a quantitative variable to be used by the package functions.
+#'@source Example 3 from Smithson and Verkuilen (2006) supplements.
+#' @format   A data frame containing 44 observations on 3 variables.
+#'\describe{
+#'  \item{accuracy}{reading score scaled to the open unit interval (see below).}
+#'  \item{dyslexia}{Is the child dyslexic? If 0, no; If 1, yes.}
+#'  \item{iq}{non-verbal intelligence quotient transformed to z-scores.}
+#'}
+#'@references
+#'\doi{10.18637/jss.v034.i02} Cribari-Neto, F., and Zeileis, A. (2010). Beta Regression in R.
+#'\emph{Journal of Statistical Software}, \bold{34}(2), 1--24.
+#'\url{http://www.jstatsoft.org/v34/i02/}.
+#'@references
+#'\doi{10.18637/jss.v048.i11} Grün, B., Kosmidis, I., and Zeileis, A. (2012).
+#'Extended Beta Regression in R: Shaken, Stirred, Mixed, and Partitioned.
+#'\emph{Journal of Statistical Software}, \bold{48}(11), 1--25.
+#'\url{http://www.jstatsoft.org/v48/i11/}.
+#'@references
+#'\doi{10.1080/10888430709336633} Pammer, K., and Kevan, A. (2004).
+#'The Contribution of Visual Sensitivity, Phonological Processing
+#'and Non-Verbal IQ to Children's Reading.
+#'  \emph{Unpublished manuscript}, The Australian National University, Canberra.
+#'@references
+#'\doi{10.1037/1082-989X.11.1.54} Smithson, M., and Verkuilen, J. (2006).
+#'  A Better Lemon Squeezer? Maximum-Likelihood Regression with
+#'  Beta-Distributed Dependent Variables.
+#'  \emph{Psychological Methods}, \bold{11}(7), 54--71.
+#'@examples
+#'data("ReadingSkills", package = "bayesbr")
+#'
+#'bbr = bayesbr(accuracy~iq+dyslexia, iter=1000,warmup=300,
+#'              data=ReadingSkills)
+#'summary(bbr)
+"ReadingSkills"

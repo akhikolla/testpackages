@@ -1,0 +1,152 @@
+---
+title: |
+   \pkg{RcppClassic}: Deprecated Rcpp API
+
+# Use letters for affiliations
+author:
+  - name: Dirk Eddelbuettel
+    affiliation: a
+  - name: Romain Fran\c{c}ois
+    affiliation: b
+address:
+  - code: a
+    address: \url{http://dirk.eddelbuettel.com}
+  - code: b
+    address: \url{https://romain.rbind.io/}
+
+# For footer text
+lead_author_surname: Eddelbuettel and Fran\c{c}ois
+
+# Place DOI URL or CRAN Package URL here
+doi: "https://cran.r-project.org/package=RcppClassic"
+
+# Abstract
+abstract: |
+  This vignette describes how to use the \pkg{RcppClassic} package. It has 
+  long been deprecated and superceded by the more powerful \pkg{Rcpp} package.
+  All new \proglang{R} packages should use the \pkg{Rcpp} package instead.
+
+# One or more keywords
+keywords:
+  - R
+  - packages
+  - Rcpp
+  - API
+  - Deprecation
+
+# Customize footer, eg by referencing the vignette
+footer_contents: "RcppClassic Vignette"
+
+# Skip the final PNAS-style break
+skip_final_break: true
+
+# Produce a pinp document
+output:
+  pinp::pinp:
+    includes:
+      in_header: header.tex
+      after_body: bib.tex
+
+# Vignette
+vignette: >
+  %\VignetteIndexEntry{RcppClassic: Deprecated Rcpp API}
+  %\VignetteKeywords{R,Rcpp,API}
+  %\VignettePackage{RcppClassic}
+  %\VignetteEngine{knitr::rmarkdown}
+
+---
+
+\noindent This document presents the \pkg{RcppClassic} package. This package has been
+factored out of \pkg{Rcpp} \citep{CRAN:Rcpp,Eddelbuettel:2013:Rcpp,
+CRAN:Rcpp,PeerJ:Rcpp,TAS:Rcpp} and only contains code that is considered deprecated.
+
+This package is released for the sole purpose of allowing package authors
+that are still using the classic \pkg{Rcpp} API to keep
+their package buildable. This document explains the changes needed in
+a package to use both the current and classic \pkg{Rcpp} APIs.
+
+# If you must use RcppClassic {.unnumbered}
+
+A few changes are needed in packages that want to use the classic \pkg{Rcpp}
+API that is contained in \pkg{RcppClassic}. A sample package called
+\pkg{RcppClassicExample} is on CRAN and can be used as a template.
+
+## The `DESCRIPTION` file
+
+The client package must declare that it depends on both \pkg{Rcpp} and \pkg{RcppClassic}
+in the Imports field and the LinkingTo field, so it must contain this:
+
+```sh
+Imports: RcppClassic, Rcpp
+LinkingTo: RcppClassic, Rcpp
+```
+
+## The `NAMESPACE` file
+
+The client package should import both \pkg{Rcpp} and \pkg{RcppClassic}:
+
+```{r namespace, eval=FALSE}
+importFrom(Rcpp, evalCpp)
+import(RcppClassic)
+```
+
+## The `Makevars` file
+
+The `Makevars` file must be updated so that user libraries for both \pkg{Rcpp}
+and \pkg{RcppClassic} are used.  For \pkg{Rcpp} 0.11.0 we used
+
+```sh
+## This can be placed on one or two lines too
+PKG_LIBS = \
+  `$(R_HOME)/bin/Rscript -e \
+     "Rcpp:::LdFlags()"` \
+  `$(R_HOME)/bin/Rscript -e \
+     "RcppClassic:::LdFlags()"`
+```
+
+but starting with \pkg{Rcpp} version 0.11.0, the result of \verb|Rcpp:::LdFlags()| is
+an empty string as Rcpp no longer provides a user-library. The above then
+reduces to
+
+```sh
+## This can be placed on one lines
+PKG_LIBS = `$(R_HOME)/bin/Rscript -e \
+   "RcppClassic:::LdFlags()"`
+```
+
+which finds the required `RcppClassic` library.
+
+
+## The `Makevars.win` files
+
+The `Makevars.win` must also be updated for the same reason, and in
+similar way.  Use `${R_HOME}/bin${R_ARCH_BIN}/Rscript.exe` instead of
+`$(R_HOME)/bin/Rscript` to reflect both the bi-architecture nature of
+Windows builds and the differently names `Rscript` executable.
+
+
+## Include `RcppClassic.h` instead of `Rcpp.h`
+
+Finally, all instances of this line :
+
+```c
+#include <Rcpp.h>
+```
+
+need to be replaced by:
+
+```c
+#include <RcppClassic.h>
+```
+
+
+# You should not use RcppClassic {.unnumbered}
+
+The previous section discusses the set of changes required to update a
+package so that it uses the classic API from \pkg{RcppClassic} since it has
+been removed from \pkg{Rcpp}.
+
+We do, however, recommend that package authors stop using the classic API.
+Iy has been more than superseded by the current \pkg{Rcpp} API in terms of
+performance, design, maintainance, and ease of use.
+

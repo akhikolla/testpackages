@@ -1,0 +1,771 @@
+---
+title: "Validity of Methods"
+author: "Kendal Foster and Henrik Singmann"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+bibliography: references.bib
+output:
+  rmarkdown::html_vignette:
+    css: stile.css
+    toc: false
+vignette: >
+  %\VignetteIndexEntry{Validity of Methods}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+op <- options(width = 100)
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  error = TRUE, # ensures compilation even if testthat checks fail
+  comment = "#>"
+)
+```
+
+<div id="TOC">
+<ul>
+  <li><a href="#background">Background</a></li>
+  <li><a href="#den">Validating the Density Functions</a>
+  <ul>
+    <li><a href="#den-gen">Generating Data</a></li>
+    <li><a href="#den-test">Testing the Density Functions</a></li>
+    <li><a href="#den-ke">Known Errors</a></li>
+  </ul></li>
+  <li><a href="#fit">Validating Fitting Using the Density Functions</a>
+  <ul>
+    <li><a href="#fit-gen">Generating Parameter Estimates</a></li>
+    <li><a href="#fit-test">Testing the Parameter Estimates</a></li>
+  </ul></li>
+  <li><a href="#references">References</a></li>
+</ul>
+</div>
+
+
+
+
+
+Function `dfddm` evaluates the density function (or probability density function, PDF) for the Ratcliff diffusion decision model (DDM) using different methods for approximating the full PDF, which contains an infinite sum. An overview of the mathematical details of the different approximations is provided in the [Math Vignette](math.html). Timing benchmarks for the present methods and comparison with existing methods are provided in the [Benchmark Vignette](benchmark.html). Two examples of using `dfddm` for parameter estimation are provided in the [Example Vignette](example.html).
+
+Our implementation of the DDM has the following parameters: $a \in (0, \infty)$ (threshold separation), $v \in (-\infty, \infty)$ (drift rate), $t_0 \in [0, \infty)$ (non-decision time/response time constant), $w \in (0, 1)$ (relative starting point), and $sv \in (0, \infty)$ (inter-trial-variability of drift).
+<br><br>
+
+
+
+
+
+# Background {#background}
+<hr class="sec1">
+
+This vignette is more technical in nature and will demonstrate not only the consistency across the different implemented methods but also show that `dfddm` is in accordance with other implementations in the literature. In addition to testing all of the methods available in `dfddm`, we also include three functions that are considered to be current and widely used. First, we include the function `ddiffusion` from the package [`rtdists`](https://cran.r-project.org/package=rtdists) as it is well known for being not only user friendly and feature-rich but also designed specifically for handling data with regard to distributions for response time models. Second, we also test the `dwiener` function from the [`RWiener`](https://cran.r-project.org/package=RWiener) package, which is mainly aimed at providing an `R` language interface to calculate various functions from the Wiener process. Third, we include some raw `R` code that is bundled with the paper written by @gondan2014even about improving the approximation to the density function. As this code was not yet available in an `R` package, it is part of `fddm` and can be accessed after running `source` on the corresponding file [as shown below](#gon-r-code).
+
+First, we perform a simple test in [Validating the Density Functions](#den), evaluating each algorithm for the density function of the DDM and comparing their consistency. To ensure rigorous concordance across all algorithms, we test each algorithm throughout a sufficiently large and granular parameter space that can be found fully defined in the subsection [Generating Data](#den-gen). Of course these algorithms are approximations, and as such they will provide slightly different results given the same parameter inputs. To ensure that these small differences in density output do not affect the results of fitting parameters to real-world data, we also include testing in an optimization setting in [Validating Fitting (Optimization) Using the Density Functions](#fit). We use the various algorithms as the bases for log-likelihood functions for the optimization process and include a variety of starting points in the parameter space to ensure rigorous consistency testing.
+
+
+
+
+
+# Validating the Density Functions {#den}
+<hr class="sec1">
+
+<a id="expl-dens-test"></a>
+It is imperative to show that our density functions produce the same results as the current standards. To demonstrate this, we calculate the lower probability density for a granular parameter space and show that all of the results are within an acceptable error tolerance. We only calculate the lower probability density because the upper probability density negates $v$ ($v' = -v$) and takes the complement of $w$ ($w' = 1-w$); our parameter space already includes all of these values so calculating the upper probability density would be redundant. The fully defined parameter space can be [found below](#par-space), and it includes both realistically feasible values and some extreme values for each parameter. Since each of these functions approximates an infinite summation to a desired precision of $\epsilon$, we allow for a difference of $2 \cdot \epsilon$ between any pair of calculated densities to account for convergence from above and below the limit of the summation.
+
+Note that we include $sv$ in all the functions tested below, even those that do not contain $sv$ themselves (i.e., `RWiener` and  @gondan2014even). This is possible because variability in drift rate can be added to those functions via the constant $M$ as described in the [Math Vignette](math.html#mathematical-background).
+
+
+
+
+## Generating Data {#den-gen}
+
+First we load the necessary packages and code available from the current literature.
+
+<a id="gon-r-code"></a>
+```{r validity-pkg, eval=TRUE}
+library("fddm")
+library("rtdists")
+library("RWiener")
+source(system.file("extdata", "Gondan_et_al_density.R", package = "fddm", mustWork = TRUE))
+```
+
+The following code chunk stores the lower probability densities calculated across the parameter space using the different methods; we also calculate and store the log-probability for consistency testing.
+
+<a id="par-space"></a>
+```{r validity-run, eval=TRUE}
+# Define parameter space
+RT <- c(0.001, 0.1, 1, 10)
+A <- c(0.5, 1, 5)
+V <- c(-5, 0, 5)
+t0 <- 1e-4 # must be nonzero for RWiener
+W <- c(0.2, 0.5, 0.8)
+SV <- c(0, 0.5, 1.5)
+SV_THRESH <- 1e-6
+eps <- 1e-6 # this is the setting from rtdists
+
+nRT <- length(RT)
+nA <- length(A)
+nV <- length(V)
+nW <- length(W)
+nSV <- length(SV)
+resp <- rep("lower", nRT) # for RWiener
+
+fnames <- c("fs_SWSE_17", "fs_SWSE_14", "fb_SWSE_17", "fb_SWSE_14",
+            "fs_Gon_17", "fs_Gon_14", "fb_Gon_17", "fb_Gon_14",
+            "fs_Nav_17", "fs_Nav_14", "fb_Nav_17", "fb_Nav_14",
+            "fl_Nav_09", "RWiener", "Gondan", "rtdists")
+nf <- length(fnames)
+
+res <- data.frame(matrix(ncol = 9, nrow = nf*nRT*nA*nV*nW*nSV))
+colnames(res) <- c('rt', 'a', 'v', 'w', 'sv', 'FuncName', 'res', 'dif',
+                   'log_res')
+start <- 1
+stop <- nf
+
+# Loop through each combination of parameters and record results
+for (rt in 1:nRT) {
+  for (a in 1:nA) {
+    for (v in 1:nV) {
+      for (w in 1:nW) {
+        for (sv in 1:nSV) {
+          # add the rt, v, a, w, and function names to the dataframe
+          res[start:stop, 1] <- rep(RT[rt], nf)
+          res[start:stop, 2] <- rep(A[a]  , nf)
+          res[start:stop, 3] <- rep(V[v]  , nf)
+          res[start:stop, 4] <- rep(W[w]  , nf)
+          res[start:stop, 5] <- rep(SV[sv], nf)
+          res[start:stop, 6] <- fnames
+
+          # calculate "lower" density
+          res[start,    7] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = FALSE, n_terms_small = "SWSE",
+                                    summation_small = "2017", scale = "small",
+                                    err_tol = eps)
+          res[start+1,  7] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = FALSE, n_terms_small = "SWSE",
+                                    summation_small = "2014", scale = "small",
+                                    err_tol = eps)
+          res[start+2,  7] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = FALSE, n_terms_small = "SWSE",
+                                    summation_small = "2017", scale = "both",
+                                    err_tol = eps)
+          res[start+3,  7] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = FALSE, n_terms_small = "SWSE",
+                                    summation_small = "2014", scale = "both",
+                                    err_tol = eps)
+          res[start+4,  7] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = FALSE, n_terms_small = "Gondan",
+                                    summation_small = "2017", scale = "small",
+                                    err_tol = eps)
+          res[start+5,  7] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = FALSE, n_terms_small = "Gondan",
+                                    summation_small = "2014", scale = "small",
+                                    err_tol = eps)
+          res[start+6,  7] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = FALSE, n_terms_small = "Gondan",
+                                    summation_small = "2017", scale = "both",
+                                    err_tol = eps)
+          res[start+7,  7] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = FALSE, n_terms_small = "Gondan",
+                                    summation_small = "2014", scale = "both",
+                                    err_tol = eps)
+          res[start+8,  7] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = FALSE, n_terms_small = "Navarro",
+                                    summation_small = "2017", scale = "small",
+                                    err_tol = eps)
+          res[start+9,  7] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = FALSE, n_terms_small = "Navarro",
+                                    summation_small = "2014", scale = "small",
+                                    err_tol = eps)
+          res[start+10, 7] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = FALSE, n_terms_small = "Navarro",
+                                    summation_small = "2017", scale = "both",
+                                    err_tol = eps)
+          res[start+11, 7] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = FALSE, n_terms_small = "Navarro",
+                                    summation_small = "2014", scale = "both",
+                                    err_tol = eps)
+          res[start+12,  7] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = FALSE, n_terms_small = "Navarro",
+                                    scale = "large", err_tol = eps)
+          res[start+13, 7] <- dwiener(RT[rt], resp = resp[rt], alpha = A[a],
+                                      delta = V[v], tau = t0, beta = W[w],
+                                      give_log = FALSE)
+          res[start+14, 7] <- fs(t = RT[rt]-t0, a = A[a], v = V[v],
+                                 w = W[w], eps = eps)
+          res[start+15, 7] <- ddiffusion(RT[rt], resp[rt], a = A[a], v = V[v],
+                                        t0 = t0, z = W[w]*A[a], sv = SV[sv])
+          if (sv > SV_THRESH) { # multiply to get density with sv
+            t <- RT[rt] - t0
+            M <- exp(V[v] * A[a] * W[w] + V[v]*V[v] * t / 2 +
+                     (SV[sv]*SV[sv] * A[a]*A[a] * W[w]*W[w] -
+                       2 * V[v] * A[a] * W[w] - V[v]*V[v] * t) /
+                     (2 + 2 * SV[sv]*SV[sv] * t)) / sqrt(1 + SV[sv]*SV[sv] * t)
+            res[start+13, 7] <- M * res[start+11, 7] # RWiener
+            res[start+14, 7] <- M * res[start+12, 7] # Gondan_R
+          }
+
+          # calculate differences
+          ans <- res[start + 2, 7] # use fb_SWSE_17 as truth
+          res[start,    8] <- abs(res[start,    7] - ans)
+          res[start+1,  8] <- abs(res[start+1,  7] - ans)
+          res[start+2,  8] <- abs(res[start+2,  7] - ans)
+          res[start+3,  8] <- abs(res[start+3,  7] - ans)
+          res[start+4,  8] <- abs(res[start+4,  7] - ans)
+          res[start+5,  8] <- abs(res[start+1,  7] - ans)
+          res[start+6,  8] <- abs(res[start+6,  7] - ans)
+          res[start+7,  8] <- abs(res[start+7,  7] - ans)
+          res[start+8,  8] <- abs(res[start+8,  7] - ans)
+          res[start+9,  8] <- abs(res[start+9,  7] - ans)
+          res[start+10, 8] <- abs(res[start+10, 7] - ans)
+          res[start+11, 8] <- abs(res[start+11, 7] - ans)
+          res[start+12, 8] <- abs(res[start+12, 7] - ans)
+          res[start+13, 8] <- abs(res[start+13, 7] - ans)
+          res[start+14, 8] <- abs(res[start+14, 7] - ans)
+          res[start+15, 8] <- abs(res[start+15, 7] - ans)
+
+          # calculate log of "lower" density
+          res[start,    9] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = TRUE, n_terms_small = "SWSE",
+                                    summation_small = "2017", scale = "small",
+                                    err_tol = eps)
+          res[start+1,  9] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = TRUE, n_terms_small = "SWSE",
+                                    summation_small = "2014", scale = "small",
+                                    err_tol = eps)
+          res[start+2,  9] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = TRUE, n_terms_small = "SWSE",
+                                    summation_small = "2017", scale = "both",
+                                    err_tol = eps)
+          res[start+3,  9] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = TRUE, n_terms_small = "SWSE",
+                                    summation_small = "2014", scale = "both",
+                                    err_tol = eps)
+          res[start+4,  9] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = TRUE, n_terms_small = "Gondan",
+                                    summation_small = "2017", scale = "small",
+                                    err_tol = eps)
+          res[start+5,  9] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = TRUE, n_terms_small = "Gondan",
+                                    summation_small = "2014", scale = "small",
+                                    err_tol = eps)
+          res[start+6,  9] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = TRUE, n_terms_small = "Gondan",
+                                    summation_small = "2017", scale = "both",
+                                    err_tol = eps)
+          res[start+7,  9] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = TRUE, n_terms_small = "Gondan",
+                                    summation_small = "2014", scale = "both",
+                                    err_tol = eps)
+          res[start+8,  9] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = TRUE, n_terms_small = "Navarro",
+                                    summation_small = "2017", scale = "small",
+                                    err_tol = eps)
+          res[start+9,  9] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = TRUE, n_terms_small = "Navarro",
+                                    summation_small = "2014", scale = "small",
+                                    err_tol = eps)
+          res[start+10, 9] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = TRUE, n_terms_small = "Navarro",
+                                    summation_small = "2017", scale = "both",
+                                    err_tol = eps)
+          res[start+11, 9] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = TRUE, n_terms_small = "Navarro",
+                                    summation_small = "2014", scale = "both",
+                                    err_tol = eps)
+          res[start+12,  9] <- dfddm(rt = RT[rt], response = resp[rt], a = A[a],
+                                    v = V[v], t0 = t0, w = W[w], sv = SV[sv],
+                                    log = TRUE, n_terms_small = "Navarro",
+                                    scale = "large", err_tol = eps)
+          res[start+13, 9] <- dwiener(RT[rt], resp = resp[rt], alpha = A[a],
+                                      delta = V[v], tau = t0, beta = W[w],
+                                      give_log = TRUE)
+          res[start+14, 9] <- log(fs(t = RT[rt]-t0, a = A[a], v = V[v],
+                                     w = W[w], eps = eps))
+          res[start+15, 9] <- log(ddiffusion(RT[rt], resp[rt], a = A[a],
+                                             v = V[v], t0 = t0, z = W[w]*A[a],
+                                             sv = SV[sv]))
+          if (sv > SV_THRESH) { # add to get log of density with sv
+            t <- RT[rt] - t0
+            M <- V[v] * A[a] * W[w] + V[v]*V[v] * t / 2 +
+                 (SV[sv]*SV[sv] * A[a]*A[a] * W[w]*W[w] -
+                  2 * V[v] * A[a] * W[w] - V[v]*V[v] * t) /
+                 (2 + 2 * SV[sv]*SV[sv] * t) - 0.5 * log(1 + SV[sv]*SV[sv] * t)
+            res[start+13, 9] <- M + res[start+11, 9] # RWiener
+            res[start+14, 9] <- M + res[start+12, 9] # Gondan_R
+          }
+
+          # iterate start and stop values
+          start = start + nf
+          stop = stop + nf
+        }
+      }
+    }
+  }
+}
+```
+
+
+
+
+## Testing the Density Functions {#den-test}
+
+Now we test the consistency of the various density function approximations by using the [`testthat`](https://cran.r-project.org/package=testthat) package. As [discussed above](#expl-dens-test), we allow the difference between any two outputs to be twice the original desired accuracy to allow for convergence from either above or below. We have to amend some of the checks because of the instability of some of the methods, and these are documented in the [Known Errors](#den-ke) section below. First we check that all of the approximations produce densities that are non-negative (we allow a density equal to zero). Next, we check the consistency of the internal `dfddm` methods before confirming their accuracy with external code from established packages. Lastly, we run similar tests to check the consistency of the logged results; however, we do not test the logs of densities that are very close to zero (i.e., less than $\epsilon^2$) because even a small difference in approximated density can lead to a very large difference in logged density. If all tests pass correctly, there should be no output.
+
+```{r validity-test, eval=TRUE}
+library("testthat")
+
+# Subset results
+SWSE_s <- res[res[["FuncName"]] %in% fnames[c(1, 2)], ]
+SWSE_b <- res[res[["FuncName"]] %in% fnames[c(3, 4)], ]
+Gondan_s <- res[res[["FuncName"]] %in% fnames[c(5, 6)], ]
+Gondan_b <- res[res[["FuncName"]] %in% fnames[c(7, 8)], ]
+Navarro_s <- res[res[["FuncName"]] %in% fnames[c(9, 10)], ]
+Navarro_b <- res[res[["FuncName"]] %in% fnames[c(11, 12)], ]
+Navarro_l <- res[res[["FuncName"]] %in% fnames[13], ]
+RWiener <- res[res[["FuncName"]] %in% fnames[14], ]
+Gondan_R <- res[res[["FuncName"]] %in% fnames[15], ]
+rtdists <- res[res[["FuncName"]] %in% fnames[16], ]
+
+
+# Ensure all densities are non-negative
+test_that("Non-negativity of densities", {
+  expect_true(all(SWSE_s[["res"]] >= 0))
+  expect_true(all(SWSE_b[["res"]] >= 0))
+  expect_true(all(Gondan_s[["res"]] >= 0))
+  expect_true(all(Gondan_b[["res"]] >= 0))
+  expect_true(all(Navarro_s[["res"]] >= 0))
+  expect_true(all(Navarro_b[["res"]] >= 0))
+  expect_true(all(Navarro_l[["res"]] >= 0))
+  expect_true(all(RWiener[["res"]] >= 0))
+  expect_true(all(Gondan_R[["res"]] >= 0))
+  expect_true(all(rtdists[["res"]] >= 0))
+})
+
+# Test accuracy within 2*eps (allows for convergence from above and below)
+test_that("Consistency among internal methods", {
+  expect_true(all(SWSE_s[["dif"]] < 2*eps))
+  expect_true(all(SWSE_b[["dif"]] < 2*eps))
+  expect_true(all(Gondan_s[["dif"]] < 2*eps))
+  expect_true(all(Gondan_b[["dif"]] < 2*eps))
+  expect_true(all(Navarro_s[["dif"]] < 2*eps))
+  expect_true(all(Navarro_b[["dif"]] < 2*eps))
+  expect_true(all(Navarro_l[["dif"]] < 2*eps))
+})
+
+test_that("Accuracy relative to established packages", {
+  expect_true(all(RWiener[RWiener[["sv"]] < SV_THRESH, "dif"] < 2*eps)) # see KE 1
+  expect_true(all(Gondan_R[Gondan_R[["sv"]] < SV_THRESH, "dif"] < 2*eps)) # see KE 1
+  expect_true(all(rtdists[["dif"]] < 2*eps))
+})
+
+# Test consistency in log vs non-log (see KE 2)
+test_that("Log-Consistency among internal methods", {
+  expect_equal(SWSE_s[SWSE_s[["res"]] > eps*eps, "log_res"],
+               log(SWSE_s[SWSE_s[["res"]] > eps*eps, "res"]))
+  expect_equal(SWSE_b[SWSE_b[["res"]] > eps*eps, "log_res"],
+               log(SWSE_b[SWSE_b[["res"]] > eps*eps, "res"]))
+  expect_equal(Gondan_s[Gondan_s[["res"]] > eps*eps, "log_res"],
+               log(Gondan_s[Gondan_s[["res"]] > eps*eps, "res"]))
+  expect_equal(Gondan_b[Gondan_b[["res"]] > eps*eps, "log_res"],
+               log(Gondan_b[Gondan_b[["res"]] > eps*eps, "res"]))
+  expect_equal(Navarro_s[Navarro_s[["res"]] > eps*eps, "log_res"],
+               log(Navarro_s[Navarro_s[["res"]] > eps*eps, "res"]))
+  expect_equal(Navarro_b[Navarro_b[["res"]] > eps*eps, "log_res"],
+               log(Navarro_b[Navarro_b[["res"]] > eps*eps, "res"]))
+  expect_equal(Navarro_l[Navarro_l[["res"]] > eps*eps, "log_res"],
+               log(Navarro_l[Navarro_l[["res"]] > eps*eps, "res"]))
+})
+
+test_that("Log-Consistency of established packages", {
+  expect_equal(RWiener[RWiener[["res"]] > eps*eps, "log_res"],
+               log(RWiener[RWiener[["res"]] > eps*eps, "res"]))
+  expect_equal(Gondan_R[Gondan_R[["res"]] > eps*eps, "log_res"],
+               log(Gondan_R[Gondan_R[["res"]] > eps*eps, "res"]))
+  expect_equal(rtdists[rtdists[["res"]] > eps*eps, "log_res"],
+               log(rtdists[rtdists[["res"]] > eps*eps, "res"]))
+})
+```
+
+
+
+
+## Known Errors (KE) {#den-ke}
+
+<a id="gon-m"></a>
+
+1) Both the RWiener and Gondan_R approximations divide the error tolerance by the multiplicative term outside of the summation. Since the outside term is different when $sv > 0$, the approximations use the incorrect error tolerance for $sv > 0$. This affects the number of terms required in the summation to achieve the desired precision, thus not actually achieving that desired precision. This issue is fixed in our implementation of the Gondan method (`n_terms_small = "Gondan"`, `scale = "small"`). For an example of this discrepancy, see the following code:
+
+    ```{r known-errors, eval=TRUE}
+    rt <- 1.5
+    t <- rt - 1e-4
+    a <- 0.5
+    v <- 4.5
+    w <- 0.5
+    eps <- 1e-6
+    sv <- 0.9
+    sv0 <- exp(-v*a*w - v*v*t/2) / (a*a) # for constant drift rate
+    sv0_9 <- exp((-2*v*a*w - v*v*t + sv*sv*a*a*w*w)/(2 + 2*sv*sv*t)) /
+             (a*a*sqrt(1+sv*sv*t)) # for variable drift rate
+    ks_0 <- ks(t/(a*a), w, eps/sv0) # = 2; the summation will only calculate 2 terms
+    ks_9 <- ks(t/(a*a), w, eps/sv0_9) # = 5; but the summation needs 5 terms
+    
+    cat("the summation will only calculate", ks_0, "terms, but it needs", ks_9, "terms.")
+    ```
+
+2) When calculating the log of the density, it is better to use the built-in log option (`log = TRUE`). For very small densities, simply calculating the density can cause rounding issues that result in a density of zero (thus the log of the density becomes `-Inf`). Using the built-in log option avoids some of these rounding issues by exploiting the algebraic properties of the logarithm. Also note that sometimes the densities are just too small (i.e. extremely negative) and the logarithm function returns a value of `-Inf`, so we discard the samples whose density is very small (less than $\epsilon^2 = 1 \times 10^{-12}$).
+
+
+
+
+
+# Validating Fitting (Optimization) Using the Density Functions {#fit}
+<hr class="sec1">
+
+Perhaps the most practical use of `dfddm` is to use it in an optimization setting, such as fitting DDM parameters to real-world data, and this section will show that all of the methods implemented in `dfddm` yield the same results in this setting. The parameters that we will fit are: $a$ (threshold separation), $v$ (drift rate), $t_0$ (non-decision time/response time constant), $w$ (relative starting point), and $sv$ (inter-trial-variability of drift). Since the example data we are using consists of two different item types that each require a different correct response (i.e., for one item type the correct response is mapped to the lower boundary and for the other item type the correct response is mapped to the upper boundary), the model includes two different versions of $v$ (drift rate): $v_\ell$ for fitting to the truthful lower boundary, and $v_u$ for fitting to the truthful upper boundary. As many of the approximations in `dfddm` have different styles, we only test a subset of all the available methods in `dfddm` to avoid unnecessary testing. After using the various density function approximations in fitting the DDM to real-world data, we then validate that the produced parameter estimates are consistent across the various methods within a given error tolerance.
+
+
+
+## Generating the Parameter Estimates Using Real-World Data {#fit-gen}
+
+We use a range of different initial parameter values for the optimization function to ensure that none of the methods encounters a problem in the parameter space. However, we need to slightly restrict the starting values to prevent fitting issues with some of the small-time methods; these restrictions are discussed in [a later subsection](#fit-gen-fun). We allow a difference of $0.0001$ across the methods for each combination of parameters since the density functions can return slightly different results (within $2 \cdot \epsilon$), as [discussed earlier](#expl-dens-test) in this vignette. The following subsections will define all of the functions used to generate the fittings and provide the code to run the full fitting. Since running the full fitting for all of the individuals in the data takes a long time, we will forgo running the fitting in this vignette and instead read pre-fit parameter estimates that used the provided code.
+
+To avoid too many repetitious plots and possible instability, we will only include four of the methods from the [previous section](#den-gen) that illustrate the most stable implementations of the density functions. We include: all three implementations in `dfddm` that combine the small-time and large-time, as well as the one method available in the `rtdists` package. We only use a selection of the methods available in `dfddm` to avoid redundancy in our testing since most of the methods have multiple sibling approximations that are very similar but slower and less stable. Moreover, we do not require the `RWiener` package nor the Gondan raw `R` code because the associated density function approximations do not include an option for variability in drift rate. While we can convert the constant drift rate density to the variable drift rate density using a multiplicative factor, the densities are still [potentially calculated incorrectly](#gon-m). For more details on the differences between the constant drift rate density functions and their variable drift rate counterparts, see the [Math Vignette](math.html#mathematical-background).
+
+First, we load the necessary packages.
+
+```{r fitting-pkg, eval=TRUE}
+library("fddm")
+library("rtdists")
+```
+
+### Log-Likelihood Functions {#fit-gen-llf}
+
+This code chunk defines the log-likelihood functions used in the optimization algorithm. The log-likelihood functions are fairly straightforward and split the responses and associated response times by the true item status (i.e., the correct response) to enable fitting distinct drift rates ($v_\ell$ for the items for which the correct response is the lower boundary and $v_u$ for the items for which the correct response is the upper boundary). In addition, the log-likelihood functions heavily penalize any combination of parameters that returns a log-density of $-\infty$ (equivalent to a regular density of $0$).
+
+```{r loglik-fun, eval=TRUE}
+ll_fb_SWSE_17 <- function(pars, rt, resp, truth, err_tol) {
+  v <- numeric(length(rt))
+  v[truth == "upper"] <- pars[[1]]
+  v[truth == "lower"] <- pars[[2]]
+  dens <- dfddm(rt = rt, response = resp, a = pars[[3]], v = v,
+                t0 = pars[[4]], w = pars[[5]], sv = pars[[6]], log = TRUE,
+                n_terms_small = "SWSE", summation_small = "2017",
+                scale = "both", err_tol = err_tol)
+  return( ifelse(any(!is.finite(dens)), 1e6, -sum(dens)) )
+}
+
+ll_fb_Gon_17 <- function(pars, rt, resp, truth, err_tol) {
+  v <- numeric(length(rt))
+  v[truth == "upper"] <- pars[[1]]
+  v[truth == "lower"] <- pars[[2]]
+  dens <- dfddm(rt = rt, response = resp, a = pars[[3]], v = v,
+                t0 = pars[[4]], w = pars[[5]], sv = pars[[6]], log = TRUE,
+                n_terms_small = "Gondan", summation_small = "2017",
+                scale = "both", err_tol = err_tol)
+  return( ifelse(any(!is.finite(dens)), 1e6, -sum(dens)) )
+}
+
+ll_fb_Nav_17 <- function(pars, rt, resp, truth, err_tol) {
+  v <- numeric(length(rt))
+  v[truth == "upper"] <- pars[[1]]
+  v[truth == "lower"] <- pars[[2]]
+  dens <- dfddm(rt = rt, response = resp, a = pars[[3]], v = v,
+                t0 = pars[[4]], w = pars[[5]], sv = pars[[6]], log = TRUE,
+                n_terms_small = "Navarro", summation_small = "2017",
+                scale = "both", err_tol = err_tol)
+  return( ifelse(any(!is.finite(dens)), 1e6, -sum(dens)) )
+}
+
+ll_RTDists <- function(pars, rt, resp, truth) {
+  rtu <- rt[truth == "upper"]
+  rtl <- rt[truth == "lower"]
+  respu <- resp[truth == "upper"]
+  respl <- resp[truth == "lower"]
+
+  densu <- ddiffusion(rtu, respu, a = pars[[3]], v = pars[[1]],
+                      z = pars[[5]]*pars[[3]], t0 = pars[[4]], sv = pars[[6]])
+  densl <- ddiffusion(rtl, respl, a = pars[[3]], v = pars[[2]],
+                      z = pars[[5]]*pars[[3]], t0 = pars[[4]], sv = pars[[6]])
+
+  densities <- c(densu, densl)
+  if (any(densities <= 0)) return(1e6)
+  return(-sum(log(densities)))
+}
+```
+
+
+
+### Fitting Function {#fit-gen-fun}
+
+We use a different set of initial parameter values for each combination of dataset and method. In a real-life situation we would probably do so using random initial parameter values to avoid local minima. Here we do this with a fixed set of initial parameter values to ensure that the different methods produce the same results for different starting points. However, there are a couple of restrictions to these initial values that we must address (we would also have to do so if we picked the initial values randomly). The parameter $t_0$ must be less than the response time, so we set the initial values for $t_0$ to be strictly less than the minimum response time according to each individual in the input data frame.
+
+Furthermore, we must place a lower bound on $a$ that is necessarily greater than zero because the optimization algorithm occasionally evaluates the log-likelihood functions (and thus the underlying density function approximations) using values of $a$ equal to its bounds. In the case where optimization algorithm evaluates using $a = 0$, the density function from the `rtdists` package does not evaluate. In common use this is not an issue because very small values of $a$ do not make any sense with regard to the psychological interpretation of the parameter, but this issue can arise in an exploratory optimization environment.
+
+The following code chunk defines the function that will run the optimization and produce the fitted parameter estimates for $v_u$, $v_\ell$, $a$, $t_0$, $w$, and $sv$. As [discussed above](#fit-gen), we only use a selection of methods from those available in `dfddm`. This fitting function will run the optimization for each set of initial parameter values and store the resulting convergence code (either $0$ indicating successful convergence or $1$ indicating unsuccessful convergence), minimized value of the objective log-likelihood function, and parameter estimates.
+
+```{r fitting-fun, eval=TRUE}
+rt_fit <- function(data, id_idx = NULL, rt_idx = NULL, response_idx = NULL,
+                   truth_idx = NULL, response_upper = NULL, err_tol = 1e-6) {
+
+  # Format data for fitting
+  if (all(is.null(id_idx), is.null(rt_idx), is.null(response_idx),
+      is.null(truth_idx), is.null(response_upper))) {
+    df <- data # assume input data is already formatted
+  } else {
+    if(any(data[,rt_idx] < 0)) {
+      stop("Input data contains negative response times; fit will not be run.")
+    }
+    if(any(is.na(data[,response_idx]))) {
+      stop("Input data contains invalid responses (NA); fit will not be run.")
+    }
+
+    nr <- nrow(data)
+    df <- data.frame(id = character(nr),
+                     rt = double(nr),
+                     response = character(nr),
+                     truth = character(nr),
+                     stringsAsFactors = FALSE)
+
+    if (!is.null(id_idx)) { # relabel identification tags
+      for (i in 1:length(id_idx)) {
+        idi <- unique(data[,id_idx[i]])
+        for (j in 1:length(idi)) {
+          df[["id"]][data[,id_idx[i]] == idi[j]] <- paste(
+            df[["id"]][data[,id_idx[i]] == idi[j]], idi[j], sep = " ")
+        }
+      }
+      df[["id"]] <- trimws(df[["id"]], which = "left")
+    }
+
+    df[["rt"]] <- as.double(data[,rt_idx])
+
+    df[["response"]] <- "lower"
+    df[["response"]][data[,response_idx] == response_upper] <- "upper"
+
+    df[["truth"]] <- "lower"
+    df[["truth"]][data[,truth_idx] == response_upper] <- "upper"
+  }
+
+  # Preliminaries
+  ids <- unique(df[["id"]])
+  nids <- max(length(ids), 1) # if inds is null, there is only one individual
+
+  init_vals <- data.frame(vu = c( 0,  10, -.5,  0,  0,  0,  0,  0,  0,   0,  0),
+                          vl = c( 0, -10,  .5,  0,  0,  0,  0,  0,  0,   0,  0),
+                          a  = c( 1,   1,   1, .5,  5,  1,  1,  1,  1,   1,  1),
+                          t0 = c( 0,   0,   0,  0,  0,  0,  0,  0,  0,   0,  0),
+                          w  = c(.5,  .5,  .5, .5, .5, .5, .5, .2, .8,  .5, .5),
+                          sv = c( 1,   1,   1,  1,  1,  1,  1,  1,  1, .05,  5))
+  ninit_vals <- nrow(init_vals)
+
+  algo_names <- c("fb_SWSE_17", "fb_Gon_17", "fb_Nav_17", "rtdists")
+  nalgos <- length(algo_names)
+  ni <- nalgos*ninit_vals
+
+  # Initilize the result dataframe
+  cnames <- c("ID", "Algorithm", "Convergence", "Objective",
+              "vu_init", "vl_init", "a_init", "t0_init", "w_init", "sv_init",
+              "vu_fit", "vl_fit", "a_fit", "t0_fit", "w_fit", "sv_fit")
+  res <- data.frame(matrix(ncol = length(cnames), nrow = nids*ninit_vals*nalgos))
+  colnames(res) <- cnames
+
+  # label the result dataframe
+  res[["ID"]] <- rep(ids, each = ni) # label individuals
+  res[["Algorithm"]] <- rep(algo_names, each = ninit_vals) # label algorithms
+  res[["vu_init"]] <- init_vals[["vu"]] # label initial vu
+  res[["vl_init"]] <- init_vals[["vl"]] # label initial vl
+  res[["a_init"]]  <- init_vals[["a"]]  # label initial a
+  res[["w_init"]]  <- init_vals[["w"]]  # label initial w
+  res[["sv_init"]] <- init_vals[["sv"]] # label initial sv
+
+  # Loop through each individual and starting values
+  for (i in 1:nids) {
+    # extract data for id i
+    dfi <- df[df[["id"]] == ids[i], ]
+    rti <- dfi[["rt"]]
+    respi <- dfi[["response"]]
+    truthi <- dfi[["truth"]]
+
+    # starting value for t0 must be smaller than the smallest rt
+    min_rti <- min(rti)
+    t0_lo <- 0.01*min_rti
+    t0_me <- 0.50*min_rti
+    t0_hi <- 0.99*min_rti
+    init_vals[["t0"]] <- c(rep(t0_me, 5), t0_lo, t0_hi, rep(t0_me, 4))
+
+    # label the result dataframe
+    res[["t0_init"]][((i-1)*ni+1):(i*ni)] <- init_vals[["t0"]] # label initial t0
+
+    # loop through all of the starting values
+    for (j in 1:ninit_vals) {
+      temp <- nlminb(init_vals[j, ], ll_fb_SWSE_17,
+                     rt = rti, resp = respi, truth = truthi, err_tol = err_tol,
+                     # limits:   vu,   vl,   a,      t0, w,  sv
+                     lower = c(-Inf, -Inf, .01,       0, 0,   0),
+                     upper = c( Inf,  Inf, Inf, min_rti, 1, Inf))
+      res[["Convergence"]][(i-1)*ni+0*ninit_vals+j] <- temp[["convergence"]]
+      res[["Objective"]][(i-1)*ni+0*ninit_vals+j] <- temp[["objective"]]
+      res[(i-1)*ni+0*ninit_vals+j, 11:16] <- temp[["par"]]
+
+      temp <- nlminb(init_vals[j, ], ll_fb_Gon_17,
+                     rt = rti, resp = respi, truth = truthi, err_tol = err_tol,
+                     # limits:   vu,   vl,   a,      t0, w,  sv
+                     lower = c(-Inf, -Inf, .01,       0, 0,   0),
+                     upper = c( Inf,  Inf, Inf, min_rti, 1, Inf))
+      res[["Convergence"]][(i-1)*ni+1*ninit_vals+j] <- temp[["convergence"]]
+      res[["Objective"]][(i-1)*ni+1*ninit_vals+j] <- temp[["objective"]]
+      res[(i-1)*ni+1*ninit_vals+j, 11:16] <- temp[["par"]]
+
+      temp <- nlminb(init_vals[j, ], ll_fb_Nav_17,
+                     rt = rti, resp = respi, truth = truthi, err_tol = err_tol,
+                     # limits:   vu,   vl,   a,      t0, w,  sv
+                     lower = c(-Inf, -Inf, .01,       0, 0,   0),
+                     upper = c( Inf,  Inf, Inf, min_rti, 1, Inf))
+      res[["Convergence"]][(i-1)*ni+2*ninit_vals+j] <- temp[["convergence"]]
+      res[["Objective"]][(i-1)*ni+2*ninit_vals+j] <- temp[["objective"]]
+      res[(i-1)*ni+2*ninit_vals+j, 11:16] <- temp[["par"]]
+
+      temp <- nlminb(init_vals[j, ], ll_RTDists,
+                     rt = rti, resp = respi, truth = truthi,
+                     # limits:   vu,   vl,   a,      t0, w,  sv
+                     lower = c(-Inf, -Inf, .01,       0, 0,   0),
+                     upper = c( Inf,  Inf, Inf, min_rti, 1, Inf))
+      res[["Convergence"]][(i-1)*ni+3*ninit_vals+j] <- temp[["convergence"]]
+      res[["Objective"]][(i-1)*ni+3*ninit_vals+j] <- temp[["objective"]]
+      res[(i-1)*ni+3*ninit_vals+j, 11:16] <- temp[["par"]]
+    }
+  }
+  return(res)
+}
+```
+
+
+
+### Running the Fitting {#fit-run}
+
+As an example dataset, we use the `med_dec` data that comes with `fddm`. This dataset contains the accuracy condition reported in @trueblood_impact_2018, which investigates medical decision making among medical professionals (pathologists) and novices (i.e., undergraduate students). The task of participants was to judge whether pictures of blood cells show cancerous cells (i.e., blast cells) or non-cancerous cells (i.e., non-blast cells). The dataset contains 200 decisions per participant, based on pictures of 100 true cancerous cells and pictures of 100 true non-cancerous cells. We remove the trials without response (indicated by rt < 0 in the data) before fitting.
+
+Having set up the fitting functions in the above chunks of code, we could pass the `med_dec` data to this function to get the parameter estimates. However, as this takes a long time we skip the fitting in this vignette and instead read the pre-fit parameter estimates in the next section.
+
+```{r fitting-run, eval=FALSE}
+data(med_dec, package = "fddm")
+med_dec <- med_dec[which(med_dec[["rt"]] >= 0), ]
+fit <- rt_fit(med_dec, id_idx = c(2,1), rt_idx = 8, response_idx = 7,
+              truth_idx = 5, response_upper = "blast", err_tol = 1e-6)
+```
+
+
+```{r fitting-run-internal, eval=FALSE, include=FALSE}
+save(fit, compress = "xz", compression_level = 9,
+     file = "inst/extdata/valid_fit.Rds")
+```
+
+
+## Testing the Fitted Parameters {#fit-test}
+Now we test the consistency of the fitted parameters using the various density function approximations. As [discussed above](#fit-gen), we use an allowable error tolerance of $0.0001$ to account for the slight differences in the output of the different density approximations. First, we define a function to determine the differences in the objective value of the log-likelihood function and the parameter estimates. For each set of initial parameter values, there is one objective value corresponding to each algorithm; we take the minimum of these objective values and use the associated parameter estimates as the best estimates. Then we use this set of best estimates to compare against each set of parameter estimates that use the same initial parameter values. The following code chunk defines this function, which will be used next.
+
+```{r fitting-prep, eval=TRUE}
+fit_prep <- function(fit) {
+  nr <- nrow(fit)
+  fit[["Obj_diff"]] <- rep(0, nr)
+  fit[["vu_diff"]]  <- rep(0, nr)
+  fit[["vl_diff"]]  <- rep(0, nr)
+  fit[["a_diff"]]   <- rep(0, nr)
+  fit[["t0_diff"]]  <- rep(0, nr)
+  fit[["w_diff"]]   <- rep(0, nr)
+  fit[["sv_diff"]]  <- rep(0, nr)
+
+  ids <- unique(fit[["ID"]])
+  nids <- length(ids)
+  algos <- unique(fit[["Algorithm"]])
+  nalgos <- length(algos)
+
+  fit_idx <- c(4, 11:16)
+  dif_idx <- 17:23
+  ninit <- nrow(fit[fit[["ID"]] == ids[1] & fit[["Algorithm"]] == algos[1], ])
+  for (i in 1:nids) {
+    for (j in 1:ninit) {
+      actual_idx <- seq((i-1)*ninit*nalgos+j, i*ninit*nalgos, by = ninit)
+      min_obj_idx <- actual_idx[which.min(fit[actual_idx, 4])]
+      best_fit <- fit[min_obj_idx, fit_idx]
+      for (k in 0:(nalgos-1)) {
+        fit[(i-1)*(ninit*nalgos) + k*ninit + j, dif_idx] <-
+          fit[(i-1)*(ninit*nalgos) + k*ninit + j, fit_idx] - best_fit
+
+      }
+    }
+  }
+  return(fit)
+}
+```
+
+As previously mentioned, we will read the pre-fit data from file as the fits can take a long time to run. Then we run our prep function to expose any significant differences in the fits across the algorithms. As an example of the fitting comparison, we print the results for the first ID in the dataset (`ID = "experienced 2"`). This sample shows that the agreement across methods for this set of initial parameter values is rather good for the first participant in the study.
+
+```{r fit-load, eval=TRUE}
+# load data, will be in the variable 'fit'
+load(system.file("extdata", "valid_fit.Rds", package = "fddm", mustWork = TRUE))
+fit <- fit_prep(fit)
+
+cat("Results for ID = experienced 2")
+fit[(0:3)*11+1, ]
+```
+
+We can see that the fits for this individual participant and this set of initial parameter values are very similar across the different algorithms. As there are many individuals in this dataset, we will not print this style of fit comparison for each combination of participant and initial parameter values; instead we will print only those fits that are worse than the best fit. Output below are all of the runs where either:
+
+1) the optimization run did not converge (i.e. Convergence = 0); or
+
+2) the log-likelihood objective value differs from the smallest produced of any method for that specific set of initial parameter values; or
+
+3) or the parameter estimates differ from the smallest produced of any method for that specific set of initial parameter values.
+
+```{r fit-estimates, eval=TRUE}
+# Define error tolerance
+eps <- 1e-4
+
+out <- fit[unique(which(abs(fit[, c(3, 17:23)]) > eps, arr.ind = TRUE)[, 1]), ]
+out[, -c(1:2)] <- zapsmall(out[, -c(1:2)])
+out
+```
+
+We can see that each method occasionally has issues with data fitting, but these issues are easily circumvented by using an assortment of initial parameter values. The default method of `dfddm` is "fb_SWSE_17", and this combines the large-time approximation of Navarro with the novel small-time approximation introduced in this package to provide a quite stable algorithm. Using this method, there is one instance of a fit whose difference from the best fit is greater than our given error tolerance. However, this issue can taken care of by running a set of fits with properly randomized initial parameter values and subsequently selecting the best fit from this set. These results suggest that the most stable method is the default option for `dfddm` (`scale = "both", n_terms_small = "SWSE"`).
+
+
+
+
+
+</div>
+# {.unlisted .unnumbered}
+#### R Session Info {.unlisted .unnumbered}
+```{r session-info, collapse=TRUE}
+sessionInfo()
+```
+
+```{r reset-options, include=FALSE}
+options(op)  # reset options
+```
+
+# References

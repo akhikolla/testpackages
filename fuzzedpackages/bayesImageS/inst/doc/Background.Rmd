@@ -1,0 +1,135 @@
+---
+title: "bayesImageS: An R Package for Bayesian Image Segmentation using a Hidden Potts Model"
+author: "Matt Moores, Anthony N. Pettitt and Kerrie Mengersen"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    fig_caption: yes
+bibliography: refs.bib
+vignette: >
+  %\VignetteIndexEntry{Bayesian Methods for Image Segmentation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteKeyword{Approximate Bayesian Computation}
+  %\VignetteKeyword{Composite likelihood}
+  %\VignetteKeyword{Hidden Markov random field}
+  %\VignetteKeyword{Image analysis}
+  %\VignetteKeyword{Pseudo-marginal method}
+  %\VignetteKeyword{Thermodynamic integration}
+---
+
+# Introduction
+
+Image segmentation can be viewed as the task of labelling the observed pixels $\mathbf{y}$ according to a finite set of discrete states $\mathbf{z} \in \{ 1, \dots, k \}$. The hidden \citet{Potts1952} model allows for spatial correlation between neighbouring labels in the form of a Markov random field. The latent labels follow a Gibbs distribution, which is specified in terms of its conditional probabilities:
+  \begin{equation}
+  \label{eq:Potts}
+  p(z_i | z_{\setminus i}, \beta) = \frac{\exp\left\{\beta\sum_{i \sim \ell}\delta(z_i,z_\ell)\right\}}{\sum_{j=1}^k \exp\left\{\beta\sum_{i \sim \ell}\delta(j,z_\ell)\right\}}
+  \end{equation}
+  where $\beta$ is the inverse temperature, $z_{\setminus i}$ represents all of the labels except $z_i$, $i \sim \ell$ are the  neighbouring pixels of $i$, and $\delta(u,v)$ is the Kronecker delta function. Thus, $\sum_{i \sim \ell}\delta(z_i,z_\ell)$ is a count of the neighbours that share the same label.
+
+The observation equation links the latent labels to the corresponding pixel values:
+  \begin{equation}
+  \label{eq:obs}
+  p(\mathbf{y} | \mathbf{z}, \boldsymbol\theta) = \prod_{i=1}^n p(y_i | z_i, \theta_{z_i})
+  \end{equation}
+  where $\theta_{j}$ are the parameters that govern the distribution of the pixel values with label $j$. The hidden Potts model can thus be viewed as a spatially-correlated generalisation of the finite mixture model \citep{Ryden1998}. We assume that the pixels with label $j$ share a common mean $\mu_j$ corrupted by additive Gaussian noise with variance $\sigma_j^2$:
+  \begin{equation}
+  \label{eq:obs2}
+y_i | z_i=j, \mu_j, \sigma^2_j \;\sim\; \mathcal{N}\left( \mu_j, \sigma^2_j \right)
+  \end{equation}
+ 
+The Gibbs distribution is a member of the exponential family and so there is a sufficient statistic for this model, as noted by \citet{Grelaud2009}:
+  \begin{equation}
+  \label{eq:potts_stat}
+\mathrm{S}(\mathbf{z}) = \sum_{i \sim \ell \in \mathcal{E}} \delta(z_i,z_\ell)
+  \end{equation}
+This statistic represents the total number of like neighbour pairs in the image. The likelihood $p(\mathbf{y},\mathbf{z} | \boldsymbol\theta, \beta)$ can therefore be factorised into $p(\mathbf{y} | \mathbf{z}, \boldsymbol\theta) p(\mathrm{S}(\mathbf{z}) | \beta)$, where the second factor does not depend on the observed data, but only on the sufficient statistic. The joint posterior is then:
+\begin{equation}
+\label{eq:joint_post}
+p(\boldsymbol\theta, \beta, \mathbf{z} | \mathbf{y}) \propto p(\mathbf{y} | \mathbf{z}, \boldsymbol\theta) \pi(\boldsymbol\theta) p(\mathrm{S}(\mathbf{z}) | \beta) \pi(\beta)
+\end{equation}
+The conditional distributions $p(\boldsymbol\theta | \mathbf{z}, \mathbf{y})$ and $p(z_i | z_{\setminus i}, \beta, y_i, \boldsymbol\theta_{z_i})$ can be simulated using Gibbs sampling, but $p(\beta | \mathbf{y}, \mathbf{z}, \boldsymbol\theta)$ involves an intractable normalising constant $\mathcal{C}(\beta)$:
+  \begin{eqnarray}
+  \label{eq:beta_post}
+  p(\beta \mid \mathbf{y}, \mathbf{z}, \boldsymbol\theta) &=&  \frac{p(\mathrm{S}(\mathbf{z}) | \beta) \pi(\beta)}{\int_\beta p(\mathrm{S}(\mathbf{z}) | \beta) \pi(d \beta)}
+\\   \label{eq:beta}
+ &\propto& \frac{\exp\left\{ \beta\, \mathrm{S}(\mathbf{z}) \right\}}{\mathcal{C}(\beta)} \pi(\beta)
+  \end{eqnarray}
+The normalising constant is also known as a partition function in statistical physics. It has computational complexity of $\mathcal{O}(n k^n)$, since it involves a sum over all possible combinations of the labels $\mathbf{z} \in \mathcal{Z}$:
+  \begin{equation}
+  \label{eq:norm}
+\mathcal{C}(\beta) = \sum_{\mathbf{z} \in \mathcal{Z}} \exp\left\{\beta\, \mathrm{S}(\mathbf{z})\right\}
+  \end{equation}
+It is infeasible to calculate this value exactly for nontrivial images, thus computational approximations are required.
+
+This paper describes the \proglang{R} package \pkg{bayesImageS}, which is available from the Comprehensive R Archive Network (CRAN) at  https://CRAN.R-project.org/package=bayesImageS. This package implements five major algorithms for intractable likelihoods in Bayesian image analysis. These methods provide alternative means to simulate parameter values from (\ref{eq:beta}) without computing the normalising constant. We describe the algorithms in terms of Markov chain Monte Carlo (MCMC) to enable direct comparison, although we also mention other approaches where applicable, such as particle-based (SMC and PMCMC) methods. Reference implementations of all of these methods are available from various sources described below, but for the purpose of comparison we have reimplemented the algorithms using \pkg{RcppArmadillo} \citep{Eddelbuettel2013}.
+
+There are a number of contributed packages available for \proglang{R}, for example on CRAN, which provide image segmentation using Potts and other models: \pkg{potts}, \pkg{PottsUtils}, \pkg{mritc}, \pkg{bayess}
+
+# Informative Priors
+
+It can be useful to place informative priors on the parameters of the mixture components
+
+The external field prior \citep{MHHM}
+
+# Algorithms for Intractable Likelihoods
+
+## Pseudolikelihood and Composite Likelihood
+
+Pseudolikelihood is the simplest of the methods that we have implemented and also the fastest. \citet{Ryden1998} showed that the intractable distribution (\ref{eq:beta}) could be approximated using the product of the conditional densities given by (\ref{eq:Potts}):
+ \begin{equation} \label{eq:pseudo}
+p(\mathrm{S}(\mathbf{z}) | \beta) \approx \prod_{i=1}^n p(z_i | z_{\setminus i}, \beta)
+\end{equation}
+This enables updates for the inverse temperature at iteration $t$ to be simulated using a Metropolis-Hastings (M-H) step, with acceptance ratio:
+\begin{equation} \label{mh:ratio}
+\rho = \min\left( 1, \frac{p(\mathbf{z}|\beta') \pi(\beta') q(\beta_{t-1} | \beta')}{p(\mathbf{z}|\beta_{t-1}) \pi(\beta_{t-1}) q(\beta' | \beta_{t-1})} \right)
+\end{equation}
+
+The M-H proposal density $q(\beta'|\beta_{t-1})$ can be any distribution such that $\int q(\beta'|\beta_{t-1})\, d\beta' = 1$. However, there is a tradeoff between exploring the full state space and ensuring that the probability of acceptance is sufficiently high. We use the adaptive random walk (RWMH) algorithm of \citet{Garthwaite2010}, which automatically tunes the bandwidth of the proposal density to target a given M-H acceptance rate. When a symmetric proposal density is used, $q(\beta'|\beta_{t-1}) = q(\beta_{t-1}|\beta')$ and so this term cancels out in the M-H ratio \eqref{mh:ratio}. Likewise, under a uniform prior for the inverse temperature, $\pi(\beta') = \pi(\beta_{t-1}) = 1$. The natural logarithm of $\rho$ is used in practice to improve numerical stability. 
+
+\begin{figure}
+        \centering
+        \begin{subfigure}{0.65\textwidth}
+                \includegraphics[width=\textwidth]{pl_exp_n12k3.eps}
+                \caption{Expectation.}
+                \label{f:pl_exp}
+        \end{subfigure}%
+\qquad
+        \begin{subfigure}{0.65\textwidth}
+                \includegraphics[width=\textwidth]{pl_sd_n12k3.eps}
+                \caption{Standard deviation.}
+                \label{f:pl_sd}
+        \end{subfigure}%
+\caption{Approximation error of pseudolikelihood for $n=12,\,k=3$ in comparison to the exact likelihood calculated using a brute force method: (a) $\sum_{\mathbf{z} \in \mathcal{Z}} \mathrm{S}(\mathbf{z}) p(\mathrm{S}(\mathbf{z}) | \beta)$ using either Equation~(\ref{eq:beta}) or (\ref{eq:pseudo}); (b) $\sqrt{\sum_{\mathbf{z} \in \mathcal{Z}} \left( \mathrm{S}(\mathbf{z}) - \mathbb{E}_{\mathbf{z}|\beta}[\mathrm{S}(\mathbf{z})] \right)^2 p(\mathrm{S}(\mathbf{z}) | \beta)}$} 
+\label{f:pl}
+\end{figure}
+Pseudolikelihood is exact when $\beta=0$ and provides a reasonable approximation for small values of the inverse temperature. However, the approximation error increases rapidly for $\beta \ge \beta_{crit}$, as illustrated by Figure \ref{f:pl}. This is due to long-range dependence between the labels, which is inadequately modelled by the local approximation. The implications of this inaccuracy for posterior inference will be demonstrated in Section \ref{s:results}.
+
+\citet{Ryden1998} referred to Equation \eqref{eq:pseudo} as point pseudolikelihood, since the conditional distributions are computed for each pixel individually. They suggested that the accuracy could be improved using block pseudolikelihood. This is where the likelihood is calculated exactly for small blocks of pixels, then \eqref{eq:pseudo} is modified to be the product of the blocks:
+\begin{equation}
+p(\mathbf{z}|\beta) \approx \prod_{i=1}^{N_B} p(\mathbf{z}_{B_i} | \mathbf{z}_{\setminus B_i}, \beta)
+\label{eq:pl_comp}
+\end{equation}
+where $N_B$ is the number of blocks, $\mathbf{z}_{B_i}$ are the labels of the pixels in block $B_i$, and $\mathbf{z}_{\setminus B_i}$ are all of the labels except for $\mathbf{z}_{B_i}$. This is a form of composite likelihood, where the likelihood function is approximated as a product of simplified factors \citep{Varin2011}. \citet{Friel2012} compared point pseudolikelihood to composite likelihood with blocks of $3 \times 3$, $4 \times 4$, $5 \times 5$, and $6 \times 6$ pixels. \citeauthor{Friel2012} showed that (\ref{eq:pl_comp}) outperformed (\ref{eq:pseudo}) for the Ising ($k=2$) model with $\beta < \beta_{crit}$. \citet{Okabayashi2011} discuss composite likelihood for the Potts model with $k > 2$ and have provided an open source implementation in the \proglang{R} package \pkg{potts}.
+
+Evaluating the conditional likelihood in (\ref{eq:pl_comp}) involves the normalising constant for $\mathbf{z}_{B_i}$, which is a sum over all of the possible configurations $\mathcal{Z}_{B_i}$. This is a limiting factor on the size of blocks that can be used. The brute-force method that was used to compute Figure \ref{f:pl} is too computationally intensive for this purpose. \citet{Pettitt2003} showed that the normalising constant can be calculated exactly for a cylindrical lattice by computing eigenvalues of a $k^r \times k^r$ matrix, where $r$ is the smaller of the number of rows or columns. The value of (\ref{eq:norm}) for a free boundary lattice can then be approximated using path sampling. \citet{Friel2004} extended this method to larger lattices using a composite likelihood approach.
+
+The reduced dependence approximation (RDA) is another form of composite likelihood. \citet{Reeves2004} introduced a recursive algorithm to calculate the normalising constant using a lag-$r$ representation. \citet{Friel2009} divided the image lattice into sub-lattices of size $r_1 < r$, then approximated the normalising constant of the full lattice using RDA:
+\begin{equation}
+\mathcal{C}(\beta) \approx \frac{\mathcal{C}_{r_1 \times n}(\beta)^{r - r_1 + 1}}{\mathcal{C}_{r_1 - 1 \times n}(\beta)^{r - r_1}}
+\label{eq:rda}
+\end{equation}
+\citet{McGrory2009} compared RDA to pseudolikelihood and the exact method of \citet{Moeller2006}, reporting similar computational cost to pseudolikelihood but with improved accuracy in estimating $\beta$. \citet{Ogden2017} \dots
+
+Source code for RDA is available in the online supplementary material for \citet{McGrory2012}.
+
+# Examples
+\label{s:results}
+
+# Conclusion
+
+\section*{Acknowledgements}
+
+MTM was supported by the UK EPSRC as part of the *i*-Like programme grant (ref: EP/K014463/1). KLM was supported by an ARC Laureate Fellowship. KLM and ANP received funding from the ARC Centre of Excellence in Mathematical and Statistical Frontiers (ACEMS). Landsat imagery courtesy of NASA Goddard Space Flight Center and U.S. Geological Survey. Computational resources and services used in this work were provided by the HPC and Research Support Group, Queensland University of Technology, Brisbane, Australia.
+
+# References

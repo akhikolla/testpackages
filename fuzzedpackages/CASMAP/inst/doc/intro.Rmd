@@ -1,0 +1,184 @@
+---
+title: "Introduction to CASMAP"
+author: "Dean Bodenham"
+date: "27 June 2018"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{CASMAP-introduction}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r include = FALSE}
+#need to make vignette compile
+library(Rcpp)
+library(CASMAP)
+```
+
+# Introduction
+
+The `CASMAP` package provides methods for searching for combinatorial associations inbinary data while taking categorical covariates into account. There are two main modes: the methods either search for region-based mappings or for higher order epistatic interactions.
+
+
+## Creating `CASMAP` objects
+
+To create a `CASMAP` object, it is necessary to specify the mode. The first example below creates an object that will perform a region-based GWAS search, and then sets the target family-wise error rate to `0.01`.
+
+```{r init 1}
+library(CASMAP)
+
+# An example using the "regionGWAS" mode
+fastcmh <- CASMAP(mode="regionGWAS")      # initialise object
+fastcmh$setTargetFWER(0.01)              # set target FWER
+```
+
+The next example shows how to create an object that will search for arbitrary combinations, i.e. a higher order epistatic search. Note that it is also possible to set the target family-wise error rate when constructing the object by setting `alpha`. 
+
+By printing the object, one can see certain information. The field *Maximum combination size = 0* indicates that combinations of all possible length will be considered. In future versions, it will be possible to limit this number, for example to combinations of maxmimum length 4.
+
+<!--Furthermore, while the default option is to search for combinations of arbitary length, it is also possible to limit the length of combinations that are considered. For example, setting the parameter `max_comb_size=4` below limits the search to only combinations of length 1, 2, 3, and 4.
+-->
+
+```{r init 2}
+library(CASMAP)
+
+# Another example, doing higher order epistasis search  with target FWER 0.01
+facs <- CASMAP(mode="higherOrderEpistasis", alpha=0.01)      
+print(facs)
+```
+
+## Reading in the data files
+
+Once the object is created, the next step is to read in the data files. 
+The `readLines` command is used, and paths to the data files should be specified for the parameters `genotype_file`, `phenotype_file` and (optionally) `covariate_file`. We have provided example data files with the package, as well as functions to easily get the paths to these data files:
+
+```{r read data}
+library(CASMAP)
+fastcmh <- CASMAP(mode="regionGWAS")          # initialise object
+
+datafile <- getExampleDataFilename()        # file name of example data
+labelsfile <- getExampleLabelsFilename()   # file name of example labels
+covfile <- getExampleCovariatesFilename() # file name of example covariates 
+
+# read the data, labels and (optionally) covariate files
+fastcmh$readFiles(genotype_file=getExampleDataFilename(),
+                   phenotype_file=getExampleLabelsFilename(), 
+                   covariate_file=getExampleCovariatesFilename())
+
+#The object now displays that data files have been read, and covariates are used
+print(fastcmh)
+```
+
+## Data format
+
+Note that the `CASMAP` methods expect the data file to be a text file consisting of space-separated `0`s and `1`s, in an $p \times n$ matrix, where each of the $p$ rows is a feature, and each of the $n$ columns is a sample/subject. The labels and covariates files are single columns of $n$ entries, where each entry is `0` or `1`. To see an example of the data format, take a look at the included example files, the paths to which are given by the commands `getExampleDataFilename`, `getExampleLabelsFilename` and `getExampleCovariatesFilename`:
+
+```{r data format, eval=FALSE}
+#to see where these data files are located on your local drive:
+print(getExampleDataFilename())
+
+## Example: 
+## [1] "/path/to/pkgs/CASMAP/extdata/CASMAP_example_data_1.txt"
+```
+
+In future versions the PLINK data format will be supported.
+
+
+## Executing the algorithm
+
+Once you have read in the data, label and covariates files, you are ready to execute the algorithm. Simply use the `execute` command. Note that, depending on the size of your data set, this could take some time.
+
+```{r execute}
+# execute the algorithm (this may take some time)
+fastcmh$execute()
+```
+
+
+
+## Extracting the results
+
+
+There are two main sets of results: 
+
+ 1. Summary results
+ 2. Information on significant regions/significant interactions
+
+The summary results provide information on how many regions/interactions were processed, how many are testable, and what are the significance and testable thresholds:
+```{r summary results}
+#get the summary results
+summary_results <- fastcmh$getSummary()
+print(summary_results)
+```
+
+It is also possible to write this information to file directly using the `writeSummary` command.
+
+The significant regions lists all the regions that are considered significant.
+However, it is possible that these regions overlap into clusters. The most significant regions in these clusters can be extracted using the `getSignificantClusterRepresentatives` command. In the example below, there is only one significant regions, so it is its own cluster representative:
+
+```{r significant regions}
+#get the significant regions
+sig_regions <- fastcmh$getSignificantRegions()
+print(sig_regions)
+```
+
+
+```{r significant reps}
+#get the clustered representatives for the significant regions
+sig_cluster_rep <- fastcmh$getSignificantClusterRepresentatives()
+print(sig_cluster_rep)
+```
+
+Note that the $p$-value and odds ratio for the regions/representatives is provided along with the location.
+
+For the `higherOrderEpistasis` mode, the method `getSignificantInteractions` should be used (and there are no cluster representatives).
+
+## Other examples
+
+It is also possible to perform a search without any covariates:
+```{r no covariates}
+## Another example of regionGWAS
+fais <- CASMAP(mode="regionGWAS")      # initialise object
+
+# read the data and labels, but no covariates
+fais$readFiles(genotype_file=getExampleDataFilename(),
+                  phenotype_file=getExampleLabelsFilename())
+
+print(fais)
+```
+
+
+## Setting the encoding method
+
+The binary data could be encoded with either a dominant or recessive encoding. The default for `readLines` is `dominant`, but it is also possible to specify the coding explicitly:
+
+```{r encoding method}
+library(CASMAP)
+fastcmh <- CASMAP(mode="regionGWAS")
+
+#  using the dominant encoding (default)
+fastcmh$readFiles(genotype_file=getExampleDataFilename(),
+                   phenotype_file=getExampleLabelsFilename(), 
+                   covariate_file=getExampleCovariatesFilename(),
+                   encoding="dominant")
+
+#  using the dominant encoding (default)
+fastcmh$readFiles(genotype_file=getExampleDataFilename(),
+                   phenotype_file=getExampleLabelsFilename(), 
+                   covariate_file=getExampleCovariatesFilename(),
+                   encoding="recessive")
+```
+
+
+## Future releases
+
+Note that future versions of the package will include the option to read PLINK files, and the option to set the maximum combination length.
+
+
+
+
+
+
+
+
+
+

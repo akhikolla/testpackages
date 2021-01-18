@@ -1,0 +1,202 @@
+\documentclass[10pt,xcolor=x11names,compress]{beamer}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern} % bug fix for TeXLive 2017
+%\usepackage{ragged2e}
+
+% \VignetteEngine{knitr::knitr}
+% \VignetteIndexEntry{snplist}
+
+\newcommand{\R}{\texttt{R}}
+\newcommand{\rsnpset}{\texttt{RSNPset}}
+\newcommand{\snplist}{\texttt{snplist}}
+\newcommand{\biomart}{\texttt{biomaRt}}
+
+%\input{Settings/preamble}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+
+\begin{document}
+
+<<setup1, include=FALSE>>=
+require(knitr)
+opts_chunk$set(fig.path='figure/beamer-',fig.align='center',fig.show='hold',size='footnotesize')
+@
+
+<<setup2, include=FALSE>>=
+options(width=70)  # make the printing fit on the page
+set.seed(1121)     # make the results repeatable
+stdt<-date()
+@
+
+\begin{frame}
+	\title{\snplist}
+	\subtitle{Creating Gene Sets}
+	\date{December 11, 2017}
+	\titlepage
+	%\input{Settings/logos}
+\end{frame}
+
+\begin{frame}{Outline}
+	\tableofcontents[]
+\end{frame}
+
+\section{Introduction}
+\begin{frame}{Introduction}
+This document provides an example of how to use the \snplist{} package to create SNP Sets, for example for use with the \rsnpset{} package \cite{RSNPset}. The SNP Sets created here use genes as the loci of interest, i.e. they are sets of SNPs relevant to specific genes, so we refer to them as Gene Sets. Note that a similar approach could be used to generate SNP Sets for other genomic loci, including bands and pathways.\\
+\vspace{2mm}
+To make the Gene Sets, we first create a table of gene names, chromosomes, and start and end positions. This information can be pulled from Ensembl \cite{Ensembl}, based on a list of specified gene names. Next, a similar SNP Table is made which contains rsIDs, chromosomes, and positions. Finally, the Gene Sets are composed from the two tables, based on SNP locations. We also demonstrate exporting the Gene Sets as a PLINK \cite{PLINK} set.
+\end{frame}
+
+\section{Get Gene and SNP Information}
+\begin{frame}[fragile]{Get Gene and SNP Information}
+In practice, comprehensive lists of genes and SNPs can be downloaded from the HUGO Gene Nomenclature Committee \cite{HGNC}, and dbSNP \cite{dbSNP}, respectively.  For the purposes of this demonstration, we will code our own small collections of genes and SNPs.\\
+\vspace{2mm}
+First, make a vector of genes on which to base our SNP Sets:
+<<genes>>=
+genes <- c("BRCA1","BRCA2")
+@ 
+
+The SNP data can come from either a \texttt{data.frame} object or a file.  Either way, it must have one SNP per line, with columns 'chr' (chromosome),'pos' (position), and 'rsid' (rsID):
+<<snps>>=
+snpInfo <- data.frame(chr=c(17,17,13,13),
+                      pos=c(41211653,41213996,32890026,32890572),
+                      rsid=c("rs8176273","rs8176265","rs9562605","rs1799943"),
+                      stringsAsFactors=FALSE)
+@ 
+\end{frame}
+
+\section{Load Packages}
+\begin{frame}[fragile]{Load Packages}
+Load \snplist{} (after installing its dependent packages):
+<<loadpkg>>=
+library(snplist)
+@ 
+\end{frame}
+
+\section{Set the Gene Info Table}
+\begin{frame}[fragile]{Get the Gene Information}
+To create the Gene Table, we need the chromosome and start and end positions of each gene.\\
+\vspace{2mm} 
+For the selected genes, we can get this data from Ensembl using \biomart{} \cite{BioMart}:
+<<biomart1, eval=TRUE>>=
+geneInfo <- getBioMartData(genes, biomart="ENSEMBL_MART_ENSEMBL", 
+                                     host="grch37.ensembl.org", 
+                                     path="/biomart/martservice", 
+                                  dataset="hsapiens_gene_ensembl") 
+geneInfo
+@
+\end{frame}
+
+\begin{frame}[fragile]{Set the Gene Info Table}
+Now we can create the table of gene info:
+<<genetbl>>=
+setGeneTable(geneInfo) 
+@
+\end{frame}
+
+\section{Set the SNP Info Table}
+\begin{frame}[fragile]{Set the SNP Info Table}
+Use the SNP info to create the SNP Table:
+<<snptbl>>=
+setSNPTable(snpInfo)
+@
+\end{frame}
+
+\section{Make the SNP Sets}
+\begin{frame}[fragile]{Make the SNP Sets}
+\begin{columns}[t] \column{0.5\textwidth}
+\\[5pt]%\justifying
+Now we are ready to make the Gene Sets. The SNP Set for each gene is the collection of SNPs located either between the start and end locations of the gene, or within a specified neighborhood around the gene (here $50,000$bp). 
+\column{0.5\textwidth} 
+<<snpset1, size='tiny'>>=
+geneset <- makeGeneSet(margin=50000) 
+@
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Make Chip-Secific SNP Sets}
+\begin{columns}[t] \column{0.5\textwidth}
+\\[5pt]%\justifying
+The \texttt{makeGeneSet()} function has an optional argument to specify a subset of SNP rsIDs we wish to analyze. For example, if we had created a comprehensive SNP Table above, we could use this argument to limit the SNP Sets to include only those SNPs captured on a particular genotyping chip. The argument can be a vector, a \texttt{data.frame} with an 'rsid' column, or a reference to a file with one rsID per line. We can also change the \texttt{annoTable} name to keep the Gene Sets separate in the SQLite database.
+\column{0.5\textwidth} 
+<<snpset2, tidy=FALSE, size='tiny'>>=
+chipSNPs <- c("rs0000000","rs8176273","rs9562605")
+geneset2 <- makeGeneSet(annoInfo=chipSNPs, 
+			annoTable='myChip') 
+@
+\end{columns}
+\end{frame}
+
+\section{Save the Gene Sets}
+\begin{frame}[fragile]{Save the Gene Sets}
+By default, the gene and SNP tables and the Gene Sets are saved in an SQLite database (its default name is \texttt{snplistdb.sqlite}). We can also export the Gene Sets to a PLINK set for later use:
+<<plink>>=
+exportPLINKSet(geneset2, "mySNPset.set") 
+@
+\end{frame}
+
+\section*{}
+\begin{frame}{References}
+{\footnotesize
+\begin{thebibliography}{9}
+\setbeamertemplate{bibliography item}[text]
+\bibitem{BioMart}
+  Durinck S, Spellman PT, Birney E, and Huber W.
+  Mapping identifiers for the integration of genomic datasets with the R/Bioconductor package biomaRt. 
+  \emph{Nat. Protoc.}, 
+  4:1184–1191, 
+  2009.
+
+\bibitem{Ensembl}
+  Flicek P, Ahmed I, Amode MR, et al. 
+  Ensembl 2013. 
+  \emph{Nucleic Acids Res.}, 
+  41(Database issue):D48–D55, 
+  2013.
+
+\bibitem{HGNC}
+  Gray KA, Daugherty LC, Gordon SM, et al. 
+  Genenames.org: the hgnc resources in 2013. 
+  \emph{Nucleic Acids Res.}, 
+  41(D1):D545–D552, 
+  2013.
+
+\bibitem{PLINK}
+  Purcell S, Neale B, Todd-Brown K, et al. 
+  PLINK: a toolset for whole-genome association and population-based linkage analysis. 
+  \emph{Am. J. Hum. Gen.},
+  81,
+  2007.
+
+\bibitem{dbSNP}
+  Sherry ST, Ward MH, Kholodov M, et al.
+  dbSNP: the NCBI database of genetic variation. 
+  \emph{Nucleic Acids Res.}, 
+  29(1):308-11,
+  2001.
+
+\setbeamertemplate{bibliography item}[triangle]
+\bibitem{RSNPset}
+  \rsnpset{} is available under the GPL license from the Comprehensive R Archive Network (CRAN) web page.
+
+\end{thebibliography}
+}
+\end{frame}
+
+\begin{frame}[fragile]{Session Information}
+<<sesinf, echo=FALSE, results="asis">>=
+toLatex(sessionInfo(), locale=FALSE)
+@ 
+<<times, echo=FALSE>>=
+print(paste("Start Time",stdt))
+print(paste("End Time  ",date()))
+@ 
+\end{frame}
+
+\end{document}
+
+

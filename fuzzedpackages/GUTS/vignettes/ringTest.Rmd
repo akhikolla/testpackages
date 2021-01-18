@@ -1,0 +1,518 @@
+---
+title: "GUTS software ring test for the GUTS-package"
+author: "Alexander Singer"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{GUTS software ring test for the GUTS-package}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+---
+
+```{r setup, echo=FALSE, results='hide', message=TRUE}
+rm(list = ls())
+
+do.calc <- FALSE # if TRUE, all calculations are conducted. if FALSE, calculations are omitted and the vignette output is built from pre-caculated data.
+do.save <- FALSE # if TRUE, calculation parts will be saved to disk. This works only correctly, if building from source. Therefore, if you are not building the vignette from source: do.save <- FALSE
+
+if (do.calc == FALSE) message("For performance reasons, this vignette builds from pre-calculated data.\n\n To run all calculations, set 'do.calc <- TRUE' in the vignette's first code chunk. \n Building the vignette will take a while.")
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.align = "center", 
+  dev = "png",
+  dpi=150, fig.height=7, fig.width=7,
+  dev.args = list(),
+  out.width = "90%"
+)
+
+op <- par(no.readonly = TRUE)
+```
+
+
+# Summary
+The GUTS package provides GUTS-SIC (also called GUTS-RED) variants GUTS-SIC-IT, GUTS-SIC-SD and GUTS-SIC-Proper. For further information see Jager et al. (2011), Ashauer et al. (2016), Jager & Ashauer (2018) and EFSA PPR Panel (2018). The R-package implementation follows Albert et al. (2016), with minor enhancements.
+
+This vignette demonstrates application of the individual tolerance model GUTS-SIC-IT and the stochastic death model GUTS-SIC-SD. The vignette is designed as verification test of model results. For this purpose, it runs one part of a recently conducted ring test on GUTS-software.
+
+The ring test compared results from several software implementations of GUTS (Jager & Ashauer, 2018, Ch. 7). It focused on GUTS-SIC-IT and GUTS-SIC-SD models. Here, we follow the protocol of ring-test A, and perform the calibration as well as a forecast analysis.
+
+# Prepare
+Load the GUTS-package.
+```{r load-guts}
+library(GUTS)
+packageVersion("GUTS")
+```
+
+The ring test data was downloaded from <http://www.debtox.info/book_guts.html> and the data sheet with ring test A data is stored in file "Data_for_GUTS_software_ring_test_A_v05.xlsx" in the GUTS package. We recommend opening the file for data inspection.
+
+```{r prepare-xlsx-table-local, include = FALSE, eval = TRUE}
+JA_data_file_name <- system.file("extdata", "Data_for_GUTS_software_ring_test_A_v05.xlsx", package = "GUTS", mustWork = TRUE)
+```
+
+# Data set A - synthetic data
+This theoretical study assumed a chronic test with abundance measurements taken at exposure times. The synthetic data sets were generated with a GUTS-SD and a GUTS-IT model, using predefined parameters (Jager & Ashauer, 2018, Ch. 7.1.2, tab. 7.1). 
+
+Parameter values are:
+```{r setup-A-par}
+par_A <- data.frame(symbols = c("hb", "ke", "kk", "mn", "beta"), JAsymbols = c("hb", "kd", "kk", "mw", "beta"), SD = c(0.01, 0.8, 0.6, 3, NA), IT = c(0.02, 0.8, NA, 5, 5.3))
+par_A
+```
+Symbols refer to parameter symbols used in the GUTS package. JAsymbols denote the symbols used in Jager & Ashauer (2018).
+
+## Synthetic data set from SD-model
+The ring test data set A-SD is read from file "Data_for_GUTS_software_ring_test_A_v05.xlsx".
+
+The respective data table is in wide format. Here is the display as an R data.frame:
+```{r A-SD-read-all-comments, message = FALSE}
+library(xlsx)
+read.xlsx(
+  file = paste0(JA_data_file_name),
+  sheetName = "Data A",
+  rowIndex = c(1:11),
+  colIndex = seq(which(LETTERS == "A"), which(LETTERS == "G")),
+  header = TRUE
+  )
+```
+Extraction of the relevant data:
+```{r A-SD-read}
+data_A_SD <- read.xlsx(
+  file = paste0(JA_data_file_name),
+  sheetName = "Data A",
+  rowIndex = c(4:11),
+  colIndex = seq(which(LETTERS == "B"), which(LETTERS == "G")),
+  header = FALSE
+  )
+con_A_SD <- as.numeric(data_A_SD[1,])
+data_A_SD <- data_A_SD[-1,] 
+#the first row contains the concentrations
+# all subsequent rows: number of alive organisms at specific day.
+
+day_A_SD <-
+  as.numeric(
+    t(
+      read.xlsx(
+        file = paste0(JA_data_file_name),
+        sheetName = "Data A",
+        rowIndex = c(5:11),
+        colIndex = seq(which(LETTERS == "A")),
+        header = FALSE
+      )
+    )
+  )
+
+# name the data.frame
+names(data_A_SD) <- paste0("c", con_A_SD)
+rownames(data_A_SD) <- paste0("d", day_A_SD)
+```
+`c`: applied concentration; `d`: treatment day; each value indicates the number of alive organisms 
+
+
+## Set up the guts object
+Setting up a GUTS-SD-object requires for each replicate of the treatment groups:
+
+ - the exposure profile containing the measured concentration `C` at each concentration measurement time `Ct`
+ - the survival data consisting of the number of survived organisms `y` at each abundance measurement time `yt`
+ - the GUTS-model type `model = "SD"`
+ 
+For each replicate one GUTS object is created. All GUTS-objects are collected in a list. For the ring-test with one replicate for each of the 6 treatment groups, a list of 6 guts-objects is generated. We explicitly demonstrate how each GUTS-object in the list is constructed:
+
+```{r setup-GUTS-OBJ-A_SD}
+GUTS_A_SD <- list( 
+  C0 = guts_setup(
+    C = rep_len(con_A_SD[1], length(day_A_SD)), Ct = day_A_SD,
+    y = data_A_SD$c0, yt = day_A_SD,
+    model = "SD"
+    ),
+  C2 = guts_setup(
+    C = rep_len(con_A_SD[2], length(day_A_SD)), Ct = day_A_SD,
+    y = data_A_SD$c2, yt = day_A_SD,
+    model = "SD"
+    ),
+  C4 = guts_setup(
+    C = rep_len(con_A_SD[3], length(day_A_SD)), Ct = day_A_SD,
+    y = data_A_SD$c4, yt = day_A_SD,
+    model = "SD"
+    ),
+  C6 = guts_setup(
+    C = rep_len(con_A_SD[4], length(day_A_SD)), Ct = day_A_SD,
+    y = data_A_SD$c6, yt = day_A_SD,
+    model = "SD"
+    ),
+  C8 = guts_setup(
+    C = rep_len(con_A_SD[5], length(day_A_SD)), Ct = day_A_SD,
+    y = data_A_SD$c8, yt = day_A_SD,
+    model = "SD"
+    ),
+  C16 = guts_setup(
+    C = rep_len(con_A_SD[6], length(day_A_SD)), Ct = day_A_SD,
+    y = data_A_SD$c16, yt = day_A_SD,
+    model = "SD"
+    )
+)
+```
+## Estimating parameters
+Parameter estimation is conducted following suggestions Albert et al. (2016) and Supplementary material "S1: GUTS example R script". For demonstration purposes in this vignette, the calibration procedure has been simplified and adjusted to the ring-test data set.
+
+```{r load optimization routines}
+library('adaptMCMC') # Function `MCMC()`, Monte Carlo Markov Chain.
+```
+
+### Define joint log likelihood
+The list of GUTS-objects is used to calculate the joint likelihood.
+
+```{r define-log-posterior}
+logposterior <- function( pars, guts_objects, 
+  isOutOfBoundsFun = function(p) any( is.na(p), is.infinite(p) )  ) {
+	if ( isOutOfBoundsFun(pars) ) return(-Inf)
+  return(
+	  sum(sapply( guts_objects, function(obj) guts_calc_loglikelihood(obj, pars) ))
+  )
+}
+```
+
+### Defining constraints on parameter values
+The logposterior function is formulated with a function that defines parameter bounds. 
+
+Constraints on parameters should consider
+
+- hard boundaries: 
+    + `is.infinite(p)` constrains parameters to finite values
+    + `p<0` confines rates and thresholds to positive values
+- knowledge on numerical limitations:
+    + `p["kk"] > 30` confines the killing rate to avoid divergent Markov chains (see Albert et al., 2016).
+- independent toxicological or ecological information: not used here
+    
+
+```{r define out of bounds-fun-SD}
+is_out_of_bounds_fun_SD <- function(p) any( is.na(p), is.infinite(p), p < 0, p["kk"] > 30 )
+```
+
+### Bayesian parameter estimation
+Parameter values are estimated applying an adaptive Markov Chain Monte Carlo (MCMC) algorithm.
+```{r run-MCMC-SD, echo = TRUE, results = 'hide', eval = do.calc}
+pars_start_SD <- rep_len (0.5, 4)
+names(pars_start_SD) <- par_A$JAsymbols[-which(is.na(par_A$SD))]
+
+mcmc_result_SD <- MCMC(p = logposterior, 
+  init = pars_start_SD, adapt = 5000, acc.rate = 0.4, n = 150000, 
+  guts_objects = GUTS_A_SD, 
+  isOutOfBoundsFun = is_out_of_bounds_fun_SD
+)
+
+#exclude burnin and thin by 3
+mcmc_result_SD$samples <- mcmc_result_SD$samples[seq(50001, 150000, by = 20),]
+mcmc_result_SD$log.p <- mcmc_result_SD$log.p[seq(50001, 150000, by = 20)]
+```
+
+```{r save-MCMC-results-SD, echo = FALSE, results = 'hide', eval = do.calc & do.save}
+save(mcmc_result_SD, file = file.path("..", "inst", "extdata", "vignetteGUTS-ringTest-SD-MCMCresults.Rdata"))
+```
+
+```{r load-MCMC-results-SD, echo = FALSE, results = 'hide', eval = !do.calc}
+load(system.file("extdata", "vignetteGUTS-ringTest-SD-MCMCresults.Rdata", 
+  package = "GUTS", mustWork = TRUE)
+)
+```
+
+### Chain and distribution plots. 
+The top four graphs show mixing and distribution of the parameters. The last row "LL" shows mixing and distribution of the logposterior.
+
+```{r display-MCMC-SD}
+
+if (all(is.finite(mcmc_result_SD$log.p))) {
+  par( mfrow = c(dim(mcmc_result_SD$samples)[2] + 1, 2) , mar = c(5,4,1,0.5))
+  plot(as.mcmc(cbind(mcmc_result_SD$samples, LL = mcmc_result_SD$log.p)), auto.layout = FALSE)
+  par(op)
+} else {
+  par( mfrow = c(dim(mcmc_result_SD$samples)[2], 2) , mar = c(5,4,1,0.5))
+  plot(as.mcmc(mcmc_result_SD$samples), auto.layout = FALSE)
+  par(op)
+}
+```
+
+### Estimated parameter values compared to the values that are used for data simulation in the ring test.
+
+#### A plotting and evaluation function
+This function takes a calibrated MCMC sample and summarizes the posterior distributions of the calibrated parameters. Calculated are for each calibrated parameter the value with highest posterior, as well as the median, the 2.5% and 97.5% quantiles of the posterior distribution. With the optional parameter expectedVal original values from the ring test can be given to compare them with the calibrated values. A graphical summary is plotted, if plot = TRUE.
+```{r evalMCMC-fun, echo = TRUE, results = 'hide'}
+eval_MCMC <- function(sampMCMC, expectedVal = NULL, plot = TRUE) {
+  bestFit <- sampMCMC$samples[which.max(sampMCMC$log.p),]
+  qu <- apply(sampMCMC$samples, 2, quantile, probs = c(0.025, 0.5, 0.975))
+  if (plot) {
+    if(is.null(expectedVal)) expectedVal <- rep(NA, dim(sampMCMC$samples)[2])
+    plot(seq(dim(sampMCMC$samples)[2]), expectedVal, pch = 20, col = "darkgrey", cex = 2, ylim = range(qu), 
+      xaxt = "n", xlab = "Model parameter", ylab = "Parameter value")
+    arrows(x0 = seq(dim(sampMCMC$samples)[2]), y0 = qu[1,], y1 = qu[3,], angle = 90, length = 0.1, code = 3)
+    points(x = seq(dim(sampMCMC$samples)[2]), y = bestFit, pch = "-", cex = 4)
+    axis(side = 1, at = seq(dim(sampMCMC$samples)[2]), dimnames(sampMCMC$samples)[[2]])
+  }
+  res <- rbind(bestFit, qu)
+  rownames(res)[1] <- "best"
+  if (!all(is.na(expectedVal))) {
+    res <- rbind(res, expectedVal)
+    rownames(res)[dim(res)[1]] <- "expect"
+  }
+  return(res)
+}
+```
+
+#### Estimated parameters
+```{r evaluate-MCMC-SD}
+eval_MCMC(mcmc_result_SD, expectedVal = par_A$SD[-which(is.na(par_A$SD))])
+```
+Black lines indicate best estimates and the error bars the 95% credible interval; grey dots are the model parameter values used to generate the data for the ring test.
+
+## Synthetic data set from IT-model
+The ring test data set A-IT is read from file "Data_for_GUTS_software_ring_test_A_v05.xlsx".
+
+
+Extraction of the relevant data:
+```{r A-IT-read}
+data_A_IT <- read.xlsx(
+  file = paste0(JA_data_file_name),
+  sheetName = "Data A",
+  rowIndex = c(17:24),
+  colIndex = seq(which(LETTERS == "B"), which(LETTERS == "G")),
+  header = FALSE
+  )
+con_A_IT <- as.numeric(data_A_IT[1,])
+data_A_IT <- data_A_IT[-1,] 
+#the first row contains the concentrations
+# all subsequent rows: number of alive organisms at specific day.
+
+day_A_IT <-
+  as.numeric(
+    t(
+      read.xlsx(
+        file = paste0(JA_data_file_name),
+        sheetName = "Data A",
+        rowIndex = c(18:24),
+        colIndex = seq(which(LETTERS == "A")),
+        header = FALSE
+      )
+    )
+  )
+
+# name the data.frame
+names(data_A_IT) <- paste0("c", con_A_IT)
+rownames(data_A_IT) <- paste0("d", day_A_IT)
+```
+`c`: applied concentration; `d`: treatment day; each value indicates the number of alive organisms 
+
+
+## Set up the guts object
+Setting up a GUTS-IT-object requires for each replicate of the treatment groups:
+
+ - the exposure profile containing the measured concentration `C` at each concentration measurement time `Ct`
+ - the survival data consisting of the number of survived organisms `y` at each abundance measurement time `yt`
+ - the GUTS-model type `model = "IT"`
+ - the tolerance threshold distribution `dist = "loglogistic"`, as log-logistic was used in the ring test.
+
+For each replicate one GUTS object is created. All GUTS-objects are collected in a list. For the ring-test with one replicate for each of the 6 treatment groups, a list of 6 guts-objects is generated. Here, we exemplarily show an automatized procedure to create the list of GUTS-objects from the data. 
+```{r setup-GUTS-OBJ-A-IT}
+GUTS_A_IT <- lapply(seq(length(con_A_IT)), 
+  function(i, dat, days, con) guts_setup(
+    C = rep_len(con[i], length(days)), Ct = days,
+    y = dat[,i], yt = days,
+    model = "IT", dist = "loglogistic"
+  ), dat = data_A_IT, days = day_A_IT, con = con_A_IT
+) 
+names(GUTS_A_IT) <- paste0("c", con_A_IT)
+```
+## Estimating parameters
+
+### Defining constraints on parameter values
+The logposterior function is formulated with a function that defines parameter bounds. 
+
+Constraints on parameters should consider
+
+* hard boundaries: 
+    + `is.infinite(p)` constrains parameters to finite values
+    + `p<0` confines rates and thresholds to positive values
+* knowledge on numerical limitations: 
+    + `exp(8/p[4]) * p[3] > 1e200` avoids numerical problems when approximating the log-logistic function for unrealistically high median values `p[3]` and extremely low shape values `p[4]` that result in a threshold distribution confined at a zero threshold.
+    + `p[4] <= 1` is assumed, to exclude that the mode of the log-logistic threshold distribution is 0, due to the shape parameter. Note that the mode can approach 0 if the estimated median `p[3]` approaches 0. Therefore, this constraint stabilises estimation of low threshold values.
+* toxicological or ecological information: not used here
+
+```{r define out of bounds-fun-IT}
+is_out_of_bounds_fun_IT <- function(p) any( is.na(p), is.infinite(p), p < 0, p[4] <= 1, exp(8/p[4]) * p[3] > 1e200)
+```
+
+### Bayesian parameter estimation
+Parameter values are estimated applying an adaptive Markov Chain Monte Carlo (MCMC) algorithm.
+```{r run-MCMC-IT, echo = TRUE, results = 'hide', eval = do.calc}
+pars_start_IT <- rep_len(0.5, 4)
+names(pars_start_IT) <- par_A$JAsymbols[-which(is.na(par_A$IT))]
+mcmc_result_IT <- MCMC(p = logposterior, 
+  init = pars_start_IT, adapt = 5000, acc.rate = 0.4, n = 150000, 
+  guts_objects = GUTS_A_IT, isOutOfBoundsFun = is_out_of_bounds_fun_IT
+)
+
+#exclude burnin and thin by 3
+mcmc_result_IT$samples <- mcmc_result_IT$samples[seq(50001, 150000, by = 20), ]
+mcmc_result_IT$log.p <- mcmc_result_IT$log.p[seq(50001, 150000, by = 20)]
+```
+
+```{r save-MCMC-results-IT, echo = FALSE, results = 'hide', eval = do.calc & do.save}
+save(mcmc_result_IT, file = file.path("..", "inst", "extdata", "vignetteGUTS-ringTest-IT-MCMCresults.Rdata"))
+```
+
+```{r load-MCMC-results-IT, echo = FALSE, results = 'hide', eval = !do.calc}
+load(system.file("extdata", "vignetteGUTS-ringTest-IT-MCMCresults.Rdata", 
+  package = "GUTS", mustWork = TRUE)
+)
+```
+
+#### Chain and distribution plots
+The top four graphs show mixing and distribution of the parameters. The last row "LL" shows mixing and distribution of the logposterior.
+
+```{r display-MCMC-IT}
+if (all(is.finite(mcmc_result_IT$log.p))) {
+  par( mfrow = c(dim(mcmc_result_IT$samples)[2] + 1, 2) , mar = c(5,4,1,0.5))
+  plot(as.mcmc(cbind(mcmc_result_IT$samples, LL = mcmc_result_IT$log.p)), auto.layout = FALSE)
+  par(op)
+} else {
+  par( mfrow = c(dim(mcmc_result_IT$samples)[2], 2) , mar = c(5,4,1,0.5))
+  plot(as.mcmc(mcmc_result_IT$samples), auto.layout = FALSE)
+  par(op)
+}
+```
+
+### Estimated parameter values compared to the values that were used for data simulation.
+
+```{r evaluate-MCMC-IT}
+eval_MCMC(mcmc_result_IT, expectedVal = par_A$IT[-which(is.na(par_A$IT))])
+```
+
+Black lines indicate best estimates and the error bars the 95% credible interval; grey dots are the model parameter values used to generate the data for the ring test.
+
+# Forecast
+The GUTS-package can be applied to forecast survival, too. We demonstrate this feature for the calculation of a 4d-LC50 value assuming constant exposure.
+
+## Setup guts object and forecast
+Values to be specified are 
+
+* concentrations `C`
+* concentration time points `Ct`
+* number of individuals `y`
+    + `length(y)` corresponds to the number of time steps for which predictions are required.
+    + `y[1]` specifies the initial number of individuals.
+    + other entries of `y` can be chosen arbitrarily and will not be used.
+* forecast time points `yt`: a vector starting with 0
+
+To calculate the LC50, we use the GUTS object to simulate the survival during a 4 day period for several constant dose levels. Here, we uses doses 0 to 16 in steps of 1, which provides a slightly higher resolution than in the original synthetic experimental data.
+
+We choose 9 observation and application time steps for illustration purposes. In fact, to calculate 4d-LC50, it would be sufficient to specify the initial number of individuals at time step 0, and specifiy time step 4 days as the observation time. We assume an initial population size of 100 individuals.
+
+```{r forecast-setup-GUTS-object}
+conc <- seq(0, 16)
+guts_obj_forecast <- lapply(conc,
+  function(concentration) guts_setup(
+    C = rep(concentration, 10),
+    Ct = seq(0,9),
+    y = c(100, rep(0,9)),
+    yt = seq(0,9),
+    model = "IT", dist = "loglogistic", N = 1000
+  )
+)
+```
+
+We forecast survival probabilities for each dose concentration and for each parameter set in the posterior distribution. This procedure takes into account uncertainties in parameter estimates.
+
+According to the protocol for the ring test, for prediction the background mortality "hb" was fixed at 0, in order to isolate the treatment effects in model forecasts.
+
+```{r forecast-paras}
+mcmc_forecasts_paras <- mcmc_result_IT$samples
+mcmc_forecasts_paras[,1] <- 0
+```
+
+```{r forecast, echo = TRUE, results = 'hide', eval = do.calc}
+forec <- lapply(guts_obj_forecast,
+  function(gobj, mcmc_res) 
+    rbind(
+      rep(gobj$C[1], dim(mcmc_forecasts_paras)[1]), 
+      apply(mcmc_res, 1,
+        function(par) guts_calc_survivalprobs(gobj = gobj, par, external_dist = NULL)
+      )
+    ),
+  mcmc_res = mcmc_forecasts_paras
+)
+
+forec <- do.call("cbind", forec)
+forec <- as.data.frame(t(forec))
+names(forec) <- c("conc", paste0("day", guts_obj_forecast[[1]]$yt))
+```
+
+```{r save-forecast, echo = FALSE, results = 'hide', eval = do.calc & do.save}
+save(forec, file = file.path("..", "inst", "extdata", "vignetteGUTS-ringTest-forecast.Rdata"))
+```
+
+```{r load-forecast, echo = FALSE, results = 'hide', eval = !do.calc}
+load(system.file("extdata", "vignetteGUTS-ringTest-forecast.Rdata", 
+  package = "GUTS", mustWork = TRUE)
+)
+```
+
+## Analyse projections
+The box-whisker-plots show dose-response relationships as forecasted for the specific days.
+```{r plot-forecast}
+par(mfrow = c(3,3), mar = c(5,4,3, 0.5))
+invisible(
+  sapply(seq(9),
+    function(day)
+      plot(as.factor(forec$conc), forec[,paste0("day",day)], 
+        ylim = c(0,1),
+        xlab = "concentration (micromol/l)", ylab = "probability of survival", 
+        main = paste("day",day))
+  )
+)
+par(op)
+```
+
+For example, the drc-package (Ritz et al. 2015) can be applied to estimate the d4-LD50. A log-logistic dose-response interpolation is assumed. By estimating the LD50 for each sampled parameter set separately, the uncertainty in LC50 estimates can be derived from the parameter uncertainty revealed by the Bayesian analysis.
+
+```{r estimate-4d-LC50, echo = TRUE, results = 'hide', eval = do.calc}
+library("drc")
+logLC50s <- sapply(seq_len(dim(mcmc_forecasts_paras)[1]), 
+  function(indParaset, forDat, concentrations) {
+    dat <- forDat[dim(mcmc_forecasts_paras)[1] * (seq_along(concentrations) - 1) + indParaset,"day4"]
+    return(
+      coefficients(
+        drm(data.frame(dat, concentrations), fct = LL2.3(names = c("Slope", "upper", "logLC50")))
+      )[3]
+    )
+  },
+  forDat <- forec,
+  concentrations = conc
+)
+```
+
+```{r save-LC50, echo = FALSE, results = 'hide', eval = do.calc & do.save}
+save(logLC50s, file = file.path("..", "inst", "extdata", "vignetteGUTS-ringTest-logLC50.Rdata"))
+```
+
+```{r load-LC50, echo = FALSE, results = 'hide', eval = !do.calc}
+load(system.file("extdata", "vignetteGUTS-ringTest-logLC50.Rdata", 
+  package = "GUTS", mustWork = TRUE)
+)
+```
+
+```{r calc-LC50-stats}
+LC50 <- quantile(exp(logLC50s), c(0.025, 0.5, 0.975))
+```
+
+The estimated LC50 median of `r signif(LC50[2],2)` (CI = [`r signif(LC50[1],2)`; `r signif(LC50[3],2)`]) is in accordance with the ring test forecast (Fig. 7.5, Data-A forecast 4d-LC50-IT in Jager & Ashauer, 2018).
+
+# Literature
+Albert, C., Vogel, S., and Ashauer, R. (2016). Computationally efficient implementation of a novel algorithm for the General Unified Threshold Model of Survival (GUTS). PLOS Computational Biology, 12(6), e1004978. doi: 10.1371/journal.pcbi.1004978.
+
+Ashauer, R., Albert, C., Augustine, S., Cedergreen, N., Charles, S., Ducrot, V., Focks, A., Gabsi, F., Gergs, A., Goussen, B., Jager, T., Kramer, N.I., Nyman, A.-M., Poulsen, V., Reichenberger, S., Sch?fer, R.B., Van den Brink, P.J., Veltman, K., Vogel, S., Zimmer, E.I., Preuss, T.G. (2016). Modelling survival: exposure pattern, species sensitivity and uncertainty. Scientific Reports, 6, 1, doi: 10.1038/srep29178
+
+Jager, T., Albert, C., Preuss, T., and Ashauer, R. (2011). General Unified Threshold Model of Survival - a toxicokinetic toxicodynamic framework for ecotoxicology. Environmental Science & Technology, 45(7), 2529-2540, doi: 10.1021/es103092a.
+
+Jager, T., Ashauer, R. (2018). Modelling survival under chemical stress. A comprehensive guide to the GUTS framework. Leanpub: https://leanpub.com/guts_book, http://www.debtox.info/book_guts.html.
+
+EFSA PPR Panel (EFSA Panel on Plant Protection Products and their Residues), Ockleford, C., Adriaanse, P., Berny, P., Brock, T., Duquesne, S., Grilli, S., Hernandez-Jerez, A.F., Bennekou, S.H., Klein, M., Kuhl, T., Laskowski, R., Machera, K., Pelkonen, O., Pieper, S., Smith, R.H., Stemmer, M., Sundh, I., Tiktak, A., Topping, C.J., Wolterink, G., Cedergreen, N., Charles, S., Focks, A., Reed, M., Arena, M., Ippolito, A., Byers, H. and Teodorovic, I. (2018). Scientific Opinion on the state of the art of Toxicokinetic/Toxicodynamic (TKTD) effect models for regulatory risk assessment of pesticides for aquatic organisms. EFSA Journal, 16(8):5377, 188 pp. https://doi.org/10.2903/j.efsa.2018.5377.
+
+Ritz, C., Baty, F., Streibig, J. C., Gerhard, D. (2015). Dose-Response Analysis Using R. PLOS ONE, 10(12), e0146021, doi: 10.1371/journal.pone.0146021
+

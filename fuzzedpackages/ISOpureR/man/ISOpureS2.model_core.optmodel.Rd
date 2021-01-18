@@ -1,0 +1,18 @@
+\name{ISOpureS2.model_core.optmodel}
+\alias{ISOpureS2.model_core.optmodel}
+\title{Optimizes the ISOpure parameters for step 2}
+\description{Optimizes the ISOpure parameters for step 2 cyclically until convergence}
+\usage{
+ISOpureS2.model_core.optmodel(tumordata, model, NUM_ITERATIONS=35)
+}
+\arguments{
+	\item{tumordata}{a GxD matrix representing gene expression profiles of tumor samples}
+	\item{model}{list containing all the parameters to be optimized}
+	\item{NUM_ITERATIONS}{(optional) minimum number of iterations of optimization algorithm, 
+		default is 35}
+}
+\value{
+	\item{model}{updated model list containing all the parameters}
+    }
+\author{Gerald Quon, Catalina Anghel, Francis Nguyen}
+\keyword{math}

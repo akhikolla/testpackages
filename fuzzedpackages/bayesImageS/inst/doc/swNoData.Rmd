@@ -1,0 +1,119 @@
+---
+title: "swNoData"
+author: "Matt Moores"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    fig_caption: yes
+bibliography: refs.bib
+vignette: >
+  %\VignetteIndexEntry{swNoData}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteKeyword{Swendsen-Wang}
+  %\VignetteKeyword{Gibbs sampling}
+---
+
+Gibbs sampling was originally designed by @Geman1984 for drawing updates from the Gibbs distribution, hence the name. However, single-site Gibbs sampling exhibits poor mixing due to the posterior correlation between the pixel labels. Thus it is very slow to converge when the correlation (controlled by the inverse temperature $\beta$) is high.
+
+The algorithm of @Swendsen1987 addresses this problem by forming clusters of neighbouring pixels, then updating all of the labels within a cluster to the same value. When simulating from the prior, such as a Potts model without an external field, this algorithm is very efficient.
+
+------
+The `SW` function in the **PottsUtils** package is implemented in a combination of `R` and `C`. The `swNoData` function in **bayesImageS** is implemented using **RcppArmadillo**, which gives it a speed advantage. It is worth noting that the intention of **bayesImageS** is not to replace **PottsUtils**. Rather, an efficient Swendsen-Wang algorithm is used as a building block for implementations of ABC [@Grelaud2009], path sampling [@Gelman1998], and the exchange algorithm [@Murray2006]. These other algorithms will be covered in future posts.
+
+There are two things that we want to keep track of in this simulation study: the speed of the algorithm and the distribution of the summary statistic. We will be using `system.time(..)` to measure both CPU and elapsed (wall clock) time taken for the same number of iterations, for a range of inverse temperatures:
+```{r}
+beta <- seq(0,2,by=0.1)
+tmMx.PU <- tmMx.bIS <- matrix(nrow=length(beta),ncol=2)
+rownames(tmMx.PU) <- rownames(tmMx.bIS) <- beta
+colnames(tmMx.PU) <- colnames(tmMx.bIS) <- c("user","elapsed")
+```
+
+We will discard the first 100 iterations as burn-in and keep the remaining 500.
+```{r}
+iter <- 600
+burn <- 100
+samp.PU <- samp.bIS <- matrix(nrow=length(beta),ncol=iter-burn)
+```
+
+The distribution of pixel labels can be summarised by the sufficient statistic of the Potts model:
+
+$$
+S(z) = \sum_{i \sim \ell \in \mathscr{N}} \delta(z_i, z_\ell)
+$$
+
+where $i \sim \ell \in \mathscr{N}$ are all of the pairs of neighbours in the lattice (ie. the cliques) and $\delta(u,v)$ is 1 if $u = v$ and 0 otherwise (the Kronecker delta function). `swNoData` returns this automatically, but with `SW` we will need to use the function `sufficientStat` to calculate the sufficient statistic for the labels.
+
+```{r}
+library(bayesImageS)
+
+mask <- matrix(1,50,50)
+neigh <- getNeighbors(mask, c(2,2,0,0))
+block <- getBlocks(mask, 2)
+edges <- getEdges(mask, c(2,2,0,0))
+
+n <- sum(mask)
+k <- 2
+bcrit <- log(1 + sqrt(k))
+maxSS <- nrow(edges)
+
+for (i in 1:length(beta)) {
+  if (requireNamespace("PottsUtils", quietly = TRUE)) {
+    tm <- system.time(result <- PottsUtils::SW(iter,n,k,edges,beta=beta[i]))
+    tmMx.PU[i,"user"] <- tm["user.self"]
+    tmMx.PU[i,"elapsed"] <- tm["elapsed"]
+    res <- sufficientStat(result, neigh, block, k)
+    samp.PU[i,] <- res$sum[(burn+1):iter]
+    print(paste("PottsUtils::SW",beta[i],tm["elapsed"],median(samp.PU[i,])))
+   } else {
+      print("PottsUtils::SW unavailable on this platform.")
+   }
+
+  
+  # bayesImageS
+  tm <- system.time(result <- swNoData(beta[i],k,neigh,block,iter))
+  tmMx.bIS[i,"user"] <- tm["user.self"]
+  tmMx.bIS[i,"elapsed"] <- tm["elapsed"]
+  samp.bIS[i,] <- result$sum[(burn+1):iter]
+  print(paste("bayesImageS::swNoData",beta[i],tm["elapsed"],median(samp.bIS[i,])))
+}
+```
+
+Here is the comparison of elapsed times between the two algorithms (in seconds):
+```{r}
+summary(tmMx.PU)
+summary(tmMx.bIS)
+boxplot(tmMx.PU[,"elapsed"],tmMx.bIS[,"elapsed"],ylab="seconds elapsed",names=c("SW","swNoData"))
+```
+
+On average, `swNoData` using **RcppArmadillo** [@Eddelbuettel2013] is seven times faster than `SW`.
+
+```{r}
+s_z <- c(samp.PU,samp.bIS)
+s_x <- rep(beta,times=iter-burn)
+s_a <- rep(1:2,each=length(beta)*(iter-burn))
+s.frame <- data.frame(s_z,c(s_x,s_x),s_a)
+names(s.frame) <- c("stat","beta","alg")
+s.frame$alg <- factor(s_a,labels=c("SW","swNoData"))
+  if (requireNamespace("lattice", quietly = TRUE)) {
+    lattice::xyplot(stat ~ beta | alg, data=s.frame)
+  }
+plot(c(s_x,s_x),s_z,pch=s_a,xlab=expression(beta),ylab=expression(S(z)))
+abline(v=bcrit,col="red")
+```
+
+The overlap between the two distributions is almost complete, although it is a bit tricky to verify that statistically. The relationship between $beta$ and $S(z)$ is nonlinear and heteroskedastic.
+
+```{r}
+rowMeans(samp.bIS) - rowMeans(samp.PU)
+apply(samp.PU, 1, sd)
+apply(samp.bIS, 1, sd)
+s.frame$beta <- factor(c(s_x,s_x))
+  if (requireNamespace("PottsUtils", quietly = TRUE)) {
+    s.fit <- aov(stat ~ alg + beta, data=s.frame)
+    summary(s.fit)
+    TukeyHSD(s.fit,which="alg")
+  }
+```
+
+### References

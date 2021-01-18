@@ -1,0 +1,141 @@
+---
+title: "An example of discrete choice modeling in `GLMcat`"
+
+author:
+  - Lorena León^[Université de Montpellier, ylorenaleonv@gmail.com]
+  - Jean Peyhardi^[Université de Montpellier, jean.peyhardi@umontpellier.fr]
+  - Catherine Trottier^[Université de Montpellier, catherine.trottier@umontpellier.fr]
+
+output: rmarkdown::pdf_document
+bibliography: bibliography_vignette.bib
+vignette: >
+  %\VignetteIndexEntry{Discrete Choice Models in GLMcat}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+In econometrics there is a wide variety of binary models with different functions, but none of them can be extended to the multivariate case because the differences of such random variables are not usually known. The very well known Random Utility models (RUM) don't have closed-form solutions, thus, for more than four categories ($J > 4$), these models are difficult to estimate. On the other side, Generalized Linear Models (GLM) have an analytic solution, which make it easier the estimation process, and there is a great flexibility at using different distribution functions for the link function. 
+ 
+Following the approach of @peyhardi_new for writing GLMs, qualitative choice models can be written as *(Reference, Logistic, Z)* models. The function `Discrete_CM` in the `GLMcat` package is available to implement these models.
+
+
+### Dataset
+
+The choice of travel mode of *n = 210* passengers in Australia was investigated by @louviere_2000, @greene2003econometric and @tutz_2011. The alternatives of travel mode are: air, train, bus, and car. As $category-specific$ variables they considered the travel time in vehicle *(invt)* and the general cost *(gc)*, and, as the $global-variables$ they considered the household income *(hinc)*, and the number of people traveling *(psize)*.
+As example data, `GLMcat` includes the database: `TravelChoice`; which we can load as follows:
+
+```{r }
+# devtools::load_all()
+library(GLMcat)
+```
+
+```{r }
+data("TravelChoice")
+head(TravelChoice)
+str(TravelChoice)
+```
+
+To execute the model proposed by @tutz_2011 (Example 8.4), we execute the `Discrete_CM ` function with the specific parameters as follows:
+
+```{r }
+exp_8.4 <- Discrete_CM(
+  formula = choice ~ hinc + gc + invt,
+  case_id = "indv",
+  alternatives = "mode",
+  reference = "air",
+  data = TravelChoice,
+  alternative_specific = c("gc", "invt"),
+  distribution = "logistic")
+summary(exp_8.4)
+```
+
+According to @tutz_2011, the income seems to be influential for the preference of train and bus over airplane. And, time in vehicle seems to have an impact for the choice of travel mode. Also, cost turns out to be non-influential if income is in the predictor.
+
+To replicate the results of @louviere_2000 we can use the following lines of code. Note that for the variables *hinc* and *psize* the effect is specified only for category *air*.
+
+```{r }
+(constant_model <- Discrete_CM(
+  formula = choice ~ 1 ,
+  case_id = "indv",
+  alternatives = "mode",
+  reference = c("air", "train", "bus", "car"),
+  data = TravelChoice,
+  distribution = "logistic"
+))
+
+(car_0 <- Discrete_CM(
+  formula = choice ~ hinc[air] + psize[air] + gc + ttme,
+  case_id = "indv",
+  alternatives = "mode",
+  reference = c("air", "train", "bus", "car"),
+  alternative_specific = c("gc", "ttme"),
+  data = TravelChoice,
+  distribution = "logistic"
+))
+```
+
+@PEYHARDI_choice demonstrated that the use of the reference category and the choice of the cumulative distribution function, highly affects the fit of the model. Through an experiment in which they used different reference categories as well as different cumulative distribution functions (including *Student* varying the degrees of freedom) they found that for this case, *car* as the reference category, and *Student(0.2)* will result in the best fit. 
+
+```{r }
+mod_1 <- Discrete_CM(
+  formula = choice ~ hinc[air] + psize[air] + gc + ttme,
+  case_id = "indv",
+  alternatives = "mode",
+  reference = "air",
+  alternative_specific = c("gc", "ttme"),
+  data = TravelChoice,
+  distribution = "logistic"
+)
+logLik(mod_1)
+```
+
+```{r }
+mod_2 <- Discrete_CM(
+  formula = choice ~ hinc[air] + psize[air] + gc + ttme,
+  case_id = "indv",
+  alternatives = "mode",
+  reference = "bus",
+  alternative_specific = c("gc", "ttme"),
+  data = TravelChoice,
+  distribution = "student",
+  freedom_degrees = 30
+)
+logLik(mod_2)
+```
+
+```{r }
+mod_3 <- Discrete_CM(
+  formula = choice ~ hinc[air] + psize[air] + gc + ttme,
+  case_id = "indv",
+  alternatives = "mode",
+  reference = "car",
+  alternative_specific = c("gc", "ttme"),
+  data = TravelChoice,
+  distribution = "student",
+  freedom_degrees = 0.2
+)
+logLik(mod_3)
+```
+
+```{r }
+mod_4 <- Discrete_CM(
+  formula = choice ~ hinc[air] + psize[air] + gc + ttme,
+  case_id = "indv",
+  alternatives = "mode",
+  reference = "train",
+  alternative_specific = c("gc", "ttme"),
+  data = TravelChoice,
+  distribution = "student",
+  freedom_degrees = 1.35
+)
+logLik(mod_4)
+```
+
+The results are clearly in favour of the reference alternative $j_0 =car$ together with *Student(0.2)* since the gain in LogLikelihood is *43.92* compared to the multinomial logit model (MNL) results, i.e., *24%* of the LogLikelihood. It is a considerable difference compared to the results given in the literature [[@louviere_2000]; [@greene2003econometric]], obtained with MNL and with the nested model. 
+
+### Conclusion
+
+Until recently, only the logit and probit binary models were extended to the case of multinomial choices, resulting in the multinomial logit and the multinomial probit. The recently introduced family of reference models, defines a multivariate extension of any binary choice model, i.e. for any link function. The `GLMcat` library through the `Discrete_CM` function offers this whole range of models, as demonstrated in the example above.
+
+### References
+

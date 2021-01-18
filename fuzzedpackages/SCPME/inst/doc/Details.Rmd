@@ -1,0 +1,316 @@
+---
+title: "SCPME Algorithm Details"
+author: "Matt Galloway"
+#date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    fig_caption: false
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: true
+    fig_caption: false
+bibliography: lib.bib
+vignette: >
+  %\VignetteIndexEntry{SCPME Algorithm Details}
+  %\usepackage[UTF-8]{inputenc}
+  %\VignetteEngine{knitr::knitr}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Introduction
+
+Consider the case where we observe $n$ independent, identically distributed copies of the random variable ($X_{i}$) where $X_{i} \in \mathbb{R}^{p}$ is normally distributed with some mean, $\mu$, and some variance, $\Sigma$. That is, $X_{i} \sim N_{p}\left( \mu, \Sigma \right)$.
+
+Because we assume independence, we know that the probability of observing these specific observations $X_{1}, ..., X_{n}$ is equal to
+
+\begin{align*}
+  f(X_{1}, ..., X_{n}; \mu, \Sigma) &= \prod_{i = 1}^{n}(2\pi)^{-p/2}\left| \Sigma \right|^{-1/2}\exp\left[ -\frac{1}{2}\left( X_{i} - \mu \right)^{T}\Sigma^{-1}\left( X_{i} - \mu \right) \right] \\
+  &= (2\pi)^{-nr/2}\left| \Sigma \right|^{-n/2}\mbox{etr}\left[ -\frac{1}{2}\sum_{i = 1}^{n}\left( X_{i} - \mu \right)\left( X_{i} - \mu \right)^{T}\Sigma^{-1} \right]
+\end{align*}
+
+where $\mbox{etr}\left( \cdot \right)$ denotes the exponential trace operator. It follows that the log-likelihood for $\mu$ and $\Sigma$ is equal to the following:
+
+\[ l(\mu, \Sigma | X) = const. - \frac{n}{2}\log\left| \Sigma \right| - tr\left[ \frac{1}{2}\sum_{i = 1}^{n}\left(X_{i} - \mu \right)\left(X_{i} - \mu \right)^{T}\Sigma^{-1} \right] \]
+
+If we are interested in estimating $\mu$, it is relatively straight forward to show that the maximum likelihood estimator (MLE) for $\mu$ is $\hat{\mu}_{MLE} = \sum_{i = 1}^{n}X_{i}/n$ which we typically denote as $\bar{X}$. However, in addition to $\mu$, many applications require the estimation of $\Sigma$ as well. We can also find a maximum likelihood estimator:
+
+\begin{align*}
+  &\hat{\Sigma}_{MLE} = \arg\max_{\Sigma \in \mathbb{S}_{+}^{p}}\left\{ const. - \frac{n}{2}\log\left| \Sigma \right| - tr\left[ \frac{1}{2}\sum_{i = 1}^{n}\left(X_{i} - \mu \right)\left(X_{i} - \mu \right)^{T}\Sigma^{-1} \right] \right\} \\
+  &\nabla_{\Sigma}l(\mu, \Sigma | X) = -\frac{n}{2}\Sigma^{-1} + \frac{1}{2}\sum_{i = 1}^{n}\left(X_{i} - \mu \right)\left(X_{i} - \mu \right)^{T}\Sigma^{-2} \\
+  \Rightarrow &\hat{\Sigma}_{MLE} = \left[ \frac{1}{n}\sum_{i = 1}^{n}\left(X_{i} - \bar{X} \right)\left(X_{i} - \bar{X} \right)^{T} \right]
+\end{align*}
+
+By setting the gradient equal to zero and plugging in the MLE for $\mu$, we find that the MLE for $\Sigma$ is our usual sample estimator often denoted as $S$. It turns out that we could have just as easily computed the maximum likelihood estimator for the precision matrix $\Omega \equiv \Sigma^{-1}$ and taken its inverse:
+
+\[ \hat{\Omega}_{MLE} = \arg\min_{\Omega \in S_{+}^{p}}\left\{ tr\left(S\Omega\right) - \log\left|\Omega\right| \right\} \]
+
+so that $\hat{\Omega}_{MLE} = S^{-1}$. Beyond the formatting convenience, computing estimates for $\Omega$ as opposed to $\Sigma$ often poses less computational challenges -- and accordingly, the literature has placed more emphasis on efficiently solving for $\Omega$ instead of $\Sigma$.
+
+As in regression settings, we can construct a *penalized* log-likelihood estimator by adding a penalty term, $P\left(\Omega\right)$, to the likelihood:
+
+\[ \hat{\Omega} = \arg\min_{\Omega \in S_{+}^{p}}\left\{ tr\left(S\Omega\right) - \log\left|\Omega \right| + P\left( \Omega \right) \right\} \]
+
+$P\left( \Omega \right)$ is often of the form $P\left(\Omega \right) = \lambda\|\Omega \|_{F}^{2}/2$ or $P\left(\Omega \right) = \|\Omega\|_{1}$ where $\lambda > 0$, $\left\|\cdot \right\|_{F}^{2}$ is the Frobenius norm and we define $\left\|A \right\|_{1} = \sum_{i, j} \left| A_{ij} \right|$. These penalties are the ridge and lasso, respectively. The penalty proposed by @molstad2017shrinking is one of the following form:
+
+\[ P\left(\Omega\right) = \lambda\left\| A\Omega B - C \right\|_{1} \]
+
+where $A \in \mathbb{R}^{m \times p}, B \in \mathbb{R}^{p \times q}, \mbox{ and } C \in \mathbb{R}^{m \times q}$ are matrices assumed to be known and specified by the user. Solving the full penalized log-likelihood for $\Omega$ results in solving
+
+\[ \hat{\Omega} = \arg\min_{\Omega \in S_{+}^{p}}\left\{ tr\left(S\Omega\right) - \log\left|\Omega \right| + \lambda\left\| A\Omega B - C \right\|_{1} \right\} \]
+
+This form of penalty is particularly useful because matrices $A, B, \mbox{ and } C$ can be constructed so that we penalize the sum, absolute value of a *characteristic* of the precision matrix $\Omega$. This type of penalty leads to many new, interesting, and novel estimators for $\Omega$. An example of one such estimator (suppose we observe $n$ samples of $Y_{i} \in \mathbb{R}^{r}$) would be one where we set $A = I_{p}, B = \Sigma_{xy}, \mbox{ and } C = 0$ where $\Sigma_{xy}$ is the covariance matrix of $X$ and $Y$. This penalty has the effect of assuming sparsity in the forward regression coefficient $\beta \equiv \Omega\Sigma_{xy}$. Of course, in practice we do not know the true covariance matrix $\Sigma_{xy}$ but we might consider using the sample estimate $\hat{\Sigma}_{xy} = \sum_{i = 1}^{n}\left(X_{i} - \bar{X}\right)\left(Y_{i} - \bar{Y}\right)^{T}/n$
+
+We will explore how to solve for $\hat{\Omega}$ in the next section.
+
+<br>\vspace{1cm}
+
+## Augmented ADMM Algorithm
+
+*This section requires general knowledge of the alternating direction method of multipliers (ADMM) algorithm. I would recommend reading this overview I have written [here](https://mgallow.github.io/ADMMsigma/articles/Details.html#admm-algorithm) before proceeding.*
+
+The ADMM algorithm - thanks to it's flexibility - is particularly well-suited to solve penalized-likelihood optimization problems that arise naturally in several statistics and machine learning applications. Within the context of @molstad2017shrinking, this algorithm would consist of iterating over the following three steps:
+
+\begin{align}
+  \Omega^{k + 1} &= \arg\min_{\Omega \in \mathbb{S}_{+}^{p}}L_{\rho}(\Omega, Z^{k}, \Lambda^{k}) \\
+  Z^{k + 1} &= \arg\min_{Z \in \mathbb{R}^{n \times r}}L_{\rho}(\Omega^{k + 1}, Z, \Lambda^{k}) \\
+  \Lambda^{k + 1} &= \Lambda^{k} + \rho\left(A\Omega^{k + 1}B - Z^{k + 1} - C \right)
+\end{align}
+
+where $L_{p}(\cdot)$ is the *augmented lagrangian* defined as
+
+\[ L_{\rho}(\Omega, Z, \Lambda) = f\left(\Omega\right) + g\left(Z\right) + tr\left[\Lambda^{T}\left(A\Omega B - Z - C\right)\right] + \frac{\rho}{2}\left\|A\Omega B - Z - C\right\|_{F}^{2} \]
+
+with $f\left(\Omega\right) = tr\left(S\Omega\right) - \log\left|\Omega\right|$ and $g\left(Z\right) = \lambda\left\|Z\right\|_{1}$. However, instead of solving the first step exactly, the authors propose an alternative, approximating objective function ($\tilde{L}$) based on the majorize-minimize principle -- the purpose of which is to find a solution that can be solved in closed form.
+
+The approximating function is defined as
+
+\begin{align*}
+  \tilde{L}_{\rho}\left(\Omega, Z^{k}, \Lambda^{k}\right) = f\left(\Omega\right) &+ tr\left[(\Lambda^{k})^{T}(A\Omega B - Z^{k} - C) \right] + \frac{\rho}{2}\left\|A\Omega B - Z^{k} - C \right\|_{F}^{2} \\
+  &+ \frac{\rho}{2}vec\left(\Omega - \Omega^{k}\right)^{T}Q\left(\Omega - \Omega^{k}\right)
+\end{align*}
+
+where $Q = \tau I_{p} - \left(A^{T}A \otimes BB^{T}\right)$, $\otimes$ is the Kronecker product, and $\tau$ is chosen such that $Q$ is positive definite. Note that if $Q$ is positive definite (p.d.), then
+
+\[ \frac{\rho}{2}vec\left(\Omega - \Omega^{k} \right)^{T}Q\left(\Omega - \Omega^{k} \right) > 0 \]
+
+since $\rho > 0$ and $vec\left(\Omega - \Omega^{k}\right)$ is always nonzero whenever $\Omega \neq \Omega^{k}$. Thus $L_{\rho}\left(\cdot\right) \leq \tilde{L}\left(\cdot\right)$ for all $\Omega$ and $\tilde{L}$ is a majorizing function.
+
+To see why this particular function was used, consider the Taylor's expansion of $\rho\left\|A\Omega B - Z^{k} - C\right\|_{F}^{2}/2$:
+
+\begin{align*}
+  \frac{\rho}{2}\left\| A\Omega B - Z^{k} - C \right\|_{F}^{2} &\approx \frac{\rho}{2}\left\| A\Omega^{k} B - Z^{k} - C \right\|_{F}^{2} \\
+  &+ \frac{\rho}{2}vec\left( \Omega - \Omega^{k}\right)^{T}\left(A^{T}A \otimes BB^{T}\right)vec\left(\Omega - \Omega^{k}\right) \\
+  &+ \rho vec\left(\Omega - \Omega^{k}\right)^{T}vec\left(BB^{T}\Omega^{k}A^{T}A - B(Z^{k})^{T}A - BC^{T}A \right)
+\end{align*}
+
+**Note:**
+
+\begin{align*}
+  &\nabla_{\Omega}\left\{ \frac{\rho}{2}\left\|A\Omega B - Z - C\right\|_{F}^{2} \right\} = \rho BB^{T}\Omega A^{T}A - \rho BZ^{T}A - \rho BC^{T}A \\
+  &\nabla_{\Omega}^{2}\left\{ \frac{\rho}{2}\left\|A\Omega B - Z - C \right\|_{F}^{2} \right\} = \rho\left(A^{T}A \otimes BB^{T} \right)
+\end{align*}
+
+This implies that
+
+\begin{align*}
+  \frac{\rho}{2}\left\| A\Omega B - Z^{k} - C \right\|_{F}^{2} &+ \frac{\rho}{2}vec\left(\Omega - \Omega^{k} \right)^{T}Q\left(\Omega - \Omega^{k} \right) \\
+  &\approx \frac{\rho}{2}\left\| A\Omega^{k} B - Z^{k} - C \right\|_{F}^{2} + \frac{\rho}{2}vec\left(\Omega - \Omega^{k} \right)^{T}Q\left(\Omega - \Omega^{k} \right) \\
+  &+ \frac{\rho}{2}vec\left( \Omega - \Omega^{k}\right)^{T}\left(A^{T}A \otimes BB^{T}\right)vec\left(\Omega - \Omega^{k}\right) \\
+  &+ \rho vec\left(\Omega - \Omega^{k}\right)^{T}vec\left(BB^{T}\Omega^{k}A^{T}A - B(Z^{k})^{T}A - BC^{T}A \right) \\
+  &= \frac{\rho}{2}\left\| A\Omega^{k} B - Z^{k} - C \right\|_{F}^{2} + \frac{\rho\tau}{2}\left\|\Omega - \Omega^{k}\right\|_{F}^{2} \\
+  &+ \rho tr\left[\left(\Omega - \Omega^{k}\right)\left(BB^{T}\Omega^{k}A^{T}A - B(Z^{k})^{T}A - BC^{T}A \right)\right]
+\end{align*}
+
+Let us now plug in this equality into our optimization problem in step one:
+
+\begin{align*}
+  \Omega^{k + 1} &:= \arg\min_{\Omega \in \mathbb{S}_{+}^{p}}\tilde{L}_{\rho}(\Omega, Z^{k}, \Lambda^{k}) \\
+  &= \arg\min_{\Omega \in \mathbb{S}_{+}^{p}}\left\{\begin{matrix}
+ tr\left(S\Omega\right) - \log\left|\Omega\right| + tr\left[(\Lambda^{k})^{T}(A\Omega B - Z^{k} - C) \right] + \frac{\rho}{2}\left\|A\Omega B - Z^{k} - C \right\|_{F}^{2} \end{matrix}\right. \\
+  &+ \left.\begin{matrix} \frac{\rho}{2}vec\left(\Omega - \Omega^{k}\right)^{T}Q\left(\Omega - \Omega^{k}\right) \end{matrix}\right\} \\
+  &= \arg\min_{\Omega \in \mathbb{S}_{+}^{p}}\left\{\begin{matrix}
+ tr\left(S\Omega\right) - \log\left|\Omega\right| + tr\left[(\Lambda^{k})^{T}(A\Omega B - Z^{k} - C) \right] + \frac{\rho}{2}\left\|A\Omega^{k} B - Z^{k} - C \right\|_{F}^{2} \end{matrix}\right. \\
+  &+ \left.\begin{matrix} \frac{\rho\tau}{2}\left\|\Omega - \Omega^{k}\right\|_{F}^{2} + \rho tr\left[\left(\Omega - \Omega^{k}\right)\left(BB^{T}\Omega^{k}A^{T}A - B(Z^{k})^{T}A - BC^{T}A \right)\right] \end{matrix}\right\} \\
+  &= \arg\min_{\Omega \in \mathbb{S}_{+}^{p}}\left\{\begin{matrix}
+ tr\left[\left(S + \rho A^{T}(A\Omega^{k}B - Z^{k} - C + \Lambda^{k}/\rho)B^{T} \right)\Omega\right] \end{matrix}\right. \\
+  &- \left.\begin{matrix} \log\left|\Omega\right| + \frac{\rho\tau}{2}\left\|\Omega - \Omega^{k}\right\|_{F}^{2} \end{matrix}\right\} \\
+  &= \arg\min_{\Omega \in \mathbb{S}_{+}^{p}}\left\{
+ tr\left[\left(S + G^{k} \right)\Omega\right] - \log\left|\Omega\right| + \frac{\rho\tau}{2}\left\|\Omega - \Omega^{k}\right\|_{F}^{2} \right\} \\
+\end{align*}
+
+where $G^{k} = \rho A^{T}(A\Omega^{k}B - Z^{k} - C + \Lambda^{k}/\rho)B^{T}$.
+
+<br>\vspace{1cm}
+
+The *augmented ADMM* algorithm is the following:
+
+\begin{align}
+  \Omega^{k + 1} &= \arg\min_{\Omega \in \mathbb{S}_{+}^{p}}\left\{tr\left[\left(S + G^{k}\right)\Omega\right] - \log\left|\Omega\right| + \frac{\rho\tau}{2}\left\|\Omega - \Omega^{k}\right\|_{F}^{2} \right\} \\
+  Z^{k + 1} &= \arg\min_{Z \in \mathbb{R}^{n \times r}}\left\{\lambda\left\|Z\right\|_{1} + tr\left[(\Lambda^{k})^{T}(A\Omega B - Z^{k} - C) \right] + \frac{\rho}{2}\left\|A\Omega B - Z^{k} - C \right\|_{F}^{2} \right\} \\
+  \Lambda^{k + 1} &= \Lambda^{k} + \rho\left(A\Omega^{k + 1}B - Z^{k + 1} - C \right)
+\end{align}
+
+<br>\vspace{1cm}
+
+### Algorithm
+
+Set $k = 0$ and repeat steps 1-6 until convergence.
+
+1. Compute $G^{k} = \rho A^{T}\left( A\Omega^{k} B - Z^{k} - C + \rho^{-1}Y^{k} \right)B^{T}$
+
+2. Decompose $S + \left( G^{k} + (G^{k})^{T} \right)/2 - \rho\tau\Omega^{k} = VQV^{T}$ (via the spectral decomposition).
+
+3. Set $\Omega^{k + 1} = V\left( -Q + (Q^{2} + 4\rho\tau I_{p})^{1/2} \right)V^{T}/(2\rho\tau)$
+
+4. Set $Z^{k + 1} = \mbox{soft}\left( A\Omega^{k + 1}B - C + \rho^{-1}Y^{k}, \rho^{-1}\lambda \right)$
+
+5. Set $Y^{k + 1} = \rho\left( A\Omega^{k + 1} B - Z^{k + 1} - C \right)$
+
+6. Replace $k$ with $k + 1$.
+
+where $\mbox{soft}(a, b) = \mbox{sign}(a)(\left| a \right| - b)_{+}$.
+
+
+<br>\vspace{1cm}
+
+### Proof of (2-3):
+
+\[ \Omega^{k + 1} = \arg\min_{\Omega \in \mathbb{S}_{+}^{p}}\left\{tr\left[\left(S + G^{k}\right)\Omega\right] - \log\left|\Omega\right| + \frac{\rho\tau}{2}\left\|\Omega - \Omega^{k}\right\|_{F}^{2} \right\} \]
+
+\begin{align*}
+  &\nabla_{\Omega}\left\{tr\left[\left(S + G^{k}\right)\Omega\right] - \log\left|\Omega\right| + \frac{\rho\tau}{2}\left\|\Omega - \Omega^{k}\right\|_{F}^{2} \right\} \\
+  &= 2S - S\circ I_{p} + G^{k} + (G^{k})^{T} - G^{k}\circ I_{p} - 2\Omega^{-1} + \Omega^{-1}\circ I_{p} \\
+  &+ \frac{\rho\tau}{2}\left[2\Omega - 2(\Omega^{k})^{T} + 2\Omega^{T} - 2\Omega^{k} - 2(\Omega - \Omega^{k})^{T}\circ I_{p} \right]
+\end{align*}
+
+Note that we need to honor the symmetric constraint given by $\Omega$. By setting the gradient equal to zero and multiplying all off-diagonal elements by $1/2$, this simplifies to
+
+\[ S + \frac{1}{2}\left(G^{k} + (G^{k})^{T}\right) - \rho\tau\Omega^{k} = (\Omega^{k + 1})^{-1} - \rho\tau\Omega^{k + 1} \]
+
+We can then decompose $\Omega^{k + 1} = VDV^{T}$ where $D$ is a diagonal matrix with diagonal elements equal to the eigen values of $\Omega^{k + 1}$ and $V$ is the matrix with corresponding eigen vectors as columns.
+
+\[ S + \frac{1}{2}\left(G^{k} + (G^{k})^{T}\right) - \rho\tau\Omega^{k} = VD^{-1}V^{T} - \rho\tau VDV^{T} = V\left(D^{-1} - \rho\tau D\right)V^{T} \]
+
+This equivalence implies that
+
+\[ \phi_{j}\left( D^{k} \right) = \frac{1}{\phi_{j}(\Omega^{k + 1})} - \rho\tau\phi_{j}(\Omega^{k + 1}) \]
+
+where $\phi_{j}(\cdot)$ is the $j$th eigen value and $D^{k} = S + \left(G^{k} + (G^{k})^{T}\right)/2 - \rho\tau\Omega^{k}$. Therefore
+
+\begin{align*}
+  &\Rightarrow \rho\tau\phi_{j}^{2}(\Omega^{k + 1}) + \phi_{j}\left( D^{k} \right)\phi_{j}(\Omega^{k + 1}) - 1 = 0 \\
+  &\Rightarrow \phi_{j}(\Omega^{k + 1}) = \frac{-\phi_{j}(D^{k}) \pm \sqrt{\phi_{j}^{2}(D^{k}) + 4\rho\tau}}{2\rho\tau}
+\end{align*}
+
+In summary, if we decompose $S + \left(G^{k} + (G^{k})^{T}\right)/2 - \rho\tau\Omega^{k} = VQV^{T}$ then
+
+\[ \Omega^{k + 1} = \frac{1}{2\rho\tau}V\left[ -Q + (Q^{2} + 4\rho\tau I_{p})^{1/2}\right] V^{T} \]
+
+
+<br>\vspace{1cm}
+
+
+### Proof of (4)
+
+\[ Z^{k + 1} = \arg\min_{Z \in \mathbb{R}^{n \times r}}\left\{ \lambda\left\| Z \right\|_{1} + tr\left[(\Lambda^{k})^{T}\left(A\Omega^{k + 1}B - Z - C\right)\right] + \frac{\rho}{2}\left\| A\Omega^{k + 1}B - Z - C \right\|_{F}^{2} \right\} \]
+
+\vspace{1cm}
+
+\begin{align*}
+  \partial&\left\{ \lambda\left\| Z \right\|_{1} + tr\left[(\Lambda^{k})^{T}\left(A\Omega^{k + 1}B - Z - C\right)\right] + \frac{\rho}{2}\left\| A\Omega^{k + 1}B - Z - C \right\|_{F}^{2} \right\} \\
+  &= \partial\left\{ \lambda\left\| Z \right\|_{1} \right\} + \nabla_{\Omega}\left\{ tr\left[(\Lambda^{k})^{T}\left(A\Omega^{k + 1}B - Z - C\right)\right] + \frac{\rho}{2}\left\| A\Omega^{k + 1}B - Z - C \right\|_{F}^{2} \right\} \\
+  &= \mbox{sign}(Z)\lambda - \Lambda^{k} - \rho\left( A\Omega^{k + 1}B - Z - C \right)
+\end{align*}
+
+where $\mbox{sign(Z)}$ is the elementwise sign operator. By setting the gradient/sub-differential equal to zero, we arrive at the following equivalence:
+
+\[ Z_{ij}^{k + 1} = \frac{1}{\rho}\left( \rho(A\Omega_{ij}^{k + 1}B - C) + \Lambda_{ij}^{k} - Sign(Z_{ij}^{k + 1})\lambda \right) \]
+
+for all $i = 1,..., p$ and $j = 1,..., p$. We observe two scenarios:
+
+- If $Z_{ij}^{k + 1} > 0$ then
+
+\[ \rho\left(A\Omega_{ij}^{k + 1}B - C\right) + \Lambda_{ij}^{k} > \lambda\alpha \]
+
+
+- If $Z_{ij}^{k + 1} < 0$ then
+
+\[ \rho\left(A\Omega_{ij}^{k + 1}B - C\right) + \Lambda_{ij}^{k} < -\lambda\alpha \]
+
+This implies that $\mbox{sign}(Z_{ij}^{k + 1}) = \mbox{sign}\left(\rho(A\Omega_{ij}^{k + 1}B - C) + \Lambda_{ij}^{k}\right)$. Putting all the pieces together, we arrive at
+
+\begin{align*}
+Z_{ij}^{k + 1} &= \frac{1}{\rho}\mbox{sign}\left(\rho(A\Omega_{ij}^{k + 1}B - C) + \Lambda_{ij}^{k}\right)\left( \left| \rho(A\Omega_{ij}^{k + 1}B - C) + \Lambda_{ij}^{k} \right| - \lambda \right)_{+} \\
+&= \frac{1}{\rho}\mbox{soft}\left(\rho(A\Omega_{ij}^{k + 1}B - C) + \Lambda_{ij}^{k}, \lambda\right)
+\end{align*}
+
+where soft is the soft-thresholding function.
+
+
+<br>\vspace{1cm}
+
+## Stopping Criterion
+
+In discussing the optimality conditions and stopping criterion, we will follow the steps outlined in @boyd2011distributed and cater them to the SCPME method.
+
+Below we have three optimality conditions:
+
+1. Primal:
+
+\[ A\Omega^{k + 1}B - Z^{k + 1} - C = 0 \]
+
+2. Dual:
+
+\begin{align*}
+  0 &\in \partial f\left(\Omega^{k + 1}\right) + \frac{1}{2}\left(B(\Lambda^{k + 1})^{T}A + A^{T}\Lambda^{k + 1}B^{T} \right) \\
+  0 &\in \partial g\left(Z^{k + 1}\right) - \Lambda^{k + 1}
+\end{align*}
+
+The first dual optimality condition is a result of taking the sub-differential of the lagrangian (non-augmented) with respect to $\Omega^{k + 1}$ (note that we must honor the symmetric constraint of $\Omega^{k + 1}$) and the second is a result of taking the sub-differential of the lagrangian with respect to $Z^{k + 1}$ (no symmetric constraint).
+
+We will define the left-hand side of the primal optimality condition as the primal residual $r^{k + 1} = A\Omega^{k + 1}B - Z^{k + 1} - C$. At convergence, the optimality conditions require that $r^{k + 1} \approx 0$. The second residual we will define is the dual residual:
+
+\[ s^{k + 1} = \frac{\rho}{2}\left( B(Z^{k + 1} - Z^{k})^{T}A + A^{T}(Z^{k + 1} - Z^{k})B^{T} \right) \]
+
+This residual is derived from the following:
+
+Because $\Omega^{k + 1}$ is the argument that minimizes $L_{p}\left( \Omega, Z^{k}, \Lambda^{k} \right)$,
+
+\begin{align*}
+  0 &\in \partial \left\{ f\left(\Omega^{k + 1}\right) + tr\left[ \Lambda^{k}\left( A\Omega^{k + 1}B - Z^{k} - C \right) \right] + \frac{\rho}{2}\left\| A\Omega^{k + 1}B - Z^{k} - C \right\|_{F}^{2} \right\} \\
+  &= \partial f\left(\Omega^{k + 1} \right) + \frac{1}{2}\left(B(\Lambda^{k})^{T}A + A^{T}\Lambda^{k}B^{T} \right) + \frac{\rho}{2}\left( BB^{T}\Omega^{k + 1}A^{T}A + A^{T}A\Omega^{k + 1}BB^{T} \right) \\
+  &- \frac{\rho}{2}\left( A^{T}(Z^{k} + C)B^{T} + B(Z^{k} + C)^{T}A \right) \\
+  &= \partial f\left(\Omega^{k + 1} \right) + \frac{1}{2}\left(B(\Lambda^{k})^{T}A + A^{T}\Lambda^{k}B^{T} \right) \\
+  &+ \frac{\rho}{2}\left( B(B^{T}\Omega^{k + 1}A^{T} - (Z^{k})^{T} - C^{T})A + A^{T}(A\Omega^{k + 1}B - Z^{k} - C)B^{T} \right) \\
+  &= \partial f\left(\Omega^{k + 1} \right) + \frac{1}{2}\left( B(\Lambda^{k})^{T}A + A^{T}\Lambda^{k}B^{T} \right) + \frac{\rho}{2}\left(A^{T}(A\Omega^{k + 1}B - Z^{k + 1} + Z^{k + 1} - Z^{k} - C)B^{T} \right) \\
+  &+ \frac{\rho}{2}\left(B(B^{T}\Omega^{k + 1}A^{T} - (Z^{k + 1})^{T} + (Z^{k + 1})^{T} - (Z^{k})^{T} - C^{T})A \right) \\
+  &= \partial f\left(\Omega^{k + 1} \right) + \frac{1}{2}\left[ B\left((\Lambda^{k})^{T} + \rho(B^{T}\Omega^{k + 1}A^{T} - (Z^{k + 1})^{T} - C^{T}) \right)A \right] \\
+  &+ \frac{1}{2}\left[ A^{T}\left(\Lambda^{k} + \rho(A\Omega^{k + 1}B - Z^{k + 1} - c)B \right)B^{T} \right] + \frac{\rho}{2}\left(B(Z^{k + 1} - Z^{k})^{T}A + A^{T}(Z^{k + 1} - Z^{k})B^{T} \right) \\
+  &= \partial f\left(\Omega^{k + 1} \right) + \frac{1}{2}\left(B(\Lambda^{k + 1})^{T}A + A^{T}\Lambda^{k + 1}B^{T} \right) + \frac{\rho}{2}\left(B(Z^{k + 1} - Z^{k})^{T}A + A^{T}(Z^{k + 1} - Z^{k})B^{T} \right) \\
+  \Rightarrow 0 &\in \frac{\rho}{2}\left( B(Z^{k + 1} - Z^{k})^{T}A + A^{T}(Z^{k + 1} - Z^{k})B^{T} \right)
+\end{align*}
+
+Like the primal residual, at convergence the optimality conditions require that $s^{k + 1} \approx 0$. Note that the second dual optimality condition is always satisfied:
+
+\begin{align*}
+  0 &\in \partial \left\{ g\left(Z^{k + 1}\right) + tr\left[ \Lambda^{k}\left( A\Omega^{k + 1}B - Z^{k + 1} - C \right) \right] + \rho\left\| A\Omega^{k + 1}B - Z^{k + 1} - C \right\|_{F}^{2} \right\} \\
+  &= \partial g\left(Z^{k + 1}\right) - \Lambda^{k} - \rho\left(A\Omega^{k + 1}B - Z^{k + 1} - C \right) \\
+  &= \partial g\left(Z^{k + 1}\right) - \Lambda^{k + 1} \\
+\end{align*}
+
+One possible stopping criterion is to set $\epsilon^{rel} = \epsilon^{abs} = 10^{-3}$ and stop the algorithm when $\epsilon^{pri} \leq \left\| r^{k + 1} \right\|_{F}$ and $\epsilon^{dual} \leq \left\| s^{k + 1} \right\|_{F}$ where
+
+\begin{align*}
+  \epsilon^{pri} &= \sqrt{nr}\epsilon^{abs} + \epsilon^{rel}\max\left\{ \left\| A\Omega^{k + 1}B \right\|_{F}, \left\| Z^{k + 1} \right\|_{F}, \left\| C \right\|_{F} \right\} \\
+  \epsilon^{dual} &= p\epsilon^{abs} + \epsilon^{rel}\left\| \left( B(\Lambda^{k + 1})^{T}A + A^{T}\Lambda^{k + 1}B^{T} \right)/2 \right\|_{F}
+\end{align*}
+
+
+<br><br>\newpage
+
+## References

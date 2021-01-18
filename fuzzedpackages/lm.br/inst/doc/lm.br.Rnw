@@ -1,0 +1,263 @@
+\documentclass{article}
+
+%\VignetteIndexEntry{lm.br}
+
+\SweaveOpts{prefix.string=lmbr}
+
+\setlength{\parskip}{0.5ex plus0.1ex minus0.1ex}
+\setlength{\parindent}{0em}
+
+\title{\texttt{lm.br}: An \textsf{R} Package for Broken Line
+Regression}
+\author{Marc Adams}
+\date{}
+
+\usepackage[authoryear,round,longnamesfirst]{natbib}
+
+\begin{document}
+\bibliographystyle{abbrvnat}
+
+\maketitle
+
+\begin{abstract}
+The \textsf{R} package \texttt{lm.br} delivers exact tests and
+exact confidence regions for a changepoint in linear or
+multiple linear regression.  This package implements the
+likelihood theory of conditional inference.  Examples 
+demonstrate its use and show some properties 
+of the broken-line models.
+\end{abstract}
+
+
+\section{Theory}
+A broken-line model consists of two straight lines joined at a
+changepoint.  Three variants are
+\begin{equation} \label{model1} 
+y_i = \alpha + \beta(x_i-\theta)_{-} 
++ \beta{}'(x_i-\theta)_{+} + e_i
+\end{equation} 
+\begin{equation} \label{model2} 
+y_i = \alpha + \beta(x_i-\theta)_{-} + e_i 
+\end{equation} 
+\begin{equation} \label{model3} 
+y_i = \beta(x_i-\theta)_{-} + e_i
+\end{equation} 
+denoting $a_{-}=min(a,0)$ and $a_{+}=max(a,0)$, where 
+$e \sim N(0,\sigma^{2}\Sigma)$.  Parameters $\theta$, $\alpha$, $\beta$, 
+$\beta{}'$, $\sigma$ are unknown but $\Sigma$ is known.  
+Model (2) is a threshold model, while model (3) would apply for 
+a known threshold level.  Inference about a parameter uses
+the assumed model and resulting distribution of a test statistic.\\
+
+A test statistic $D$
+assigns a numeric value to a postulate parameter value, $p_{0}$,
+depending on the model and the observations.  $D(p_{0})$ is itself a
+random variable because it is a function of the random
+observations.  A significance level is the probability that $D$
+could be worse than the observed value,
+$SL(p_{0})  = Pr [ D(p_{0}) > D(p_{0})_{obs} ]$, based on the
+model.  The set of postulate values such that  $SL > \alpha$
+is a $100(1-\alpha)\%$ confidence region for the true parameter value.\\
+
+Conditional inference incorporates sufficient statistics that
+account for the other, unknown parameters.  This refinement
+determines the exact distribution of a test statistic, even for
+small data sets.  Student's $t$, for example, is the
+distribution of a sample mean conditional on a sufficient
+statistic for the variance.  See 
+\citet[ch. 15]{kalbfleisch:1985}, \citet[ex. 5.1, 5.5]{cox+hinkley:1974}.\\
+
+The likelihood-ratio is an optimal test statistic.  
+\citet{knowles+siegmund:1989} examined an exact significance test, using 
+likelihood-ratio, for the null hypothesis of a single line versus 
+a broken line.  \citet{knowles+siegmund+zhang:1991} derived the conditional 
+likelihood-ratio (CLR) significance tests for the non-linear
+parameter in semilinear regression.  \citet{siegmund+zhang:1994} 
+applied these tests to get exact confidence intervals for the
+changepoint  $\theta$  in models (1) and (2), and exact confidence
+regions for the two-parameter changepoint  $(\theta, \alpha)$  
+in model (2).  \citet{knowles+siegmund+zhang:1991} also developed 
+a formula to evaluate these tests rapidly, which \texttt{lm.br} 
+implements.\\
+
+\texttt{lm.br} extends this theory.  Their method derives the conditional 
+likelihood-ratio test for $(\theta, \alpha)$ in model (1).  The
+theory adapts to the case  $\sigma$  known, which is useful for 
+the Normal approximation of a binary random 
+variable \citep[eq. 2.28]{cox+snell:1989}.  And these tests simplify 
+for a postulate changepoint value outside the range of  $x$-values.\\
+
+For comparisons, Approximate-F (AF) is another inference method that is 
+common in nonlinear regression.  The AF method 
+estimates the distribution of a likelihood-ratio statistic by its
+asymptotic $\chi^{2}$ distribution with partial conditioning on a
+sufficient statistic for the variance.  See \citet[sec. 24.6]{draper+smith:1998}.
+Simulations and examples cover all of the above theory.\\
+
+\section{Simulation Tests}
+
+\begin{center}
+\begin{tabular}{rccccc}
+\multicolumn{6}{c}{\textsf{Coverage frequencies of the 95\% confidence interval on 100 arbitrary models}} 
+\rule[-2ex]{0pt}{0ex}\\
+\hline \rule[-2ex]{0pt}{5.5ex}
+  &  &  &  \textbf{CLR} & & \textbf{AF} \\
+   \textbf{10 observations}, & $x_{1}-1 < \theta < x_{10}+1$ &  &
+\textbf{95.0 \textendash\space 95.2} & & 
+\textbf{90.0  \textendash\space  97.5} \\
+\rule[-2ex]{0pt}{5.5ex}
+   \textbf{30 observations}, & $x_{10} < \theta < x_{20}$ &  &
+\textbf{95.0 \textendash\space 95.2} & &  
+\textbf{90.8  \textendash\space  95.0} \\
+\rule[-2ex]{0pt}{0ex}
+  \textbf{100 observations}, & $x_{10} < \theta < x_{20}$ &  &
+\textbf{95.0 \textendash\space 95.2} & & 
+\textbf{91.3  \textendash\space  95.0} \\
+\hline
+\end{tabular}
+\end{center}
+
+\medskip
+To give one specific example,  coverage frequency is  95.2\%  by
+CLR  but  90.7\%   by  AF  for a first-line slope  -1,
+second-line slope  +0.5,  changepoint $\theta =3$, and  10
+observations
+at  $x$ = (1.0,  1.1,  1.3,  1.7,  2.4,  3.9,  5.7,  7.6,  8.4,
+8.6)  with $\sigma = 1$.\\
+
+A program created the arbitrary models using $U \sim Uniform(0,1)$ with\\
+\begin{tabular}{cccc}
+\rule[-2ex]{0pt}{5.5ex}
+$n = 10$ & $x_{1}$ = 1 & $x_{i} = x_{i-1} + 2U$ for $i>1$ &
+$\theta = x_{1} - 1 + (x_{n}-x_{1}+2)U$ \\
+\rule[-2ex]{0pt}{0ex}
+$\alpha = 0$ & $\beta = -1$ & $\beta{}' = 2 - 2.5U$ & $\sigma =
+0.1 + 2U$ \\
+\end{tabular}
+\\
+or  n= 30  or  n= 100  and  $\theta = x_{10} + (x_{20}-x_{10})U$. 
+For each model, the program generated
+one million sets of random  $y_i = \alpha+\beta(x_i-\theta)_{-
+}+\beta{}'(x_i-\theta)_{+}+\sigma N(0,1)$  and counted how often
+$SL(\theta) > .05$.  These coverage frequencies should be accurate to
+$\pm$0.05\%.
+
+\section{Examples}
+\subsection{Broken Line Regression}
+A broken-line model could fit drinking-and-driving survey 
+results.
+Yearly surveys, taken in different months over the years, were adjusted by 
+a seasonal index based on monthly 
+surveys for a similar question \citep{tirf:1998-2007,camh:2003}.
+The annual surveys asked respondents if in the past 30 days they had 
+driven within two hours after one drink, while the monthly
+surveys asked if in the past 30 days they had driven within one
+hour after two drinks.  Figure \ref{fig:cr} shows the survey results without
+and with seasonal adjustment, and the exact 90\% confidence region
+for a changepoint if the adjustment were valid.
+
+\begin{figure}[htbp]
+\begin{center}
+<< fig=TRUE, height=5, echo=FALSE, results=hide >>=
+library(lm.br)
+log_odds <- c( -1.194, -2.023, -2.285, -1.815, -1.673, -1.444, -1.237, -1.228 )
+year <- c(1998.92, 2001.25, 2002.29, 2003.37, 2004.37, 2005.71, 2006.71, 2007.71)
+VarCov <- matrix(  c(   0.0361, 0, 0, 0, 0, 0, 0, 0,
+          0, 0.0218, 0.0129, 0, 0, 0, 0, 0,
+          0, 0.0129, 0.0319, 0, 0, 0, 0, 0,
+          0, 0, 0, 0.0451, 0.0389, 0, 0, 0,
+          0, 0, 0, 0.0389, 0.0445, 0, 0, 0,
+          0, 0, 0, 0, 0, 0.0672, 0.0607, 0.0607,
+          0, 0, 0, 0, 0, 0.0607, 0.0664, 0.0607,
+          0, 0, 0, 0, 0, 0.0607, 0.0607, 0.0662 ) ,  
+            nrow = 8, ncol = 8 )
+dd <- lm.br( log_odds ~ year, w = VarCov, inv = TRUE, var.known = TRUE )
+bounds <- dd$cr( CL=0.90, out='v')
+n <- length(dd$x1)
+nbd <- nrow(bounds)
+title <- "Exact 90% confidence region for changepoint"
+x <- y <- matrix( NA, max(n,nbd), 4 )
+x[1:n,1] <- dd$x1
+y[1:n,1] <- dd$y
+x[1:nbd,2:3] <- bounds[,1]
+y[1:nbd,2:3] <- bounds[,2:3]
+x[1:n,4] <- dd$x1
+y[1:n,4] <- c( -1.4571, -1.60646, -1.65565, -1.67545, -1.53292,
+                   -1.76094, -1.55349, -1.54487 )
+matplot( x, y, 
+   type=c('p','l','l','p'), pch=c(15,0), lty='solid', col='black',
+   lwd=2, cex=1.5, main=title, xlab=dd$x1nm, ylab=dd$ynm )
+@
+\caption{\label{fig:cr}Drinking-and-driving surveys log-odds 
+(blank squares) and log-odds with seasonal adjustment 
+(solid squares) versus year, and the exact 90\% confidence 
+region for a changepoint $(\theta,\alpha)$ by CLR.}
+\end{center}
+\end{figure}
+
+
+Data input, and commands to get confidence intervals for the changepoint, are
+
+<<>>=
+log_odds <-  c( -1.194, -2.023, -2.285, -1.815, -1.673, 
+  -1.444, -1.237, -1.228 )
+year <-  c( 1998.92, 2001.25, 2002.29, 2003.37, 2004.37, 
+  2005.71, 2006.71, 2007.71 )
+VarCov <-  matrix(  c(0.0361,  0,  0,  0,  0,  0,  0,  0,
+  0,  0.0218,  0.0129,  0,  0,  0,  0,  0,
+  0,  0.0129,  0.0319,  0,  0,  0,  0,  0,
+  0,  0,  0,  0.0451,  0.0389,  0,  0,  0,
+  0,  0,  0,  0.0389,  0.0445,  0,  0,  0,
+  0,  0,  0,  0,  0,  0.0672,  0.0607,  0.0607,
+  0,  0,  0,  0,  0,  0.0607,  0.0664,  0.0607,
+  0,  0,  0,  0,  0,  0.0607,  0.0607,  0.0662), nrow=8, ncol=8)
+dd <- lm.br( log_odds ~ year, w= VarCov, inv= T, var.known= T )
+dd$ci( )
+dd$ci( method = "AF" )
+@
+
+The wide difference between the CLR and AF confidence intervals 
+above is due to plateaus in the significance level on end-intervals.  Both 
+the CLR and AF methods give a constant significance level for all
+postulate values $\theta_{0}$ on $[ x_{1}, x_{2} ]$, on $[ x_{n-1}, x_{n} ]$, 
+or outside of $[ x_{1}, x_{n} ]$, in a model (1) with 
+$x_1 < x_2 < ... < x_n$.  (Coverage probability
+on these intervals is still exactly 95\% by CLR, as the simulation 
+tests show.)  The inference assumes that any line slope is possible, extending 
+to an instantaneous drop near December 1998 in this example. 
+
+\subsection{Multiple Regression}
+\texttt{lm.br} can test for a changepoint in multiple
+linear regression.  \texttt{lm.br}  tests for a change in one coefficient
+of the regression model, assuming continuity.  It does
+not test for an arbitrary structural change that might include changes of
+two or more coefficients or discontinuity.\\
+
+\citet{liu+wu+zidek:1997} suggested a changepoint for the 
+coefficient of car weight in a linear fit of miles-per-gallon 
+against weight and horsepower, for 38 cars of 1978-79 models.  One 
+of \textsf{R}'s included datasets is the ratings for 32 cars, 
+1973-74 models.  Analysis of this 1973-74 dataset by the exact conditional 
+likelihood-ratio inference also shows evidence for a changepoint:
+<<>>=
+lm.br( mpg ~ wt + hp, data = mtcars )
+@
+
+For multiple regression, 
+\texttt{lm.br} applies an orthogonal transformation to a canonical model  
+\citep{siegmund+zhang:1994}.  One way to see how this method works is formulaic.  The composite likelihood-ratio statistic uses optimal values for unknown parameters.  A canonical model lets these optimal coefficients of linear terms reduce their correspondent errors to zero always.  Thus they have no effect on inference, so the algebra can omit them.  This elimination reduces a multiple-predictor model to a single-predictor model.  See
+\citet[ch. 6]{hoffman+kunze:1971}, \citet[sec. 7.1]{lehmann:2005}.
+
+\section{Summary}
+If a broken line with Normal errors represents the relationship between a factor and responses, then \texttt{lm.br} solves the inference step for the changepoint.  This package uses the technique of conditional inference to allow for the other, unknown terms in the model.  
+Fitting a broken line can reveal the plausible interval for a changepoint, although practical cause-effect relations usually have 
+a smooth transition.  Any statistical analysis should examine the fit of the model and the error distribution with graphs and significance tests, 
+interpret results, and consider adjustments to the model or alternate models.
+
+
+
+\bibliography{lm.br}
+
+
+\end{document}
+

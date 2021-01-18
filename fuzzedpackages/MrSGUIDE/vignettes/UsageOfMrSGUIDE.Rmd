@@ -1,0 +1,312 @@
+---
+title: "Usage of MrSGUIDE Package"
+author: "Peigen Zhou"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Usage of MrSGUIDE Package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE, fig.align='center', fig.width=18, fig.heigh=9)
+```
+
+# Introduction to `MrSGUIDE`
+
+The `MrSGUIDE`package stands for *M*ultiple *R*esponses *S*ubgroup identification using `GUIDE` style algorithm. It aims to provide a statistical analysis for subgroup identification. 
+
+The original [GUIDE](http://pages.stat.wisc.edu/~loh/guide.html) algorithm is developed by Professor Wei-Yin Loh, which has more features. `MrSGUIDE` only uses `GUIDE` `Gi` for subgroup identification for single and multiple responses. If you like `MrSGUIDE` and want to explore more, please try [GUIDE](http://pages.stat.wisc.edu/~loh/guide.html)!
+
+The general analysis pipeline is as follows:
+
+1. Construct a regression tree
+2. Provide bootstrap confidence interval for estimated treatment effect within tree node
+3. Visualize the tree and treatment effect
+4. Provide variable importance
+
+## Installation
+
+`MrSGUIDE` can be installed from GitHub repository "BaconZhou/MrSGUIDE" now. And users need to download and install `devtool` first from CRAN by the following command:
+
+```{r, eval=FALSE}
+install.packages("devtools")
+```
+
+After `devtools` has been installed, we can install `MrSGUIDE` package using commands:
+
+```{r, eval=FALSE}
+library(devtools)
+install_github("BaconZhou/MrSGUIDE")
+```
+
+## A quick example
+
+Here we provide a quick example to illustrate the typical usage of `MrSGUIDE` package. The example is demonstrated through a simulated dataset.
+
+We first load the package and generate a simulated dataset. Here our sample size is 400, the number of numerical features is 3 and number of categorical features is 2. The treatment assignment is binary with equal probability. There are two outcomes.
+
+\begin{align*}
+    y_1 &= x_1 + I(Z=1)I(\text{gender}==\text{Female}) + \epsilon_1 \\
+    y_2 &= x_2 + 2I(Z=1)I(\text{gender}==\text{Female}) + \epsilon_2 \\
+    \epsilon_1 &\sim N(0, 1),\quad \epsilon_2 \sim N(0, 1)
+\end{align*}
+
+```{r quick-example-data}
+set.seed(1234)
+
+N = 400
+np = 3
+
+numX <- matrix(rnorm(N * np), N, np) ## numerical features
+gender <- sample(c('Male', 'Female'), N, replace = TRUE)
+country <- sample(c('US', 'UK', 'China', 'Japan'), N, replace = TRUE)
+
+z <- sample(c(0, 1), N, replace = TRUE) # Binary treatment assignment
+
+y1 <- numX[, 1] + 1 * z * (gender == 'Female') + rnorm(N)
+y2 <- numX[, 2] + 2 * z * (gender == 'Female') + rnorm(N)
+
+train <- data.frame(numX, gender, country, z, y1, y2)
+role <- c(rep('n', 3), 'c', 'c', 'r', 'd', 'd')
+```
+
+Specifically, `numX` contains all numerical features. `gender` and `country` are two categorical features. `z` is the binary treatment assignment and `y1` and `y2` are two responses. `train` is the data frame contains all of them. `role` is a vector provide the role of each column.
+
+Using `MrSFit()`, we could fit a regression tree to the simulated dataset. Here we fit a regression tree with the default option provided by `MrSFit()`. 
+
+```{r quick-example-fit}
+library(MrSGUIDE)
+mrsobj <- MrSFit(dataframe = train, role = role)
+```
+
+`mrsobj` is the return object from `MrSFit()`, it could then be passed to other functions in the `MrSGUIDE` package. For example `printTree()` will print the tree result. 
+
+```{r quick-example-print}
+printTree(mrsobj = mrsobj)
+```
+
+You can also set `detail = FALSE` to hide the detail.
+
+```{r quick-example-print-detailF}
+printTree(mrsobj = mrsobj, details = FALSE)
+```
+
+`MrSGUIDE` also provide `plotTree()` function which used following packages:
+
+- `visNetwork`
+- `ggplot2`
+
+The return object is a list contains three items:
+
+1. A tree result `treePlot` (require, `visNetwork`)
+2. A data frame used for plotting `nodeTreat`
+3. A node statistic plot `trtPlot` (require, `ggplot2`)
+ 
+```{r check-packages, eval=FALSE}
+for (pack in c('visNetwork', 'ggplot2')) {
+  if(pack %in% rownames(installed.packages()) == FALSE) {install.packages(pack)}
+}
+```
+
+```{r quick-example-plot}
+plotObj <- plotTree(mrsobj = mrsobj)
+```
+
+```{r quick-example-plot-treeplot}
+plotObj$treeplot
+```
+
+The node id and sample size are shown in the terminal node. Each split variable is plotted inside node. 
+
+```{r quick-example-plot-nodeTreat}
+plotObj$nodeTreat
+```
+
+```{r quick-example-plot-trtPlot, fig.align='center', fig.width=20}
+plotObj$trtPlot
+```
+
+`MrSGUIDE` also provide `predictTree()` function, which can be used to predict node id also the outcomes.
+
+```{r predictTree}
+newx <- train[1,]
+predictNode <- predictTree(mrsobj = mrsobj, newx, type='node')
+predictY <- predictTree(mrsobj = mrsobj, newx, type='outcome')
+predictY
+```
+
+To display the tree into LaTex, `MrSGUIDE` also export a function `writeTex()` which can write the tree into LaTex format.
+
+```{r}
+writeTex(mrsobj, file = 'test.tex')
+```
+
+The `test.tex` file should be compiled via `LaTex + dvips + ps2pdf`.
+
+```{bash, eval=FALSE}
+$ cat test.tex
+```
+
+```{latex, eval=FALSE}
+\documentclass[12pt]{article}
+ %File creation date:2020-05-07 12:08:51
+\usepackage{pstricks,pst-node,pst-tree}
+\usepackage{geometry}
+\usepackage{lscape}
+\pagestyle{empty}
+\begin{document}
+%\begin{landscape}
+\begin{center}
+\psset{linecolor=black,tnsep=1pt,tndepth=0cm,tnheight=0cm,treesep=.8cm,levelsep=50pt,radius=10pt}
+   \pstree[treemode=D]{\Tcircle{ 1 }~[tnpos=l]{\shortstack[r]{\texttt{\detokenize{gender}}\\$\in$ \{ Female, NA\}}}
+   }{
+       \Tcircle[fillcolor=red,fillstyle=solid]{ 2 }~{\makebox[0pt][c]{\em 200 }}
+       \Tcircle[fillcolor=yellow,fillstyle=solid]{ 3 }~{\makebox[0pt][c]{\em 200 }}
+   }
+\end{center}
+%\end{landscape}
+\end{document}
+```
+
+```{bash, eval=FALSE}
+$ latex test.tex
+$ dvips test.dvi
+$ ps2pdf test.ps
+```
+
+This quick example aimed at provide a general understanding of what `MrSGUIDE` is capable of doing. In the rest of the chapter, we will show more instruction about how to use the function step by step.
+
+## Arguments
+
+Before feeding the data into `MrSFit()`, users first need to learn how `MrSFit()` consider the **role* of each variables.
+
+### Data arguments
+
+`MrSFit()` takes two key arguments for dataset, first is `dataframe`, second is `role`. The dataframe should be an R `data.frame()`. `role` tells `MrSFit()` the function of each column in `dataframe`. Current `role` has following type:
+
+- **c** **C**ategorical variable used for splitting only.
+- **d** **D**ependent variable. It there is only one **d** variable, `MrSFit()` will do single response subgroup identification.
+- **f** Numerical variable used only for **f**itting the regression models in the nodes of tree. It will not used for splitting the nodes.
+- **h** Numerical variable always **h**olds for fitting the regression models in the nodes of tree.
+- **n** **N**umerical variable used both for splitting the nodes and for fitting the node regression models.
+- **r** Categorical treatment (**R**x) variable used only for fitting the linear models in the nodes of tree. It not used for splitting the nodes.
+- **s** Numerical variable only used for **s**plitting the node. It will not be used in for fitting the regression model.
+
+Also, user should make `role` is a vector with the same number of columns as `dataframe`. In the above example, the `train` is a `data.frame()` object with 8 columns, and `role` also has the same number of values.
+
+```{r}
+NCOL(train) == length(role)
+```
+
+### Model arguments
+
+#### `bestK`
+
+In terms of the modeling aspect, the most important argument to feed into the `MrSFit()` function is `bestK`. The `bestK` is the number of variable used for stepwise selection. `MrSFit()` can fit two types of model.
+
+The first model with parameter `bestK = 0` only regress treatment assignment inside each terminal node.
+
+\begin{equation}
+    y_j = \beta_{j0} + \sum\limits_{z = 2}^{G}\beta_{jz}I(Z=z), i = 1, \dots, J.
+\end{equation}
+
+```{r bestK-0}
+mrsobj <- MrSFit(dataframe = train, role = role, bestK = 0)
+plotObj <- plotTree(mrsobj)
+plotObj$treeplot
+```
+
+
+The second model with parameter `bestK = 1` will include one best linear regressor which is selected from variables with role in **f** and **n**. If you choose `bestK = 2`, `MrSFit()` will choose at most two variables inside each terminal node with stepwise regression based on BIC criterion. For example, when `bestK = 1`, `MrSFit()` fits model:
+
+\begin{equation}
+    y_j = \beta_{j0} + \beta_{j*}X_{j*} + \sum\limits_{z = 2}^{G}\beta_{jz}I(Z=z), i = 1, \dots, J,
+\end{equation}
+where $X_{j*}$ can be different for each $Y_j$.
+
+```{r bestK-1}
+mrsobj <- MrSFit(dataframe = train, role = role, bestK = 1)
+plotObj <- plotTree(mrsobj)
+plotObj$treeplot
+```
+
+
+#### `bootNum` and `alpha`
+
+The second important argument to feed into the `MrSFit()` is `bootNum`. It is used for control the number of bootstrap time to calibrate the confidence interval length. `alpha` is the desired alpha level of the interval. The detail algorithm can be found in Loh ().
+
+In general, we recommend run `bootNum = 1000` to calibrate the confidence interval of treatment effect estimators. But it will take more times. For illustration purpose, here we set `bootNum = 50` and `alpha = 0.05`.
+
+```{r boot}
+mrsobj <- MrSFit(dataframe = train, role = role, bestK = 1, bootNum = 50, alpha = 0.05)
+plotObj <- plotTree(mrsobj)
+plotObj$treeplot
+```
+```{r boot-nodetreat}
+plotObj$nodeTreat
+```
+
+
+```{r plot-boot}
+plotObj$trtPlot
+```
+
+
+### Tree arguments
+
+`MrSFit()` has arguments to control tree growing and pruning. 
+
+#### `maxDepth`, `minTrt` and `minData`
+
+The tree depth is controlled by `maxDepth` with default value `maxDepth = 5`. You can also change `maxDepth = 1` with only a root node.
+
+```{r maxDepth-1}
+mrsobj <- MrSFit(dataframe = train, role = role, bestK = 1, maxDepth = 1)
+plotObj <- plotTree(mrsobj)
+plotObj$treeplot
+```
+
+`minTrt` controls inside a node, how many data should each treatment levels contains. For example, if we set `minTrt = 30`, the terminal nodes of resulting tree have both 30 observations in `Z=0` and `Z=1`
+
+```{r minTrt-30}
+mrsobj <- MrSFit(dataframe = train, role = role, bestK = 0, minTrt = 30)
+plotObj <- plotTree(mrsobj)
+plotObj$treeplot
+```
+
+`minData` controls how many data points should include inside each terminal nodes. For example, if we set `minData = 50`, each terminal node contains at least 50 observations.
+
+```{r minData-50}
+mrsobj <- MrSFit(dataframe = train, role = role, bestK = 0, minData = 50)
+plotObj <- plotTree(mrsobj)
+plotObj$treeplot
+```
+
+#### `CVFolds` and `CVSE`
+
+`MrSFit()` uses cross-validation for tree pruning. `CVFolds` controls the number of cross-validation, and `CVSE` is a parameters which control the error allowance. If we set `CVFolds = 0`, `MrSFit()` will not perform cross-validation for pruning.
+
+```{r CVFolds-0}
+mrsobj <- MrSFit(dataframe = train, role = role, 
+                 bestK = 0, maxDepth = 5, minTrt = 1, 
+                 minData = 2, 
+                 CVFolds = 0)
+plotObj <- plotTree(mrsobj)
+plotObj$treeplot
+```
+
+In general, we recommend setting `CVSE=0.5` and `CVFolds=10`, a smaller `CVSE` will provide a larger tree result.
+
+```{r CVSE}
+mrsobj <- MrSFit(dataframe = train, role = role, 
+                 bestK = 0, maxDepth = 5, minTrt = 1, 
+                 minData = 2, CVSE = 0.5,
+                 CVFolds = 10)
+plotObj <- plotTree(mrsobj)
+plotObj$treeplot
+```
+
+It is the basic usage of the package.

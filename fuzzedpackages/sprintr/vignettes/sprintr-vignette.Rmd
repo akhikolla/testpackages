@@ -1,0 +1,83 @@
+---
+title: "Using the sprintr package"
+author: "Guo Yu"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+#output: pdf_document
+vignette: >
+  %\VignetteIndexEntry{Using the sprintr package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+The `sprintr` package contains the implementations of a computationally efficient method, called sprinter, to fit large interaction models based on the reluctant interaction selection principle. The details of the method can be found in [Yu, Bien, and Tibshirani (2019) *Reluctant interaction modeling*](https://arxiv.org/abs/1907.08414).
+In particular, `sprinter` is a multi-stage method that fits the following pairwise interaction model:
+$$
+y = \sum_{j = 1}^p X_j \beta^\ast_j + \sum_{\ell \leq k} X_{\ell} X_k \gamma^\ast_{\ell k} + \varepsilon.
+$$
+This document serves as an introduction of using the package with a simple simulated data example.
+
+## Data simulation
+We consider the following simple simulation setting, where $X \sim N(\mathbf{0}, \mathbf{I}_p)$. There are two non-trivial main effects $\beta_1 = 1$, $\beta_2 = -2$, and $\beta_j = 0$ for $j > 2$. The two important interactions are $X_1 * X_3$ with $\gamma_{13} = 3$, and $X_4 * X_5$ with $\gamma_{45} = -4$. With $\varepsilon \sim N(0, 1)$, the following code simulates $n = 100$ observation from the model above with $p = 200$.
+```{r}
+library(sprintr)
+set.seed(123)
+n <- 100
+p <- 200
+x <- matrix(data = rnorm(n * p), nrow = n, ncol = p)
+y <- x[, 1] - 2 * x[, 2] + 3 * x[, 1] * x[, 3] - 4 * x[, 4] * x[, 5] + rnorm(100)
+```
+
+
+## Using `sprinter` function
+The function `sprinter` implements the sprinter method (please note that the function name `sprinter` is different from the package name `sprintr`), which involves the following three main steps:
+
+- Fit a lasso (with cross-validation) of the response $y$ only on main effects $X$ (if `square = FALSE`) or with both main effects and squared effects $(X, X^2)$ (if `square = TRUE`).
+- Carry out a screening procedure based on the residual from the previous step. The number of the selected candidate interactions is specified by `num_keep` .
+- With a path of tuning parameter `lambda`, fit a lasso of the response on main effects, squared effects (if `square = TRUE`), and selected interactions from the previous step. 
+
+
+There are two tuning parameters: `num_keep` (used in Step 2) and `lambda` (used in Step 3). If `num_keep` is not specified, it will then be set to $n / \lceil \log n \rceil$ (see, e.g., [Fan & Lv (2008)](https://orfe.princeton.edu/~jqfan/papers/06/SIS.pdf)). 
+If `lambda` is not specified, then `sprinter` would compute its own path of tuning parameter values based on the number of tuning parameters (`nlam`) and the range of the path (`lam_min_ratio`).
+```{r}
+mod <- sprinter(x = x, y = y, square = FALSE, nlam = 100, lam_min_ratio = 0.01)
+```
+
+The output of `sprinter` is a `S3` object including several useful components. In particular, it involves a matrix `idx` that represents the index pairs of all variables considered in Step 3:
+```{r}
+mod$idx[(p + 1) : nrow(mod$idx), ]
+```
+Since Step 3 of `sprinter` always includes the main effects, `mod$idx[(p + 1): nrow(mod$idx), ]` contains the indices of all the selected interactions from Step 2. The two columns of this output represents the index pair $(\ell, k)$ of a selected interaction $X_\ell * X_k$, where $\ell \leq k$.
+Note that here the last two rows are the true interactions $X_1 * X_3$ and $X_4 * X_5$. If the first entry of an index pair is zero, i.e., $(\ell = 0, k)$, then it represents a main effect $X_k$.
+
+The output `mod$coef` is a `nrow(mod$idx)`-by-`length(mod$lambda)` matrix. Each column of `mod$coef` is a vector of estimate of all variable coefficients considered in Step 3 corresponding to one value of the lasso tuning parameter `lambda`. For example, for the 30-th tuning parameter, we have the corresponding coefficient estiamte:
+```{r}
+estimate <- mod$coef[, 30]
+cb <- cbind(mod$idx, estimate)
+cb[cb[, 3] != 0, ]
+```
+
+## Using cross-validation with `cv.sprinter`
+The function `cv.sprinter()` performs cross-validation to select the value of lasso tuning parameter `lambda` used in Step 3, while holding the value of `num_keep` fixed.
+```{r}
+mod_cv <- cv.sprinter(x = x, y = y, square = FALSE, nlam = 100, lam_min_ratio = 0.01)
+```
+The output of `cv.sprinter` is a `S3` object. The most intersting information is `mod_cv$compact`, which is a matrix of three columns.
+The first two columns show the index pairs of all variables finally selected by the lasso in Step 3, and the last column is the coefficient estimate corresponding to that selected variable.
+```{r}
+mod_cv$compact
+```
+We see (from the first two rows and the last two rows) that the fit selected by cross-validation includes all the four important variables in the model, with relatively accurate estimates of their coefficients.
+
+Finally, there is a `predict` function for the `S3` object returned by `cv.sprinter` that computes the prediction for a new data matrix of main effects:
+```{r}
+newdata <- matrix(rnorm(20 * p), nrow = 20, ncol = p)
+pred <- predict(mod_cv, newdata = newdata)
+```

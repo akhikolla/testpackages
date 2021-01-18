@@ -1,0 +1,172 @@
+---
+title: "facilitation:introduction"
+author: "M. Salles"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{A introduction to the facilitation package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+# An introduction to the `facilitation` package
+
+The package `facilitation` was created to simulate the population dynamics of plant species that
+receive facilitation from other species on the early stages of development. The package evolved to allow simulations with a larger
+number of species, and varied types of interactions. Currently, it allows for any number of species,
+each with any number of life stages, where each stage has it's own death rate, growth rate (except
+for the last stage of each species, of course), reproduction rates, and interaction radius,
+and where each stage can affect each other stage. The interactions may affect death, growth or reproduction
+rates positively or negatively, with any value.
+
+In addition to the simulation proper, this package includes functions for extracting and
+plotting relevant information from the simulation results, as well as a few basic functions
+to produce matrix population models that can be compared with the simplest simulations.
+
+Please note that, as the package implements the simulation in continuous times, the parameters for controlling the
+processes of growth, death and reproduction are expressed as rates, and not probabilities, and as such may assume
+values outside the [0,1] interval.
+
+The main function in this package is `community`, the function used to run the simulations.
+The simulation was implemented in C++ using the package Rcpp, and is accessible from R only through this one function. 
+
+# Running simulations
+
+## Example 1: the simplest example
+
+The simplest simulation you can run would be of a single population with only one stage.
+Still, the individuals of this populations should be able to die and to reproduce. Let's set
+death rate to 1, reproduction rate to 2, and growth rate, necessarily, to 0. This model
+corresponds to a simple malthusian (exponential) growth of rate r=1.
+
+```r
+### parameter are D G R
+rates <- matrix(c(1,0,2),nrow=1) # parameters must be in a matrix
+results <- community(maxtime=2,numstages=1,parameters=rates,init=10)
+```
+The return value is a list containing all the parameters used and the data resulting from the simulation, with one line per individual at each life stage, with their (x,y) position, id, time at which they were born or grew to that stage and time at which they died or grew to the next stage.
+
+## Example 2: a structured species
+
+The below code creates a simulation with 3 lifestages, with facilitation reducing the death rate of the second stage, and competition between saplings and between adults, runs it up to time 10, and stores the result in a variable called `results`. In this case, the facilitator has no dynamics.
+
+The first thing to do is to determine the rates and interaction radii, i.e., the distances up to which the individuals
+can have effect on others:
+
+```r
+numstages <- 3
+deathrates <- c(2, 0.2, 0.2)     # death rates for seed, sapling and adult
+growthrates <- c(1, 0.2)         # transition rates seed-->sapling and sapling-->adult
+reproductionrate <- 10           # reproduction rate (only adult)
+radius <- c(0,0.5,2)             # interaction radii per stage
+dispersalradius <- 2	         # average distance a seed falls from the parent (distance is exponentially distributed)
+param <- create.parameters(D=deathrates,G=growthrates,R=reproductionrate,dispersal=dispersalradius,radius=radius) # create the parameter object
+param <- rbind(param,c(0,0,0,0,2)) # parameters for facilitator (no dynamics, radius 2)
+
+init <- c(1,1,10,20)             # initial pop. sizes for the 3 stages plus the facilitator species
+effects <- c(0,0,0,0,            # effects over seeds (none)
+            0,-.5,0,+1,          # effects over seedlings (competition and facilitation)
+            0,0,-0.2,0,          # effects over adults (competition with adults)  
+            0,0,0,0)             # effects over facilitator (none)
+maxt <- 10                       # time up to which the simulation shall run
+h <- 50                          # arena height
+w <- 50                          # arena width
+
+results <-
+community(maxt,c(numstages,1),param,init,interactionsD=effects,height=h,width=w)
+```
+## Example 3: more species
+The below code creates a simulation with two species, with 3 and 2 lifestages respectively, with facilitation reducing the death rate of the juvenile stages, and intra and inter-specific competition; runs it up to time 10, and stores the result in the `results` variable.
+
+```r
+### Two species competition+facilitation
+maxt <- 10
+
+nstages <- c(3,2)
+init <- list(c(100,0,10),c(100,30))
+### parameter matrix has one stage per row
+###               D G R d r
+param <- matrix(c(2,1,0,0,0, 1,1,0,0,.1, .5,0,6,2,1, 1,1,0,0,.2, .5,0,2,2,2), byrow=T, nrow=5) 
+### interaction matrix: positive values represent facilitation, negative ones, competition
+interactD <- matrix(c(0,0,0,0,0, 0,-.1,+.1,-.1,0, 0,0,-.1,0,-.2, ## effects over species 1
+                                0,-.2,+.2,-.1,0, 0,0,-.2,0,-.1),ncol=5) ## effects over species 2
+### let's also add effects over growth rates: adults limit growth
+interactG <- matrix(c(0,0,0,0,0, 0,0,-.2,0,-.5, 0,0,0,0,0, ## effects over species 1
+                                0,0,-.2,0,-.5, 0,0,0,0,0),ncol=5) ## effects over species 2
+results <-
+community(maxt,nstages,param,init,interactionsD=interactD,interactionsG=interactG)
+```
+
+## Example 4: stress gradient
+
+The script below ilustrates the use of stress gradient effects. The fifth parameter in the
+parameter matrix corresponds to the maximum stress effect, that is, the maximum value by
+which the individuals death rates will be increased. The death rate will increase linearly
+from 0 to the max stress effect value, from left to right in the arena.
+
+In this example we have one species with three stages, and the death rates of juveniles 
+varies from 0 when x=0 to 4 when x=100. 
+Mathematically, in the exact middle where death rate is 2, about one third of seedlings would become juveniles, and one half of those would become adults, 
+and each adult would produce on average 6 new seedlings, so that the population would 
+neither grow nor diminish (r=0)[1]. So on the left half of the plot the population is 
+viable, and on the right half, it's not. Notice that adults are not affected neither by 
+stress nor competition.
+
+
+```r
+maxt<-40 # this is gonna take a while
+rates <- matrix(c(0,1,0,2,.7,4, 1,1,0,2,1.2,0, 1,0,6,2,2,0),nrow=3,byrow=T) # maximum stress effect is 4 for stage 1 and 0 for stages 2 and 3
+results5 <- community(maxtime=maxt,numstages=3,parameters=rates,init=c(40,0,0),
+                      interactionsD=matrix(c(-2,0,0, 0,0,0, 0,0,0),3)) # competition is only between seedlings
+```
+See the scripts in the examples directory (available on [GitHub](https://github.com/Lobz/facilitation/tree/master/examples)) for a few more examples.
+
+# Showing the results
+
+You can plot the actual individuals in space in an animation with `spatialanimation`, which invokes
+package `animation`.
+```r
+times <- seq(0,results$maxtime,length.out=20)         # array of times of interest
+spatialanimation(results,times,interval=0.1,movie.name="sim.gif") 
+```
+
+There is also a shorthand if you want a snapshot of a given point in time:
+```r
+plotsnapshot(results,t=6.25)
+```
+
+You may calculate the abundances through time:
+```r
+times <- seq(0,results$maxtime,length.out=100)         # array of times of interest
+ab <- abundance.matrix(results,times)
+```
+
+Having an abundance matrix, you can plot your population in a stackplot. Obs.: the stackplot makes
+most sense if you plot only one species at a time, so let's plot the columns 1:3, ie, species 1.
+```r
+stackplot(ab[,1:3])
+```
+
+You can also plot it in a logarithmic scale to better visualize the growth rate of the species:
+```r
+stackplot(ab[,1:3],log.y=T)
+```
+
+Note that you can choose as much detail in your abundance matrix as you'd like, changing the `times` parameter. Compare:
+```r
+stackplot(abundance.matrix(results,seq(0,maxt,length.out=20))[,1:3])
+stackplot(abundance.matrix(results,seq(0,maxt,length.out=200))[,1:3])
+```
+
+The package also includes functions to plot the expected abundances according to a linear differential model. To produce the matrix corresponding to the ODE and calculate the solution (that is, the matrix exponential), run the following:
+```r
+mat <- mat.model(results)[[1]]
+so <- solution.matrix(p0=init[1:3], M=mat, times=times)
+```
+
+You can also plot the results (plot the whole matrix since there is only one species this time):
+```r
+stackplot(so)
+```
+
+Note that this is the analytical solution to the ODE model that corresponds to the structured population in the *absence of interactions*.

@@ -1,0 +1,82 @@
+---
+title: "Using Binary Dosage files"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Using Binary Dosage files}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(BinaryDosage)
+```
+The following routines are available for accessing information contained in binary dosage files
+
+- <span style="font-family:Courier">getbdinfo</span>
+- <span style="font-family:Courier">bdapply</span>
+- <span style="font-family:Courier">getsnp</span>
+
+## getbdinfo
+
+The <span style="font-family:Courier">getbdinfo</span> routine returns information about a binary dosage file. For more information about the data returned see [Genetic File Information](geneticfileinfo.html). This information needs to be passed to <span style="font-family:Courier">bdapply</span and <span style="font-family:Courier">getsnp</span> routines so it can read the binary dosage file.
+
+The only parameter used by <span style="font-family:Courier">getbdinfo</span> is <span style="font-family:Courier">bdfiles</span>. This parameter is a character vector. If the format of the binary dosage file is 1, 2, or 3, this must be a character vector of length 3 with the following values, binary dosage file name, family file name, and map file name. If the format of the binary dosage file is 4 then the parameter value is a single character value with the name of the binary dosage file.
+
+The following code gets the information about the binary dosage file *vcf1a.bdose*.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+bd1afile <- system.file("extdata", "vcf1a.bdose", package = "BinaryDosage")
+bd1ainfo <- getbdinfo(bdfiles = bd1afile)
+```
+
+## bdapply
+
+The <span style="font-family:Courier">bdapply</span> routine applies a function to all SNPs in the binary dosage file. The routine returns a list with length equal to the number of SNPs in the binary dosage file. Each element in the list is the value returned by the user supplied function. The routine takes the following parameters.
+
+- <span style="font-family:Courier">bdinfo</span> - list with information about the binary dosage file returned by <span style="font-family:Courier">getbdinfo</span>.
+- <span style="font-family:Courier">func</span> - user supplied function to be applied to each SNP in the VCF file.
+- <span style="font-family:Courier">...</span> - additional parameters needed by the user supplied function
+
+The user supplied function must have the following parameters.
+
+- <span style="font-family:Courier">dosage</span> - A numeric vector with the dosage values for each subject.
+- <span style="font-family:Courier">p0</span> - A numeric vector with the probabilities the subject has no alternate alleles for each subject.
+- <span style="font-family:Courier">p1</span> - A numeric vector with the probabilities the subject has one alternate allele for each subject.
+- <span style="font-family:Courier">p2</span> - A numeric vector with the probabilities the subject has two alternate alleles for each subject.
+
+The user supplied function can have other parameters. These parameters need to passed to the <span style="font-family:Courier">bdapply</span> routine.
+
+There is a function in the <span style="font-family:Courier">BinaryDosage</span> package named <span style="font-family:Courier">getaaf</span> that calculates the alternate allele frequencies and is the format needed by <span style="font-family:Courier">vcfapply</span> routine. The following uses <span style="font-family:Courier">getaaf</span> to calculate the alternate allele frequency for each SNP in the *vcf1a.bdose* file using the <span style="font-family:Courier">bdapply</span> routine.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+aaf <- unlist(bdapply(bdinfo = bd1ainfo, func = getaaf))
+
+altallelefreq <- data.frame(SNP = bd1ainfo$snps$snpid, aafcalc = aaf)
+knitr::kable(altallelefreq, caption = "Information vs Calculated aaf", digits = 3)
+```
+
+## getsnp
+
+The <span style="font-family:Courier">getsnp</span> routine return the dosage and genotype probabilities for each subject for a given SNP in a binary dosage file.
+
+The routine takes the following parameters.
+
+- <span style="font-family:Courier">bdinfo</span> - list with information about the binary dosage file returned by <span style="font-family:Courier">getbdinfo</span>.
+- <span style="font-family:Courier">snp</span> - the SNP to return information about. This can either be the index of the SNP in the binary dosage file or its SNP ID.
+- <span style="font-family:Courier">dosageonly</span> - a logical value indicating if only the dosage values are returned without the genotype probabilities. The default value is TRUE indicating that only the dosage values are returned.
+
+The following code returns the dosage values and the genotype probabilities for SNP 1:12000:T:C from the *vcf1a.bdose"
+binary dosage file.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+snp3 <- data.frame(getsnp(bdinfo = bd1ainfo, "1:12000:T:C", FALSE))
+
+knitr::kable(snp3[1:20,], caption = "SNP 1:12000:T:C", digits = 3)
+```

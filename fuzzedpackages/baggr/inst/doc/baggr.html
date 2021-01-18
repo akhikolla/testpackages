@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<meta name="author" content="Rachael Meager, Witold Wiecek" />
+
+<meta name="date" content="2020-02-27" />
+
+<title>Aggregating Average Treatment Effects with baggr</title>
+
+
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css" data-origin="pandoc">
+a.sourceLine { display: inline-block; line-height: 1.25; }
+a.sourceLine { pointer-events: none; color: inherit; text-decoration: inherit; }
+a.sourceLine:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode { white-space: pre; position: relative; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+code.sourceCode { white-space: pre-wrap; }
+a.sourceLine { text-indent: -1em; padding-left: 1em; }
+}
+pre.numberSource a.sourceLine
+  { position: relative; left: -4em; }
+pre.numberSource a.sourceLine::before
+  { content: attr(title);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; pointer-events: all; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {  }
+@media screen {
+a.sourceLine::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    for (var j = 0; j < rules.length; j++) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") continue;
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') continue;
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#header {
+text-align: center;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; }  code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Aggregating Average Treatment Effects with baggr</h1>
+<h4 class="author">Rachael Meager, Witold Wiecek</h4>
+<h4 class="date">2020-02-27</h4>
+
+
+<div id="TOC">
+<ul>
+<li><a href="#data-inputs-reported-effects-or-full-individual-level-data-sets">Data inputs: reported effects or full individual-level data sets</a></li>
+<li><a href="#ate-aggregation-models-in-baggr">ATE aggregation models in <em>baggr</em></a></li>
+<li><a href="#models-their-inputs-likelihood-and-priors-a-summary-table">Models, their inputs, likelihood and priors: a summary table</a></li>
+<li><a href="#prior-choice-in-baggr">Prior choice in baggr</a></li>
+<li><a href="#running-the-rubin-model-in-baggr">Running the Rubin Model in <em>baggr</em></a><ul>
+<li><a href="#choosing-priors">Choosing priors</a></li>
+</ul></li>
+<li><a href="#understanding-and-criticising-baggr-model-performance">Understanding and criticising <em>baggr</em> model performance</a></li>
+<li><a href="#measuring-pooling">Measuring “pooling”</a><ul>
+<li><a href="#estimate-of-pooling-in-each-group">Estimate of pooling in each group</a></li>
+<li><a href="#overall-pooling-in-the-model">Overall pooling (in the model)</a></li>
+</ul></li>
+<li><a href="#plotting-and-model-comparison-in-baggr">Plotting and model comparison in <em>baggr</em></a><ul>
+<li><a href="#basic-model-comparison-with-baggr_compare">Basic model comparison with <em>baggr_compare</em></a></li>
+<li><a href="#comparing-existing-models-understanding-impact-of-the-prior">Comparing existing models, understanding impact of the prior</a></li>
+<li><a href="#forest-plots-for-the-models">Forest plots for the models</a></li>
+</ul></li>
+<li><a href="#cross-validation-in-baggr">Cross-validation in <em>baggr</em></a></li>
+<li><a href="#references">References</a></li>
+</ul>
+</div>
+
+<p>This vignette is written for <em>baggr</em> users who want to learn about (Bayesian) meta-analysis concepts and analyse data on typically continuous variables. If you are looking for information that is more specific to binary data, please read <code>vignette(&quot;baggr_binary&quot;)</code>. This article - like the package itself - is still under construction. We encourage your feedback.</p>
+<p><em>baggr</em> (pronounced “bagger” or “badger” and short for Bayesian Aggregator) is a package for aggregating evidence on causal effects measured in several separate and different instances. These instances may be different studies, groups, locations or “sites” however conceptualised. We refer to these separate pieces of evidence as “groups” for the remainder of this vignette When each group is a study, the model is that of <em>meta-analysis</em>, but aggregation of evidence is not limited to this case.</p>
+<p>One of the most basic objects of interest is the <em><a href="http://www.fsb.muohio.edu/lij14/420_paper_Rubin74.pdf">average treatment effect (ATE)</a></em>, the difference in the mean outcome in treatment and control groups; for more information see work by <span class="citation">Rubin (1974)</span>. In meta-analysis we are often interested in the average of this average effect across groups, estimated using all the evidence from all the groups. Consider the case where the evidence in each study or group is generated by comparing the outcomes of treatment and control samples in a randomized experiment. We will ignore any covariate information at the individual or group level for now.</p>
+<p>Consider some outcome of interest <span class="math inline">\(y_{ik}\)</span> such as consumption, income or health outcomes for a household or individual <span class="math inline">\(i = 1,2,...N_k\)</span> in study group <span class="math inline">\(k = 1,2....K\)</span>. Let <span class="math inline">\(Y_k\)</span> denote the <span class="math inline">\(N_k\)</span>-length vector of observed outcomes from group <span class="math inline">\(k\)</span>. Denote the binary indicator of treatment status by <span class="math inline">\(T_{ik}\)</span>, and denote by <span class="math inline">\(T_k\)</span> the <span class="math inline">\(N_k\)</span>-length vector of all treatment status indicators from group <span class="math inline">\(k\)</span>.</p>
+<p>Suppose that <span class="math inline">\(y_{ik}\)</span> varies randomly around its mean <span class="math inline">\(\mu_k + \tau_k T_i\)</span>. In this setting <span class="math inline">\(\tau_k\)</span> is the treatment effect in group <span class="math inline">\(k\)</span>. The random variation in <span class="math inline">\(y_{ik}\)</span> may be the result of sampling variation or measurement error, as in the <span class="citation">Rubin (1981)</span> model, or it may be the result of unmodelled heterogeneity or uncertainty in outcomes for individuals within the group. Allow the variance of the outcome variable <span class="math inline">\(y_{ik}\)</span> to vary across sites, so <span class="math inline">\(\sigma_{y_k}^2\)</span> may differ across <span class="math inline">\(k\)</span>.</p>
+<div id="data-inputs-reported-effects-or-full-individual-level-data-sets" class="section level2">
+<h2>Data inputs: reported effects or full individual-level data sets</h2>
+<p>For average effects aggregation, <em>baggr</em> allows 3 types of data inputs. The user may supply, within a data frame environment, any of the following:</p>
+<ol style="list-style-type: decimal">
+<li><p>A set of estimated treatment effects <span class="math inline">\(\{\hat{\tau_k}\}_{k=1}^{K}\)</span> and their standard errors <span class="math inline">\(\{\hat{se_k}\}_{k=1}^{K}\)</span> from each study. This should be formatted as two column vectors of length <span class="math inline">\(K\)</span> within the data frame, where <span class="math inline">\(\hat{\tau_k}\)</span> is the <span class="math inline">\(k\)</span>-th entry of the treatment effect vector and <span class="math inline">\(\hat{se_k}\)</span> is the <span class="math inline">\(k\)</span>-th entry of the standard errors vector. Columns should be names “tau” and “se”.</p></li>
+<li><p>A set of control group means and estimated treatment effects <span class="math inline">\(\{\hat{\mu_k},\hat{\tau_k}\}_{k=1}^{K}\)</span>, as well as the standard errors for both <span class="math inline">\(\{\hat{se}_{\mu k}, \hat{se}_{\tau k}\}_{k=1}^{K}\)</span>, for each study site This should be formatted as four vectors of length <span class="math inline">\(K\)</span> within the data frame, analogous to the above. Columns should be names “mu”, “tau”, “se.mu”, “se.tau”.</p></li>
+<li><p>The full data sets from all the original studies <span class="math inline">\(\{Y_k, T_k\}_{k=1}^{K}\)</span>. This should be formatted as three vectors of length <span class="math inline">\(\sum_{k=1}^K N_{k}\)</span>, which we recommend naming “outcome”, “treatment”, “group” (for site indicators), but the names can also be specified when calling <code>baggr()</code> function.</p></li>
+</ol>
+<p>As an example of an individual-level data set we include in data frames <code>microcredit</code> and <code>microcredit_simplified</code>. The former contains all the microcredit outcome data used in <span class="citation">Meager (2019)</span>, standardized to USD PPP in 2009 terms per two weeks (a time period is necessary as these are flow variables). It therefore contains NAs and other undesirable features, to allow the user to see how <em>baggr</em> handles these common data issues. The data set <code>microcredit_simplified</code> has these issues cleaned up and contains only one outcome of interest, consumer durables spending.</p>
+<p><em>baggr</em> also has a function that automatically produces summary data from full data sets, in case one wishes to run the comparatively faster summary-data models. The “prepare_ma()” function applied to a dataframe with columns named “group”, “outcome”, and “treatment” automatically estimates the control group means, treatment effects, and associated standard errors for each group using an Ordinary Least Squares regression. The resulting output is already formatted as a valid input to the <em>baggr</em> command itself:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb1-1" title="1"><span class="kw">prepare_ma</span>(microcredit_simplified, <span class="dt">outcome =</span> <span class="st">&quot;consumerdurables&quot;</span>)</a>
+<a class="sourceLine" id="cb1-2" title="2"><span class="co">#&gt;   group          mu       tau       se.mu     se.tau</span></a>
+<a class="sourceLine" id="cb1-3" title="3"><span class="co">#&gt; 1     1    5.369612  1.074862   0.3226702   0.425339</span></a>
+<a class="sourceLine" id="cb1-4" title="4"><span class="co">#&gt; 2     2 1156.243056 -6.503679 146.2217092 191.120776</span></a>
+<a class="sourceLine" id="cb1-5" title="5"><span class="co">#&gt; 3     3   23.868992  4.440776   1.2379155   2.207257</span></a>
+<a class="sourceLine" id="cb1-6" title="6"><span class="co">#&gt; 4     4    6.516936  1.377748   1.0043951   2.271460</span></a></code></pre></div>
+</div>
+<div id="ate-aggregation-models-in-baggr" class="section level2">
+<h2>ATE aggregation models in <em>baggr</em></h2>
+<p><em>baggr</em> currently contains two different models suitable for aggregating sets of average treatment effects. Consider first the evidence aggregation model from <span class="citation">Rubin (1981)</span>, discussed extensively in Chapter 5 of <span class="citation">Gelman et al. (2013)</span>; the model consists of a hierarchical likelihood as follows:</p>
+<p><span class="math display">\[\begin{equation}
+\begin{aligned}
+\hat{\tau_k} &amp;\sim N(\tau_k, \hat{se_k}^2) \; \forall \; k \\
+\tau_k &amp;\sim N(\tau, \sigma_{\tau}^2) \; \forall \; k .
+\end{aligned}
+\label{rubin model}
+\end{equation}\]</span></p>
+<p>The motivation for this model structure is discussed in detail in the sources above and in <span class="citation">Meager (2019)</span>. To complete the Bayesian model, we now need priors. <em>baggr</em> has a set of default priors for each model (adjusted to data), as well as allowing the user to specify her own priors if desired. In the Rubin model, <em>baggr</em>’s default priors on the hyper-parameters are as follows:</p>
+<ul>
+<li>For <span class="math inline">\(\tau\)</span>, the prior is <span class="math inline">\(\mathcal{N}(0, 100)\)</span>. This is a very weak prior which does little regularization as a default, centered at zero. It assumes that causal effects should not be thought of as large unless data contains evidence to the contrary (a “hand-wavey” form of Occam’s Razor).</li>
+<li>For <span class="math inline">\(\sigma_{\tau}\)</span> the prior is <span class="math inline">\(\textrm{Uniform}(0,10\tilde{\sigma})\)</span>, where <span class="math inline">\(\tilde{\sigma}\)</span> is a naive standard deviance estimator for <span class="math inline">\(\{\hat{\tau_k}\}_{k=1}^{K}\)</span> (generated by the R command <code>sd()</code>).</li>
+</ul>
+<p>In case you also have data on the control groups’ mean outcomes and the uncertainty on those,you can augment the <span class="citation">Rubin (1981)</span> model to incorporate that information. Following <span class="citation">Meager (2019)</span>, if one has access to the estimated control means <span class="math inline">\(\{\hat{\mu_k}\}^K_{k=1}\)</span> and their standard errors <span class="math inline">\(\{\hat{se}_{\mu k}\}^K_{k=1}\)</span>, one can fit a joint Gaussian model on the pairs <span class="math inline">\(\{\hat{\mu_k},\hat{\tau_k}\}_{k=1}^{K}\)</span>:</p>
+<p><span class="math display">\[\begin{equation}
+\begin{aligned}
+\hat{\tau_k} &amp;\sim N(\tau_k, \hat{se_{\tau k}}^2) \; \forall \; k \\
+\hat{\mu_k} &amp;\sim N(\mu_k, \hat{se_{\mu k}}^2) \; \forall \; k \\
+\left( \begin{array}{c}
+\mu_{k}\\
+\tau_{k}
+\end{array} \right) 
+&amp;\sim
+N\left( \left(
+\begin{array}{c}
+\mu\\
+\tau
+\end{array} \right), V \right) \; \text{where} \;V = \left[ \begin{array}{cc} \sigma^2_{\mu} &amp; \sigma_{\tau\mu} \\ \sigma_{\tau\mu} &amp; \sigma_{\tau}^2 \end{array} \right]\forall \; k. \\
+\end{aligned}
+\label{full data model}
+\end{equation}\]</span></p>
+<p>In <em>baggr</em> this model is referred to as <code>&quot;mutau&quot;</code>.</p>
+<p>If you have only few groups, the priors on <span class="math inline">\(V\)</span> will need to be relatively strong to avoid overfitting. See <span class="citation">Meager (2019)</span> for more discussion of this issue in particular, or see the <a href="https://mc-stan.org/docs/2_18/stan-users-guide/multivariate-hierarchical-priors-section.html">Stan Manual on hierarchical priors</a>. The default priors are as follows:</p>
+<ul>
+<li><span class="math inline">\(V\)</span> is decomposed into a correlation matrix <span class="math inline">\(\Omega\)</span>, which receives an LKJCorr(3) prior regularizing it towards independence, and a scale parameter <span class="math inline">\(\theta\)</span> which receives a <span class="math inline">\(\textrm{Cauchy}(0,s)\)</span> prior, with <span class="math inline">\(s\)</span> set to either 10 times the empirical SD of <span class="math inline">\(\mu\)</span> of of <span class="math inline">\(\tau\)</span>, whichever is higher.</li>
+<li>The default prior for <span class="math inline">\((\mu, \tau)\)</span> is bivariate Gaussian, with zero means and a diagonal covariance matrix with the diagonal (variances) set to 100 times the empirical maximum of <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\tau\)</span>.</li>
+</ul>
+</div>
+<div id="models-their-inputs-likelihood-and-priors-a-summary-table" class="section level2">
+<h2>Models, their inputs, likelihood and priors: a summary table</h2>
+<!-- This is a mess to edit, sorry. But it presents nicely in Markdown -->
+<table>
+<colgroup>
+<col width="12%"></col>
+<col width="20%"></col>
+<col width="30%"></col>
+<col width="25%"></col>
+<col width="11%"></col>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Model</th>
+<th>Input columns</th>
+<th>Level-1 likelihood</th>
+<th>Level-2 likelihood</th>
+<th>Default priors</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>“Rubin”</td>
+<td><code>tau</code> and <code>se</code></td>
+<td><span class="math inline">\(\hat{\tau_k} \sim N(\tau_k, \hat{se_k}^2)\)</span></td>
+<td><span class="math inline">\(\tau_k \sim N(\tau, \sigma_{\tau}^2)\)</span></td>
+<td><span class="math inline">\(\tau \sim \mathcal{N}(0, 100)\)</span>, <span class="math inline">\(\sigma_{\tau} \sim \mathcal{U}(0, 10\tilde{\sigma})\)</span></td>
+</tr>
+<tr class="even">
+<td>“<span class="math inline">\(\mu\)</span> and <span class="math inline">\(\tau\)</span>”</td>
+<td><code>tau</code>, <code>mu</code>, <code>se.tau</code>, <code>se.mu</code></td>
+<td><span class="math inline">\(\hat{\tau_k} \sim N(\tau_k, \hat{se_{\tau,k}}^2)\)</span>, <span class="math inline">\(\hat{\mu_k} \sim N(\mu_k, \hat{se_{\mu,k}}^2)\)</span></td>
+<td><span class="math inline">\(\pmatrix{\mu_k \\ \tau_k} \sim N(\pmatrix{\mu \\ \tau}, V)\)</span></td>
+<td><span class="math inline">\(V = \theta \Omega \theta&#39;\)</span> where <span class="math inline">\(\theta \sim Cauchy(0,10)\)</span>, <span class="math inline">\(\Omega \sim LKJ(3)\)</span>, <span class="math inline">\(\pmatrix{\mu \\ \tau} \sim N(0,100^2Id_2 )\)</span></td>
+</tr>
+<tr class="odd">
+<td>Full data</td>
+<td><code>outcome</code>, <code>treatment</code>, <code>group</code></td>
+<td>Same as for “<span class="math inline">\(\mu\)</span> and <span class="math inline">\(\tau\)</span>”</td>
+<td>Same as for “<span class="math inline">\(\mu\)</span> and <span class="math inline">\(\tau\)</span>”</td>
+<td>Same as for “<span class="math inline">\(\mu\)</span> and <span class="math inline">\(\tau\)</span>”</td>
+</tr>
+<tr class="even">
+<td>Quantiles</td>
+<td><code>outcome</code>, <code>treatment</code>, <code>group</code></td>
+<td>See Meager (2019)</td>
+<td>See Meager (2019)</td>
+<td>See Meager (2019)</td>
+</tr>
+<tr class="odd">
+<td>Logit model</td>
+<td><code>outcome</code>, <code>treatment</code>, <code>group</code></td>
+<td>See <code>vignette(&quot;baggr_binary&quot;)</code></td>
+<td>…</td>
+<td>…</td>
+</tr>
+</tbody>
+</table>
+<p>Where inputs are individual-level data, i.e. <code>outcome</code>, <code>treatment</code>, <code>group</code>, you can specify column names in as arguments to <code>baggr()</code> function.</p>
+</div>
+<div id="prior-choice-in-baggr" class="section level2">
+<h2>Prior choice in baggr</h2>
+<p>In the “Rubin” and “<span class="math inline">\(\mu\)</span> and <span class="math inline">\(\tau\)</span>” models, the user can specify custom priors beyond the defaults using the prior arguments. These prior arguments are subdivided into 3 categories:</p>
+<ul>
+<li><p>Priors for the hypermean, the average effect across groups, such as <span class="math inline">\(\tau\)</span> or the vector <span class="math inline">\((\mu, \tau)\)</span>. This is denoted using the <code>prior_hypermean</code> argument in baggr.</p></li>
+<li><p>Priors for the hyper-standard-deviations <span class="math inline">\(\sigma_{\tau}\)</span>, the standard deviation of effects across groups. This also refers to the prior on <span class="math inline">\(\theta\)</span>, the scale parameter of the hyper-variance-covariance matrix <span class="math inline">\(V\)</span> in the“<span class="math inline">\(\mu\)</span> and <span class="math inline">\(\tau\)</span>” model. This type of parameter is denoted <code>prior_hypersd</code> in baggr.</p></li>
+<li><p>Priors on hypercorrelations between parameters that may co-vary across the groups. When working with multi-dimensional parameters at the upper level of the model (aka performing multivariate shrinkage), this is the correlation in the distribution of the different parameters across the groups. For example, in the “<span class="math inline">\(\mu\)</span> and <span class="math inline">\(\tau\)</span>” model this parameter is the correlation matrix <span class="math inline">\(\Omega\)</span> that governs the hyper-variance-covariance matrix <span class="math inline">\(V\)</span>. This type of parameter is denoted <code>prior_hypercor</code> in baggr.</p></li>
+</ul>
+<p>The possible prior distributions we allow for in the current version are:</p>
+<ul>
+<li>For <code>prior_hypermean</code> we allow <code>&quot;normal&quot;</code>, <code>&quot;uniform&quot;</code> and <code>&quot;cauchy&quot;</code> with any parameter values which are logically possible given support constraints (e.g. user cannot specify a negative variance on a normal distribution or a negative scale on a cauchy) When the model has a vector hypermean, “<span class="math inline">\(\mu\)</span> and <span class="math inline">\(\tau\)</span>” model, baggr applies the given prior to all the elements of the vector independently. If the user wishes to specify a prior dependence between the components, one can supply prior_hypermean with a multinormal argument (see <code>?priors</code> for details).</li>
+<li>For <code>prior_hypersd</code> we allow <code>&quot;normal&quot;</code> and <code>&quot;uniform&quot;</code> with any parameter values which are logically possible given support constraints (as above).</li>
+<li>For <code>prior_hypercor</code>, which is only necessary when there is a multivariate shrinkage operation (as in the “<span class="math inline">\(\mu\)</span> and <span class="math inline">\(\tau\)</span>” model) we allow an LKJ correlation prior (<code>&quot;lkj&quot;</code>) with any parameter values which are logically possible given support constraints. For further details of this strategy see Meager (2019).</li>
+</ul>
+<p>Notation for priors is “plain-text”, in that you can write the distributions as <code>normal()</code>, <code>uniform()</code> etc. See <code>?priors</code> for details, or continue to the example below with the Rubin model.</p>
+</div>
+<div id="running-the-rubin-model-in-baggr" class="section level2">
+<h2>Running the Rubin Model in <em>baggr</em></h2>
+<p>To demonstrate the Rubin model in <em>baggr</em>, consider the 8 schools example from Rubin (1981). In this dataset, 8 schools in the United States performed similar randomized experiments to estimate the causal effect of an SAT tutoring program on learning outcomes. Reported treatment effects and their standard errors are included in <em>baggr</em> as a data frame:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb2-1" title="1">schools</a>
+<a class="sourceLine" id="cb2-2" title="2"><span class="co">#&gt;      group tau se</span></a>
+<a class="sourceLine" id="cb2-3" title="3"><span class="co">#&gt; 1 School A  28 15</span></a>
+<a class="sourceLine" id="cb2-4" title="4"><span class="co">#&gt; 2 School B   8 10</span></a>
+<a class="sourceLine" id="cb2-5" title="5"><span class="co">#&gt; 3 School C  -3 16</span></a>
+<a class="sourceLine" id="cb2-6" title="6"><span class="co">#&gt; 4 School D   7 11</span></a>
+<a class="sourceLine" id="cb2-7" title="7"><span class="co">#&gt; 5 School E  -1  9</span></a>
+<a class="sourceLine" id="cb2-8" title="8"><span class="co">#&gt; 6 School F   1 11</span></a>
+<a class="sourceLine" id="cb2-9" title="9"><span class="co">#&gt; 7 School G  18 10</span></a>
+<a class="sourceLine" id="cb2-10" title="10"><span class="co">#&gt; 8 School H  12 18</span></a></code></pre></div>
+<p>To fit the model in <em>baggr</em> (having followed the installation instructions and loaded the package):</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb3-1" title="1">baggr_schools &lt;-<span class="st"> </span><span class="kw">baggr</span>(schools, <span class="dt">model =</span> <span class="st">&quot;rubin&quot;</span>, <span class="dt">pooling =</span> <span class="st">&quot;partial&quot;</span>)</a></code></pre></div>
+<p>This creates a <code>baggr</code> class object, and you can access the underlying <code>stanfit</code> object by calling <code>baggr_schools$fit</code>. If you don’t change the default priors, then <em>baggr</em> will print a message informing you of the priors it has chosen.</p>
+<p>Printing <code>baggr_schools</code> returns a summary of the posterior inference. First <em>baggr</em> records the model type and the pooling regime chosen by the user or implemented by default. Second, <em>baggr</em> returns inference on the aggregate treatment effect <span class="math inline">\(\tau\)</span> by reporting its posterior mean and 95% uncertainty interval, and similar inference on the hyper-SD <span class="math inline">\(\sigma_{\tau}\)</span>. Lastly, it prints the “updated” inference on each of the groups’ treatment effects, displaying their new posterior means, standard deviations and pooling factors (see below).</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb4-1" title="1"><span class="kw">print</span>(baggr_schools)</a>
+<a class="sourceLine" id="cb4-2" title="2"><span class="co">#&gt; Model type: Rubin model with aggregate data </span></a>
+<a class="sourceLine" id="cb4-3" title="3"><span class="co">#&gt; Pooling of effects: partial </span></a>
+<a class="sourceLine" id="cb4-4" title="4"><span class="co">#&gt; </span></a>
+<a class="sourceLine" id="cb4-5" title="5"><span class="co">#&gt; Aggregate treatment effect (on mean):</span></a>
+<a class="sourceLine" id="cb4-6" title="6"><span class="co">#&gt; Hypermean (tau) =  8.2 with 95% interval -1.8 to 19.2 </span></a>
+<a class="sourceLine" id="cb4-7" title="7"><span class="co">#&gt; Hyper-SD (sigma_tau) = 6.62 with 95% interval 0.22 to 21.18 </span></a>
+<a class="sourceLine" id="cb4-8" title="8"><span class="co">#&gt; Total pooling (1 - I^2) = 0.79 with 95% interval 0.27 to 1.00 </span></a>
+<a class="sourceLine" id="cb4-9" title="9"><span class="co">#&gt; </span></a>
+<a class="sourceLine" id="cb4-10" title="10"><span class="co">#&gt; Treatment effects on mean:</span></a>
+<a class="sourceLine" id="cb4-11" title="11"><span class="co">#&gt;          mean  sd pooling</span></a>
+<a class="sourceLine" id="cb4-12" title="12"><span class="co">#&gt; School A 11.5 8.3    0.82</span></a>
+<a class="sourceLine" id="cb4-13" title="13"><span class="co">#&gt; School B  7.8 6.4    0.72</span></a>
+<a class="sourceLine" id="cb4-14" title="14"><span class="co">#&gt; School C  6.2 7.7    0.84</span></a>
+<a class="sourceLine" id="cb4-15" title="15"><span class="co">#&gt; School D  7.7 6.5    0.75</span></a>
+<a class="sourceLine" id="cb4-16" title="16"><span class="co">#&gt; School E  5.2 6.4    0.69</span></a>
+<a class="sourceLine" id="cb4-17" title="17"><span class="co">#&gt; School F  6.1 6.8    0.75</span></a>
+<a class="sourceLine" id="cb4-18" title="18"><span class="co">#&gt; School G 10.8 6.8    0.72</span></a>
+<a class="sourceLine" id="cb4-19" title="19"><span class="co">#&gt; School H  8.6 8.2    0.86</span></a></code></pre></div>
+<!-- This is quite similar to the output from the version of the model suggested in ["How to use rstan"](https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started) tutorial, the small difference probably arising from the different default priors. -->
+<div id="choosing-priors" class="section level3">
+<h3>Choosing priors</h3>
+<p>It is possible to fit the Rubin model without specifying any priors, in which case the user is notified about the automatic prior choice that <em>baggr</em> performs. But the priors can also be easily customised by using <code>prior_</code> arguments to <code>baggr()</code>. The Rubin model performs univariate shrinkage so we will not need to specify a hyper-correlation prior, but we can specify some custom priors on the hyper-mean and hyper-sd. If desired, the user can specify only some priors as custom distributions - the rest will be chosen automatically and the user will be notified of this in the output.</p>
+<p>Consider changing both as an example, say placing a Normal prior with mean -5 and standard deviation 10 on our hypermean <span class="math inline">\(\tau\)</span>, as well as placing a uniform prior with lower bound 0 and upper bound 5 on our hyper-standard-deviation <span class="math inline">\(\sigma_{\tau}\)</span>. Thus, what is expressed mathematically as <span class="math inline">\(\tau \sim N(-5,10)\)</span> and <span class="math inline">\(\sigma_{\tau} \sim U[0,5]\)</span> is expressed in baggr as follows:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb5-1" title="1"><span class="kw">baggr</span>(schools, <span class="st">&quot;rubin&quot;</span>, </a>
+<a class="sourceLine" id="cb5-2" title="2">      <span class="dt">prior_hypermean =</span> <span class="kw">normal</span>(<span class="op">-</span><span class="dv">5</span>, <span class="dv">10</span>),</a>
+<a class="sourceLine" id="cb5-3" title="3">      <span class="dt">prior_hypersd   =</span> <span class="kw">uniform</span>(<span class="dv">0</span>, <span class="dv">5</span>))</a></code></pre></div>
+<!-- #[WORKING SECTION Suppose you have the full individual-level dataset for all groups (case 3 above) but still wish to run the Rubin model: _baggr_ can do this automatically, you do not need to manually estimate the group-specific effects and standard errors yourself. To see how it works, check out the microcredit dataset analysed in Meager (2019) which is stored in _baggr_ as the data frame "microcredit". Have a look at the tail of the data frame, which tells you that these households are from the "Tarozzi" et al study group (the Ethiopia trial), for which we have expenditures, revenue and profit data, as well as the treatment indicator. -->
+<!-- # ```{r} -->
+<!-- # tail(microcredit) -->
+<!-- # ``` -->
+<!-- # _baggr_ will only understand the 3 types of formatting described above, and while we have already stacked this dataset, we now need to choose a single outcome to focus on.  ] -->
+<p>It is also possible to pass your custom priors as a list to baggr, as follows:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb6-1" title="1">custom_priors &lt;-<span class="st"> </span><span class="kw">list</span>( <span class="dt">hypermean =</span> <span class="kw">cauchy</span>(<span class="dv">0</span>,<span class="dv">25</span>), <span class="dt">hypersd =</span> <span class="kw">normal</span>(<span class="dv">0</span>,<span class="dv">30</span>))</a>
+<a class="sourceLine" id="cb6-2" title="2"><span class="kw">baggr</span>(schools, <span class="st">&quot;rubin&quot;</span>, <span class="dt">pooling =</span> <span class="st">&quot;partial&quot;</span>, <span class="dt">prior =</span> custom_priors)</a></code></pre></div>
+<p>Note that the Rubin model assumes Gaussian distribution of effects across groups. This is generally appropriate as a first pass at the problem (see <span class="citation">McCulloch and Neuhaus (2011)</span>) <em>except</em> if the distribution is known to be asymmetric for scientific reasons. For example, if you are working with risk ratios or odds ratios these statistics cannot be negative and the chosen hyper-distribution should typically reflect that. However, in many cases it is possible and indeed standard to maintain the Gaussian assumption on a transform of the object: for example, you can safely fit the Rubin model to the logarithm of the risk ratios or odds ratios. While bearing in mind that log transforms obscure inherent dependencies between means and variances in the raw scale, this is still much better than applying a Gaussian to the raw object itself.</p>
+</div>
+</div>
+<div id="understanding-and-criticising-baggr-model-performance" class="section level2">
+<h2>Understanding and criticising <em>baggr</em> model performance</h2>
+<p><em>Baggr</em> models are run in Stan, and the fit and results need to be checked, understood and criticised as you would any stan model or indeed any MCMC model fitting exercise. <strong>You must pay attention to printed warnings about the Rhat criterion: if you see a warning that Rhat statistic exceeds 1.05 for any parameter, you MUST NOT use the results for inference.</strong> This warning means the MCMC chains have not converged, and it is exceedingly unlikely that the “posterior inference” printed out corresponds to anything close to the true posterior implied by your model and data. <strong>If you use results from which the Rhat statistic exceeds 1.05 YOUR INFERENCE WILL BE WRONG.</strong></p>
+<p>If you see this warning, try re-running the model with the option <code>iter</code> set to a large number such as 10,000, as below. It is also good practice to run many chains, such as 8 rather than the default 4, to have a greater chance to detect pathological MCMC behaviour. You do this by passing <em>baggr</em> the stan arguments <code>iter = 10000</code> and <code>chains = 8</code>, like so:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb7-1" title="1">baggr_schools &lt;-<span class="st"> </span><span class="kw">baggr</span>(schools, <span class="dt">model =</span> <span class="st">&quot;rubin&quot;</span>, <span class="dt">pooling =</span> <span class="st">&quot;partial&quot;</span>, </a>
+<a class="sourceLine" id="cb7-2" title="2">                       <span class="dt">iter =</span> <span class="dv">10000</span>, <span class="dt">chains =</span> <span class="dv">8</span>)</a></code></pre></div>
+<p>Other warnings you may see involve “divergent transitions”. While not as serious as high Rhat, this can signal problems with the model. As the stan message that you will see suggests, try adjusting <code>adapt_delta</code> argument above 0.8, e.g. to 0.99. You cannot pass this parameter directly to <em>stan</em> and thus you cannot pass it directly to baggr, so instead you must pass the argument <code>control = list(adapt_delta = 0.99)</code>.</p>
+</div>
+<div id="measuring-pooling" class="section level2">
+<h2>Measuring “pooling”</h2>
+<p>It is often useful to measure the extent to which the hierarchical model is “pooling” or sharing information across the groups in the process of aggregation. <em>Baggr</em> automatically computes and prints such a metric, as seen above. You can access more details by writing <code>pooling(baggr_schools)</code> or <code>heterogeneity(baggr_schools)</code>.</p>
+<div id="estimate-of-pooling-in-each-group" class="section level3">
+<h3>Estimate of pooling in each group</h3>
+<p>In the output above we can see a “pooling” column next to each group. This is a statistic due to <span class="citation">Gelman and Pardoe (2006)</span>.</p>
+<p>In a partial pooling model (see [baggr]), group <span class="math inline">\(k\)</span> (e.g. study) has a treatment effect estimate, with some SE around the real <span class="math inline">\(\tau_k\)</span>, i.e. <span class="math inline">\(\hat{\tau_k} \sim \mathcal{N}(\tau_k, \hat{se_k})\)</span> ( itself is an estimate of the true <span class="math inline">\(se_k\)</span>). Each <span class="math inline">\(\tau_k\)</span> itself is distributed with mean <span class="math inline">\(\tau\)</span> and variance <span class="math inline">\(\sigma_{\tau}^2\)</span>.</p>
+<p>The quantity of interest is ratio of variability in <span class="math inline">\(\tau\)</span> to total variability. By convention, we subtract it from 1, to obtain a <em>pooling metric</em> <span class="math inline">\(p\)</span>.</p>
+<p><span class="math display">\[p = 1 - \frac{\sigma_{\tau}^2}{\sigma_{\tau}^2 + se_k^2}\]</span></p>
+<ul>
+<li>If <span class="math inline">\(p &lt; 0.5\)</span>, that means the variation across studies is higher than variation within studies.</li>
+<li>Values close to 1 indicate nearly full pooling. Variation across studies dominates.</li>
+<li>Values close to 0 – no pooling. Variation within studies dominates.</li>
+</ul>
+<p>Note that, since <span class="math inline">\(\sigma_{\tau}^2\)</span> is a Bayesian parameter (rather than a single fixed value) <span class="math inline">\(p\)</span> is also a parameter. It is typical for <span class="math inline">\(p\)</span> to have very high dispersion, as in many cases we cannot precisely estimate <span class="math inline">\(\sigma_{\tau}\)</span>. That is certainly the case in our example:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb8-1" title="1"><span class="kw">pooling</span>(baggr_schools)</a>
+<a class="sourceLine" id="cb8-2" title="2"><span class="co">#&gt; , , 1</span></a>
+<a class="sourceLine" id="cb8-3" title="3"><span class="co">#&gt; </span></a>
+<a class="sourceLine" id="cb8-4" title="4"><span class="co">#&gt;            [,1]      [,2]      [,3]      [,4]      [,5]      [,6]      [,7]</span></a>
+<a class="sourceLine" id="cb8-5" title="5"><span class="co">#&gt; 2.5%  0.3339298 0.1822177 0.3632265 0.2123574 0.1528896 0.2123574 0.1822177</span></a>
+<a class="sourceLine" id="cb8-6" title="6"><span class="co">#&gt; mean  0.8235880 0.7211103 0.8374525 0.7473613 0.6908488 0.7473613 0.7211103</span></a>
+<a class="sourceLine" id="cb8-7" title="7"><span class="co">#&gt; 97.5% 0.9997855 0.9995175 0.9998115 0.9996012 0.9994043 0.9996012 0.9995175</span></a>
+<a class="sourceLine" id="cb8-8" title="8"><span class="co">#&gt;            [,8]</span></a>
+<a class="sourceLine" id="cb8-9" title="9"><span class="co">#&gt; 2.5%  0.4192577</span></a>
+<a class="sourceLine" id="cb8-10" title="10"><span class="co">#&gt; mean  0.8608656</span></a>
+<a class="sourceLine" id="cb8-11" title="11"><span class="co">#&gt; 97.5% 0.9998510</span></a></code></pre></div>
+</div>
+<div id="overall-pooling-in-the-model" class="section level3">
+<h3>Overall pooling (in the model)</h3>
+<p>Typically, it is a single measure of heterogeneity that is of main interest to researchers. Such “big” estimate of pooling <span class="math inline">\(P\)</span> is analogous to averaging <span class="math inline">\(p\)</span> across groups:</p>
+<p><span class="math display">\[P = 1 - \frac{\sigma_{\tau}^2}{\sigma_{\tau}^2 + \text{E}(se_k^2)}\]</span></p>
+<p>where  is average over <span class="math inline">\(K\)</span> groups. Note that the denominator in the formula above is an application of the law of total variance to <span class="math inline">\(\hat{\tau_k}\)</span>, i.e. <span class="math inline">\(\text{Var}(\hat{\tau_k})\)</span> is a sum of between-study variance (<span class="math inline">\(\text{Var}({\tau_k})\)</span>) and average within-study variance (<span class="math inline">\(\text{E}(se_k^2)\)</span>). <span class="citation">von Hippel (2015)</span> provides more details.</p>
+<p>In many contexts, i.e. medical statistics, it is typical to report <span class="math inline">\(1-P\)</span>, called <span class="math inline">\(I^2\)</span> (see <span class="citation">Higgins et al. (2003)</span> for an overview). Higher values of <em>I-squared</em> indicate higher heterogeneity.</p>
+<p>Same as for group-specific estimates, <span class="math inline">\(P\)</span> is a Bayesian parameter and its dispersion can be high.</p>
+</div>
+</div>
+<div id="plotting-and-model-comparison-in-baggr" class="section level2">
+<h2>Plotting and model comparison in <em>baggr</em></h2>
+<p>A fundamental step to understanding the model is to plot the posterior distributions. <em>baggr</em> has several automatic plot functions which you can access by calling <code>baggr_plot()</code> or, equivalently, using the default plot function; these visuals are based on <em>bayesplot</em> package. Plotting functions always take <code>baggr</code> class object as their first argument. By default, means and 95% posterior intervals of the effects <em>in each group</em> are shown. Extra options are available, such as whether to order the results by effect size. For the 8 schools Rubin model we have</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb9-1" title="1"><span class="kw">plot</span>(baggr_schools, <span class="dt">order =</span> <span class="ot">FALSE</span>)</a></code></pre></div>
+<p><img src="data:image/png;base64,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" /><!-- --></p>
+<p>Similarly important is the plot of potential treatment effects, obtained by repeatedly drawing hypermean and hypervariance values, then drawing from normal distribution conditional on these values.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb10-1" title="1"><span class="kw">effect_plot</span>(baggr_schools)</a></code></pre></div>
+<p><img src="data:image/png;base64,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" /><!-- --></p>
+<p>However, the viewpoint of building a model, the most important plots are the ones that directly compare many possible models.</p>
+<div id="basic-model-comparison-with-baggr_compare" class="section level3">
+<h3>Basic model comparison with <em>baggr_compare</em></h3>
+<p>The default Rubin model (which we have selected explicitly above) is that of partial pooling. When using <code>baggr_compare</code> without any extra arguments, full pooling, no pooling and partial pooling versions of the model will be fit:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb11-1" title="1">my_baggr_comparison &lt;-<span class="st"> </span><span class="kw">baggr_compare</span>(schools)</a></code></pre></div>
+<p>The result of the comparison includes all the models, but it also produces an automatic comparison plot. Because the output object of baggr_compare is a <code>ggplot</code> object you can edit it further yourself and build on it as you would any <code>ggplot</code> object by, for example, changing theme or labels:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb12-1" title="1"><span class="kw">plot</span>(my_baggr_comparison)[[<span class="dv">1</span>]] <span class="op">+</span><span class="st"> </span></a>
+<a class="sourceLine" id="cb12-2" title="2"><span class="st">  </span><span class="kw">ggtitle</span>(<span class="st">&quot;8 schools: model comparison&quot;</span>)</a></code></pre></div>
+<p><img src="data:image/png;base64,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" /><!-- --></p>
+</div>
+<div id="comparing-existing-models-understanding-impact-of-the-prior" class="section level3">
+<h3>Comparing existing models, understanding impact of the prior</h3>
+<p>The comparison can be made not just for different types of pooling, but for any number of models which include the same groups. A typical example is comparing two models on the same data, but with different priors.</p>
+<p>Consider this model with alternative, very strong priors:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb13-1" title="1">baggr_schools_v2 &lt;-<span class="st"> </span><span class="kw">baggr</span>(schools, <span class="dt">prior_hypermean =</span> <span class="kw">normal</span>(<span class="dv">10</span>, <span class="fl">2.5</span>))</a></code></pre></div>
+<p>We can compare it with the previous model by providing both models as arguments to <code>baggr_compare</code> and <code>effects_plot</code>. It’s good to name the arguments, as these names will be used to label them:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb14-1" title="1"><span class="kw">effect_plot</span>(<span class="st">&quot;Default model&quot;</span> =<span class="st"> </span>baggr_schools, <span class="st">&quot;normal(10, 2.5)&quot;</span> =<span class="st"> </span>baggr_schools_v2) <span class="op">+</span></a>
+<a class="sourceLine" id="cb14-2" title="2"><span class="st">  </span><span class="kw">coord_cartesian</span>(<span class="dt">xlim =</span> <span class="kw">c</span>(<span class="op">-</span><span class="dv">10</span>, <span class="dv">30</span>)) <span class="op">+</span><span class="st"> </span><span class="kw">theme</span>(<span class="dt">legend.position =</span> <span class="st">&quot;top&quot;</span>)</a></code></pre></div>
+<p><img src="data:image/png;base64,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" /><!-- --></p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb15-1" title="1"><span class="kw">baggr_compare</span>(<span class="st">&quot;Default model&quot;</span> =<span class="st"> </span>baggr_schools, <span class="st">&quot;normal(10, 2.5)&quot;</span> =<span class="st"> </span>baggr_schools_v2)</a>
+<a class="sourceLine" id="cb15-2" title="2"><span class="co">#&gt; Mean treatment effects:</span></a>
+<a class="sourceLine" id="cb15-3" title="3"><span class="co">#&gt;                     2.5%    mean   97.5%  median      sd</span></a>
+<a class="sourceLine" id="cb15-4" title="4"><span class="co">#&gt; Default model   -1.77943 8.21175 19.1777 8.08827 5.41818</span></a>
+<a class="sourceLine" id="cb15-5" title="5"><span class="co">#&gt; normal(10, 2.5)  5.38422 9.52617 13.6640 9.54492 2.12146</span></a>
+<a class="sourceLine" id="cb15-6" title="6"><span class="co">#&gt; </span></a>
+<a class="sourceLine" id="cb15-7" title="7"><span class="co">#&gt; SD for treatment effects:</span></a>
+<a class="sourceLine" id="cb15-8" title="8"><span class="co">#&gt;                     2.5%    mean   97.5%  median      sd</span></a>
+<a class="sourceLine" id="cb15-9" title="9"><span class="co">#&gt; Default model   0.219720 6.62196 21.1848 5.22566 5.69531</span></a>
+<a class="sourceLine" id="cb15-10" title="10"><span class="co">#&gt; normal(10, 2.5) 0.257396 5.85740 17.6531 4.80195 4.77713</span></a>
+<a class="sourceLine" id="cb15-11" title="11"><span class="co">#&gt; </span></a>
+<a class="sourceLine" id="cb15-12" title="12"><span class="co">#&gt; Transform: NULL</span></a></code></pre></div>
+</div>
+<div id="forest-plots-for-the-models" class="section level3">
+<h3>Forest plots for the models</h3>
+<p>Forest plots are a typical for reporting meta-analysis results. We adapted the default functionality from <em>forestplot</em> to work with <em>baggr</em> objects. You can choose to display 1) input data for groups, and/or, 2) posterior distributions for groups. In both cases these are followed by a display mean treatment effect. The default is 1):</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb16-1" title="1"><span class="kw">forest_plot</span>(baggr_schools)</a></code></pre></div>
+<p><img src="data:image/png;base64,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" /><!-- --></p>
+<p>The plots can be modified by passing extra arguments – see <code>?forestplot</code>. It’s also possible to display both 1) and 2):</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb17-1" title="1"><span class="kw">forest_plot</span>(baggr_schools, <span class="dt">show =</span> <span class="st">&quot;both&quot;</span>)</a></code></pre></div>
+<p><img src="data:image/png;base64,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" /><!-- --></p>
+</div>
+</div>
+<div id="cross-validation-in-baggr" class="section level2">
+<h2>Cross-validation in <em>baggr</em></h2>
+<p><em>Baggr</em> has built-in, automated leave-one-out cross validation for its models. The values returned by <code>loocv()</code> can be used to understand how any one group affects the overall result, as well as how well the model predicts the omitted group.</p>
+<p>This function automatically runs <span class="math inline">\(K\)</span> baggr models, leaving out one group at a time, and then calculates expected log predictive density (ELPD) for that group (see <span class="citation">Gelman, Hwang, and Vehtari (2014)</span>). The main output is the cross-validation information criterion, or -2 times the ELPD averaged over <span class="math inline">\(K\)</span> models. This is related to, and often approximated by, the Watanabe-Akaike Information Criterion. A value closer to zero (i.e. a smaller number in magnitude) means a better fit. For more information on cross-validation see this <a href="http://www.stat.columbia.edu/~gelman/research/published/waic_understand3.pdf">overview article</a>.</p>
+<p>Therefore, if you have <span class="math inline">\(K\)</span> groups, using the <code>loocv()</code> will run your model of choice <span class="math inline">\(K\)</span> times. Be aware that this may take a while even for simple models. (You should see a progress bar in your terminal window.) The <code>loocv()</code> function takes in the same arguments as <code>baggr()</code>, plus an option (<code>return_models</code>) for whether to return all the models or just the summary statistics. For the 8 schools example we can do</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb18-1" title="1">loocv_res &lt;-<span class="st"> </span><span class="kw">loocv</span>(schools, <span class="dt">return_models =</span> <span class="ot">FALSE</span>, <span class="st">&quot;rubin&quot;</span>, <span class="dt">pooling =</span> <span class="st">&quot;partial&quot;</span>)</a></code></pre></div>
+<div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb19-1" title="1">loocv_res</a>
+<a class="sourceLine" id="cb19-2" title="2"><span class="co">#&gt; Based on 8-fold cross-validation</span></a>
+<a class="sourceLine" id="cb19-3" title="3"><span class="co">#&gt;  </span></a>
+<a class="sourceLine" id="cb19-4" title="4"><span class="co">#&gt;        Estimate Standard Error</span></a>
+<a class="sourceLine" id="cb19-5" title="5"><span class="co">#&gt; elpd     -31.8          0.961</span></a>
+<a class="sourceLine" id="cb19-6" title="6"><span class="co">#&gt; looic     63.6         -1.920</span></a></code></pre></div>
+<p>The <code>loocv()</code> output contains more than just the matrix it prints, and this additional information can be accessed via <code>attributes()</code>, e.g. the mean treatment effects, their variability and <em>elpd</em> for each model that are stored in the attribute <code>df</code>:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb20-1" title="1"><span class="kw">names</span>(<span class="kw">attributes</span>(loocv_res))</a>
+<a class="sourceLine" id="cb20-2" title="2"><span class="co">#&gt; [1] &quot;names&quot; &quot;class&quot;</span></a>
+<a class="sourceLine" id="cb20-3" title="3"><span class="kw">attr</span>(loocv_res, <span class="st">&quot;df&quot;</span>)</a>
+<a class="sourceLine" id="cb20-4" title="4"><span class="co">#&gt; NULL</span></a></code></pre></div>
+<p>This data frame can then be used to examine or compute the variation in the inference on <span class="math inline">\(\tau\)</span> in the absence of each group. If the user is interested in manually checking the consequences of excluding a particular group or set of groups, this is also possible in <em>baggr</em> using subsetting. For example, suppose that we want to run the Rubin model on school groups 1-7 and predict the effect in the 8th school. The code below shows how you can specify a subset of the dataframe as your “data” argument, and then designate another subset as the “testing” holdout set by assigning it to the argument “test_data” in the baggr command. Here we have done it for both partial and full pooling:</p>
+<p>We can compare the performance of the two models using the mean log predictive density. This itself is a density as the name suggests so we will compute the log expected value of this density: here, as before, a number closer to zero is better. In this case the full pooling model actually does slightly better:</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb21-1" title="1">fit1<span class="op">$</span>mean_lpd</a>
+<a class="sourceLine" id="cb21-2" title="2"><span class="co">#&gt; [1] 7.943589</span></a>
+<a class="sourceLine" id="cb21-3" title="3">fit2<span class="op">$</span>mean_lpd</a>
+<a class="sourceLine" id="cb21-4" title="4"><span class="co">#&gt; [1] 7.734553</span></a></code></pre></div>
+<p>If we run the full <code>loocv</code> for both models, we can estimate the difference between the ELPD of those models as well as the standard error of that difference. As an example, let’s consider the two models above.</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb22-1" title="1">cv_<span class="dv">1</span> &lt;-<span class="st"> </span><span class="kw">loocv</span>(<span class="dt">data =</span> schools, </a>
+<a class="sourceLine" id="cb22-2" title="2">              <span class="dt">model =</span> <span class="st">&quot;rubin&quot;</span>, </a>
+<a class="sourceLine" id="cb22-3" title="3">              <span class="dt">pooling =</span> <span class="st">&quot;partial&quot;</span>)</a>
+<a class="sourceLine" id="cb22-4" title="4">cv_<span class="dv">2</span> &lt;-<span class="st"> </span><span class="kw">loocv</span>(<span class="dt">data =</span> schools, </a>
+<a class="sourceLine" id="cb22-5" title="5">              <span class="dt">model =</span> <span class="st">&quot;rubin&quot;</span>, </a>
+<a class="sourceLine" id="cb22-6" title="6">              <span class="dt">pooling =</span> <span class="st">&quot;full&quot;</span>)</a></code></pre></div>
+<p>We can compare those fits with <code>loo_compare</code>, which gives use the differences in ELPD for the various models we pass it. Generally it is important to pay attention to <em>both</em> the difference in the predictive density and also the standard error of that difference.</p>
+<div class="sourceCode" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb23-1" title="1"><span class="kw">loo_compare</span>(cv_<span class="dv">1</span>, cv_<span class="dv">2</span>)</a>
+<a class="sourceLine" id="cb23-2" title="2"><span class="co">#&gt; Comparison of cross-validation</span></a>
+<a class="sourceLine" id="cb23-3" title="3"><span class="co">#&gt;  </span></a>
+<a class="sourceLine" id="cb23-4" title="4"><span class="co">#&gt;                      ELPD ELPD SE</span></a>
+<a class="sourceLine" id="cb23-5" title="5"><span class="co">#&gt; Model 1 - Model 2 -0.793   0.338</span></a></code></pre></div>
+</div>
+<div id="references" class="section level2 unnumbered">
+<h2>References</h2>
+<div id="refs" class="references">
+<div id="ref-gelman_bayesian_2013">
+<p>Gelman, Andrew, John B. Carlin, Hal S. Stern, David B. Dunson, Aki Vehtari, and Donald B. Rubin. 2013. <em>Bayesian Data Analysis</em>. CRC Press.</p>
+</div>
+<div id="ref-gelman_understanding_2014">
+<p>Gelman, Andrew, Jessica Hwang, and Aki Vehtari. 2014. “Understanding Predictive Information Criteria for Bayesian Models.” <em>Statistics and Computing</em> 24 (6): 997–1016. <a href="https://doi.org/10.1007/s11222-013-9416-2">https://doi.org/10.1007/s11222-013-9416-2</a>.</p>
+</div>
+<div id="ref-gelman_bayesian_2006">
+<p>Gelman, Andrew, and Iain Pardoe. 2006. “Bayesian Measures of Explained Variance and Pooling in Multilevel (Hierarchical) Models.” <em>Technometrics</em> 48 (2): 241–51. <a href="https://doi.org/10.1198/004017005000000517">https://doi.org/10.1198/004017005000000517</a>.</p>
+</div>
+<div id="ref-higgins_measuring_2003-2">
+<p>Higgins, Julian P T, Simon G Thompson, Jonathan J Deeks, and Douglas G Altman. 2003. “Measuring Inconsistency in Meta-Analyses.” <em>BMJ : British Medical Journal</em> 327 (7414): 557–60.</p>
+</div>
+<div id="ref-mcculloch_misspecifying_2011">
+<p>McCulloch, Charles E., and John M. Neuhaus. 2011. “Misspecifying the Shape of a Random Effects Distribution: Why Getting It Wrong May Not Matter.” <em>Statistical Science</em> 26 (3): 388–402. <a href="https://doi.org/10.1214/11-STS361">https://doi.org/10.1214/11-STS361</a>.</p>
+</div>
+<div id="ref-meager_aggregating_2019-1">
+<p>Meager, Rachael. 2019. “Aggregating Distributional Treatment Effects: A Bayesian Hierarchical Analysis of the Microcredit Literature.” <a href="https://doi.org/10.31222/osf.io/7tkvm">https://doi.org/10.31222/osf.io/7tkvm</a>.</p>
+</div>
+<div id="ref-rubin_estimating_1974">
+<p>Rubin, Donald B. 1974. “Estimating Causal Effects of Treatments in Randomized and Nonrandomized Studies.” <em>Journal of Educational Psychology</em>. <a href="https://doi.org/10.1037/h0037350">https://doi.org/10.1037/h0037350</a>.</p>
+</div>
+<div id="ref-rubin_estimation_1981">
+<p>———. 1981. “Estimation in Parallel Randomized Experiments.” <em>Journal of Educational Statistics</em> 6 (4): 377–401.</p>
+</div>
+<div id="ref-von_hippel_heterogeneity_2015">
+<p>von Hippel, Paul T. 2015. “The Heterogeneity Statistic I2 Can Be Biased in Small Meta-Analyses.” <em>BMC Medical Research Methodology</em> 15 (April). <a href="https://doi.org/10.1186/s12874-015-0024-z">https://doi.org/10.1186/s12874-015-0024-z</a>.</p>
+</div>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

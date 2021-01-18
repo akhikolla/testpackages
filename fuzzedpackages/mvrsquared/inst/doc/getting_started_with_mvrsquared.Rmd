@@ -1,0 +1,276 @@
+---
+title: "Getting Started With mvrsquared"
+author: "Tommy Jones"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started With mvrsquared}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}---
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>", warning = FALSE
+)
+```
+
+# Introduction
+Welcome to the `mvrsquared` package! This package does one thing: calculate the [coefficient of determination](https://en.wikipedia.org/wiki/Coefficient_of_determination) or R-squared. However, this implementation is different from what you may be familiar with. In addition to the standard R-squared used frequently in linear regression, `mvrsquared` calculates R-squared for multivariate outcomes. (This is why there is an 'mv' in `mvrsquared`).
+
+`mvrsquared` implements R-squared based on a derivation in [this paper](https://arxiv.org/abs/1911.11061). It's the same definition of R-squared you're probably familiar with ($1 - \frac{SSE}{SST}$) but generalized to n-dimensions.
+
+In the standard case, your outcome $y$ and prediction $\hat{y}$ are vectors. In other words, each observation is a single number. This is fine if you are predicting a single variable. But what if you are predicting multiple variables at once? In that case, $y$ and $\hat{y}$ are matrices. This situation occurs frequently in topic modeling or simultaneous equation modeling.
+
+Below are some examples of using `mvrsquared` for calculating R-squared in the traditional context and for multivariate outcomes.
+
+# Traditional R-squared
+
+Below is a simple example comparing the R-squared calculated from a linear model fit by `lm` in the `stats` package and the R-squared calculated in the `mvrsquared` package. (Spoiler alert: they're identical.) Why do this? If `mvrsquared` can't get the same calculation, you probably shouldn't trust it. (Spoiler alert again: it can and you should.)
+
+
+```{r}
+
+library(mvrsquared)
+
+data(mtcars)
+
+# fit a linear model
+f <- lm(mpg ~ cyl + disp + hp + wt, data = mtcars)
+
+# extract r-squared 
+f_summary <- summary(f)
+
+r2_lm <- f_summary$r.squared
+
+r2_lm
+
+# calculate univariate r-squared using mvrsquared
+r2_mv <- calc_rsquared(y = mtcars$mpg, yhat = f$fitted.values)
+
+r2_mv
+
+# just to be 100% sure...
+r2_lm == r2_mv
+
+```
+
+You can also calculate R-squared by passing your data and your linear weights. (That's probably less useful for univariate outcome models. But, as you'll see below, it's very important for latent variable models like topic models.)
+
+```{r}
+
+x <- cbind(1, f$model[, -1]) # note, you have to add 1's for the intercept and
+                             # I'm removing the first column of f$model as it
+                             # is the outcome we are predicting
+
+x <- as.matrix(x) # x needs to be a matrix, not a data.frame or tibble for now
+
+w <- matrix(f$coefficients, ncol = 1) # w also has to be a matrix
+
+# this calculates yhat as the dot product x %*% w
+r2_mv2 <- calc_rsquared(y = mtcars$mpg, 
+                        yhat = list(x = x,
+                                    w = w))
+
+r2_mv2
+
+```
+
+Calculating R-squared this way does lead to a tiny difference in calculation due to numeric precision. 
+
+```{r}
+r2_mv2 == r2_lm
+```
+
+However, the difference is tiny. Below demonstrates that they are the same up to 14 decimal places in this example.
+
+```{r}
+round(r2_mv2, 14) == round(r2_lm, 14)
+```
+
+# Multivariate R-squared
+
+## Multivariate prediction
+
+### A silly example to prove a point
+Below, just to show you I'm not blowing smoke, is a silly example that demonstrates that you don't get any crazy results just because your outcome is a matrix. If we make the columns of $y$ the same values (and ditto for $\hat{y}$), you actually get the same R-squared as above.
+
+```{r}
+calc_rsquared(y = cbind(mtcars$mpg, mtcars$mpg),
+              yhat = cbind(f$fitted.values, f$fitted.values))
+```
+
+Same as above, no?
+
+### A more realistic example
+
+Here's a more realistic example. Say you've got a neural net that is predicting two variables at once.
+
+```{r}
+library(nnet)
+
+# let's generate some synthetic data
+set.seed(666)
+
+# Some continuous variables
+x1 <- rnorm(n = 10000, mean = 1, sd = 2)
+x2 <- rnorm(n = 10000, mean = 1.5, sd = 2.5)
+x3 <- rnorm(n = 10000, mean = .6, sd = 1.5)
+
+# linear combinations used to generate outcomes with logit functions
+z1 <- 1 - 1.2 * x1 + 4.5 * x2 - 2.8 * x3 
+
+z2 <- -2 + 2.8 * x1 - 1.2 * x2 + 4.5 * x3 
+
+y1 <- rbinom(10000, 1, prob = 1 / (1 + exp(-z1)))
+
+y2 <- rbinom(10000, 1, prob = 1 / (1 + exp(-z2)))
+
+# fit a multinomial model using a 1-layer neural net with 10 nodes
+f_mv <- nnet(cbind(y1, y2) ~ x1 + x2 + x3, 
+             size = 10)
+
+yhat <- predict(f_mv, data.frame(x1 = x1, x2 = x2, x3 = x3), type = "raw")
+
+# and now calculate r-squared
+calc_rsquared(y = cbind(y1, y2), yhat = yhat)
+
+```
+
+
+## Probabilistic topic modeling
+
+[The paper](https://arxiv.org/abs/1911.11061) (as of this writing still in progress) that derives the multivariate R-squared is focused on probabilistic topic modeling. Here's an example using Latent Dirichlet Allocation.
+
+Below are preliminaries of loading data and getting the model.
+
+```{r}
+library(tidytext)
+library(textmineR)
+library(dplyr)
+library(stringr)
+
+# load documents in a data frame
+docs <- nih_sample 
+
+# tokenize using tidytext's unnest_tokens
+tidy_docs <- docs %>% 
+  select(APPLICATION_ID, ABSTRACT_TEXT) %>% 
+  unnest_tokens(output = word, 
+                input = ABSTRACT_TEXT,
+                stopwords = stop_words$word,
+                token = "ngrams",
+                n_min = 1, n = 2) %>% 
+  count(APPLICATION_ID, word) %>% 
+  filter(n>1) #Filtering for words/bigrams per document, rather than per corpus
+
+tidy_docs <- tidy_docs %>% # filter words that are just numbers
+  filter(! str_detect(tidy_docs$word, "^[0-9]+$"))
+
+# turn a tidy tbl into a sparse dgCMatrix for use in textmineR
+dtm <- tidy_docs %>% 
+  cast_sparse(APPLICATION_ID, word, n)
+
+
+# create a topic model
+lda <- FitLdaModel(dtm = dtm, 
+                   k = 20,
+                   iterations = 200,
+                   burnin = 175)
+
+```
+
+The paper notes that for a probabilistic topic model, $\hat{y} = \vec{n} \odot \Theta \cdot \Phi$, where $\vec{n}$ is a vector of document lengths, $\odot$ is elementwise multiplication, $\Theta$ is a matrix of topic distributions over documents, and $\Phi$ is a matrix of token distributions over topics. 
+
+Doing this multiplication explicitly in R could lead you to run out of RAM for a decently-sized corpus. (This toy example won't.) Luckily, we can use the ability to pass a list `x` and `w` to `calc_rsquared` to do that multiplication more efficiently. In that case, we set `x` $= \vec{n}\odot\Theta$ and `w` $= \Phi$.
+
+(Note that you can pass a sparse `dgCMatrix` from the `Matrix` or something coercible to one directly to `calc_rsquared`.)
+
+```{r}
+r2_lda <- calc_rsquared(y = dtm, 
+                        yhat = list(x = rowSums(dtm) * lda$theta, w = lda$phi))
+
+r2_lda
+
+```
+
+
+## Latent semantic analysis topic modeling
+
+Latent semantic analysis (LSA) uses a single value decomposition of a document term matrix as a non-probabilistic topic model.
+
+Note the example below doesn't use [TF-IDF](https://en.wikipedia.org/wiki/Tf%E2%80%93idf) even though most folks recommend you do. For a more thorough example of LSA (and LDA) see `textmineR`'s [vignette on topic modeling](https://www.rtextminer.com/articles/c_topic_modeling.html).
+
+```{r}
+
+lsa <- FitLsaModel(dtm = dtm, k = 20)
+
+r2_lsa <- calc_rsquared(y = dtm,
+                        yhat = list(x = lsa$theta %*% diag(lsa$sv), w = lsa$phi))
+
+r2_lsa
+
+```
+
+
+# Parallelization/distributed computing for large data sets
+
+You say you have BIG DATA?!?! Below is an example of how to chop up a calculation and have r-squared built in parallel in a distributed setting. `mvrsquared` has a parallel back end using [`RcppThread`](https://CRAN.R-project.org/package=RcppThread) and controlled by the `threads` argument. However, if that isn't enough, you can bring your own distributed parallel framework. The example below uses `parallel::mclapply` which will not parallelize on Windows, but R has other options. 
+
+`mvrsquared` has the option to return only the sums of squares (specifically SSE and SST). You can calculate these in parallel/distributed and combine them by adding post-hoc. (That's a little algorithm called "map-reduce" for those in the know.) Once combined, you can calculate R-squared yourself with the canonical formula $1 - \frac{SSE}{SST}$. 
+
+Note: You **must** calculate the mean of your outcome, $\bar{y}$, first and hand it off to `calc_rsquared`. Otherwise, your calculations for SST on a given core will be based only on the observations sent to that core, not the whole data set. (If you do this, `calc_rsquared` will give you a WARNING.)
+
+Below is a toy example using `parallel::mclapply` to run parallel computations calculating R-squared for our LDA model, above. (Yes, this is overkill for our toy problem and it will actually be slower due to overhead. But imagine the calculations for a corpus of ~1 million documents with hundreds-of-thousands or millions of unique tokens.)
+
+Because the below example uses parallel execution, which can be tricky when working with CRAN, I'm not actually evaluating it in this vignette. However, you can run the code yourself.
+
+```{r eval = FALSE}
+library(parallel)
+
+batch_size <- 10
+
+batches <- mclapply(X = seq(1, nrow(dtm), by = batch_size),
+                    FUN = function(b){
+                      
+                      # rows to select on
+                      rows <- b:min(b + batch_size - 1, nrow(dtm))
+                      
+                      # rows of the dtm
+                      y_batch <- dtm[rows, ]
+                      
+                      # rows of theta multiplied by document length
+                      x_batch <- rowSums(y_batch) * lda$theta[rows, ]
+                      
+                      list(y = y_batch,
+                           x = x_batch)
+                    }, mc.cores = 2)
+
+
+# calculate ybar for the data
+# in this case, lazily doing colMeans, but you could divide this problem up too
+ybar <- colMeans(dtm)
+
+# MAP: calculate sums of squares
+ss <- mclapply(X = batches,
+               FUN = function(batch){
+                 calc_rsquared(y = batch$y,
+                               yhat = list(x = batch$x, w = lda$phi),
+                               ybar = ybar,
+                               return_ss_only = TRUE)
+               }, mc.cores = 2)
+
+
+# REDUCE: get SST and SSE by summation
+ss <- do.call(rbind, ss) %>% colSums()
+
+r2_mapreduce <- 1 - ss["sse"] / ss["sst"]
+
+# should be the same as above
+r2_mapreduce
+
+```
+
+

@@ -1,0 +1,243 @@
+---
+title: "Construct CUSUM charts for hospital performance"
+author: "Lena Hubig"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Construct CUSUM charts for hospital performance}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.dim = c(7, 5)
+)
+
+library(cusum)
+```
+
+## Overview
+This vignette describes CUSUM charts based on a simulated false-signal-probability for hospital performance data in the R package **cusum**. This is a practical guide to constructing and evaluating non-risk-adjusted and risk-adjusted CUSUM charts following Steiner et al. (Biostatistics 1.4 (2000), pp. 441-52).
+
+The **cusum** packages takes different factors into account that influence the signal rate of CUSUM charts. Some are given by the process to be monitored; these factors are: 
+
+* number of patients: How many observations do we expect in a monitoring period (e.g. a month/a year)?
+* risk-adjustment: Is risk adjustment available? Can we allocate different risks to different observations?
+    * if yes:
+        * patient risks: What are these risks and how are they distributed?
+    * if no: 
+        * accepted failure probability: What kind of failure rate do we expect on average?
+        
+The primary control input when constructing a CUSUM chart is the control limit. The control limit signals performance deterioration once crossed by the cumulated sum.
+
+The control limit depends on a number of variables:
+
+* the desired target odds multiplier associated to an out-of-control process
+* the false signal probability \alpha accepted 
+* number of simulations
+
+## Motivating example
+To illustrate how **cusum** can be used for monitoring, we employ a simple and artificial data set generated to closely follow the performance data of German hospitals for one non-risk-adjusted performance indicator and one risk-adjusted performance indicator in 2016 and 2017.
+
+risk-adj. | Indicator Description | Further explanation (in German)
+--------- | --------------------  | ---------------------------------
+NO        | Ratio of observed to expected cases of severe stroke or death under open carotid stenosis surgery | [pdf (p4)](https://iqtig.org/downloads/auswertung/2016/17n1hftfrak/QSKH_17n1-HUEFTFRAK_2016_QIDB_V02_2017-04-26.pdf)
+YES       | Preoperative stay more than 24 hours for patients with proximal femur fracture | [pdf (p23)](https://iqtig.org/downloads/auswertung/2016/10n2karot/QSKH_10n2-KAROT_2016_QIDB_V02_2017-04-26.pdf)
+
+Non-risk-adjusted performance indicator
+```{r}
+data("cusum_example_data", package = "cusum")
+
+head(cusum_example_data)
+```
+
+Risk-adjusted performance indicator
+```{r}
+data("racusum_example_data", package = "cusum")
+
+head(racusum_example_data)
+```
+
+First, CUSUM charts are constructed on performance data from 2016 (Phase I), and then applied and evaluated on performance data from 2017 (Phase II).
+
+```{r}
+cusum_example_p1 <- cusum_example_data[cusum_example_data$year == 2016, ]
+cusum_example_p2 <- cusum_example_data[cusum_example_data$year == 2017, ]
+
+racusum_example_p1 <- racusum_example_data[racusum_example_data$year == 2016, ]
+racusum_example_p2 <- racusum_example_data[racusum_example_data$year == 2017, ]
+```
+
+
+## Non-risk-adjusted CUSUM chart
+### Simulation of CUSUM Control Limits
+We get the control limit of our CUSUM chart by simulating for a false signal probability depending on sample size and accepted failure probability.
+
+We can estimate the accepted failure probability by taking the average of Phase I. Alternatively, we could also define an accepted failure probability politically 
+
+```{r}
+failure_probability <- mean(cusum_example_p1$y)
+
+n_patients <- nrow(cusum_example_p1)
+```
+
+
+Then, control limits can be simulated using _cusum_limit_sim_.
+
+```{r}
+
+cusum_limit <- cusum_limit_sim(failure_probability,
+                               n_patients,
+                               odds_multiplier = 2, 
+                               n_simulation = 1000,
+                               alpha = 0.05,
+                               seed = 2046)
+
+
+print(cusum_limit)
+```
+
+### Applying CUSUM Charts
+
+Monitoring via CUSUM charts is applied on performance data from 2017 (Phase II) and the control limit _cusum_limit_. It can be calculated using _cusum_.
+
+```{r}
+patient_outcomes <- cusum_example_p2$y
+
+
+cusum_cs <- cusum(failure_probability,
+                  patient_outcomes,
+                  limit = cusum_limit,
+                  odds_multiplier = 2,
+                  reset = FALSE)
+
+head(cusum_cs)
+plot(cusum_cs)
+```
+
+
+Performance is as expected during the first half of monitoring, and then deteriorates. We get a signal at t=`r sig <- cusum_cs$t[cusum_cs$signal==1]; sig[1]`. If reset==TRUE, the CUSUM resets after each signal.
+
+```{r}
+cusum_cs <- cusum(failure_probability,
+                  patient_outcomes,
+                  limit = cusum_limit,
+                  odds_multiplier = 2,
+                  reset = TRUE)
+
+plot(cusum_cs)
+```
+
+### Evaluating CUSUM charts
+The false signal probability of a CUSUM chart can be simulated using _cusum_alpha_sim_ given a predefined control limit.
+
+```{r}
+n_patients <- nrow(cusum_example_p2)
+
+cusum_alpha <- cusum_alpha_sim(failure_probability,
+                               n_patients,
+                               odds_multiplier = 2,
+                               n_simulation = 1000,
+                               limit = cusum_limit,
+                               seed = 2046)
+
+print(cusum_alpha)
+```
+
+We see that _cusum_alpha_ equals our previously defined false signal probability of 0.05. 
+
+
+## Risk-adjusted CUSUM chart
+### Simulation of RA-CUSUM Control Limits
+
+Control limits of RA-CUSUM charts are simulated for a false signal probability depending on sample size and risk distribution.
+
+RA-CUSUM Control limits can be simulated using _racusum_limit_alpha_.
+
+```{r}
+
+patient_risks <- racusum_example_p1$score
+
+racusum_limit <- racusum_limit_sim(patient_risks,
+                                   odds_multiplier = 2,
+                                   n_simulation = 1000,
+                                   alpha = 0.05,
+                                   seed = 2046)
+
+print(racusum_limit)
+```
+
+### Applying RA-CUSUM charts
+Monitoring via RA-CUSUM chart is applied on performance data from 2017 (Phase II) and the control limit _racusum_limit_. It can be calculated using _racusum_.
+```{r}
+patient_risks <- racusum_example_p2$score
+
+patient_outcomes <- racusum_example_p2$y
+
+racusum_cs <- racusum(patient_risks,
+                      patient_outcomes,
+                      limit = racusum_limit,
+                      odds_multiplier = 2,
+                      reset = FALSE)
+plot(racusum_cs)
+```
+
+
+Performance is as expected during the first half of monitoring, and then deteriorates. We get a signal at t=`r sig <- racusum_cs$t[racusum_cs$signal==1]; sig[1]`.  If reset==TRUE, the CUSUM resets after each signal.
+
+```{r}
+
+racusum_cs <- racusum(patient_risks,
+                      patient_outcomes,
+                      limit = racusum_limit,
+                      odds_multiplier = 2,
+                      reset = TRUE)
+
+plot(racusum_cs)
+```
+
+
+### Evaluating RA-CUSUM charts
+The false signal probability of a CUSUM chart can be simulated using _cusum_alpha_sim_.
+
+```{r}
+racusum_alpha <- racusum_alpha_sim(patient_risks,
+                                   odds_multiplier = 2,
+                                   n_simulation = 1000,
+                                   limit = racusum_limit,
+                                   seed = 2046)
+
+print(racusum_alpha)
+```
+
+We see that _racusum_alpha_ is similar to our previously defined false signal probability of 0.05. Deviation is possible due to a slight change in risk population.
+
+## CUSUM Chart for process improvement
+
+CUSUM charts for detecting process improvements can be constructed similarly, but the CUSUM statistic is restricted to non-positive values.
+```{r}
+
+cusum_limit_improve <- cusum_limit_sim(failure_probability,
+                                       n_patients,
+                                       odds_multiplier = .5,
+                                       n_simulation = 1000,
+                                       alpha = 0.5,seed = 2046)
+
+cusum_cs_improve <- cusum(failure_probability,
+                          patient_outcomes = cusum_example_p2$y,
+                          limit = cusum_limit_improve,
+                          odds_multiplier = .5)
+
+plot(cusum_cs_improve)
+
+cusum_alpha_sim(failure_probability,
+                n_patients,
+                odds_multiplier = 0.5,
+                n_simulation = 1000,
+                limit = cusum_limit_improve,
+                seed = 2046)
+```
+

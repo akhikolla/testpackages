@@ -1,0 +1,127 @@
+---
+title: "Detecting Skin Diseases"
+author: "Mads Lindskou"
+output: 
+  rmarkdown::html_vignette:
+    highligh: zenburn
+    toc: true
+    fig_height: 4
+    fig_width: 4
+    fig_align: "center"
+bibliography: refs.bib
+vignette: >
+  %\VignetteIndexEntry{Detecting Skin Diseases}
+  %\VignetteEngine{knitr::rmarkdown}
+  \usepackage[utf8]{inputenc}
+---
+
+## Dermatitis
+
+The UCI data set \texttt{dermatitis} [@altay] consist of 
+
+ - $366$ patients ($8$ with missing values)
+ - $12$ clinical attributes (erythema, itching, scaling, etc.)
+ - $21$ histopathological attributes (decrease of melanin, spongiosis, etc.)
+
+and a class variable with six different skin diseases
+
+ - psoriasis ($111$ patients)
+ - seborrheic dermatitis ($60$ patients)
+ - lichen planus ($71$ patients)
+ - pityriasis rosea ($48$ patients)
+ - chronic dermatitis ($48$ patients)
+ - pityriasis rubra pilaris ($20$ patients)
+
+Many of the classical machine learning algorithms have been applied to the dataset \texttt{dermatitis} [@liu2015fast]. They all achieve a prediction accuracy above $95\%$ and some even above $99\%$. **But...:**
+
+ - The skin diseases share many common features 
+ - We have **exclusive** classes but possibly not **exhaustive**
+ - What if a patient does not suffer from one of the six diseases
+ - Classification forces us to label a patient with one and only one disease
+
+## Goal
+
+Given a new patient $y$, we want to test the hypotheses
+
+\begin{align*}
+H_1: & y \text{ has psoriasis} \\
+H_2: & y \text{ has seborrheic dermatitis} \\
+H_3: & y \text{ has lichen planus} \\
+H_4: & y \text{ has pityriasis rosea} \\
+H_5: & y \text{ has chronic dermatitis} \\
+H_6: & y \text{ has pityriasis rubra pilaris} 
+\end{align*}
+
+Since all hypotheses are exclusive we do not correct for multiple hypothesis testing (but the user can do this by setting the significance level accordingly).
+
+## Modeling Attributes of Psoriasis
+
+We first show how to test $H_1$. First extract the psoriasis data:
+
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+library(dplyr)
+library(molic)
+y     <- unlist(derma[80, -35]) # a patient with seboreic dermatitis
+psor  <- derma %>%
+  filter(ES == "psoriasis") %>%
+  dplyr::select(-ES)
+```
+
+Next, we fit the interaction graph for the psoriasis patients:
+
+```{r fit_graph}
+library(ess)
+g <- fit_graph(psor, q = 0, trace = FALSE)
+```
+
+We can color the nodes corresponding to clinical attributes (red), histopathological attributes (green) and the age variable (gray):
+
+```{r color_nodes, echo = TRUE}
+vs   <- names(adj_lst(g))
+vcol <- structure(vector("character", length(vs)), names = vs)
+vcol[grepl("c", vs)] <- "tomato"  # clinical attributes
+vcol[grepl("h", vs)] <- "#98FB98" # histopathological attributes
+vcol["age"]          <- "gray"    # age variable
+```
+
+```{r plot_graph, fig.width=7, fig.height=4.5,fig.show='hold',fig.align='center'}
+plot(g, vcol, vertex.size = 10, vertex.label = NA)
+```
+
+The take home message here is, that we cannot assume independence between the attributes for the psoriasis patient as seen in the interaction graph - there are many associations.
+
+## Outlier Model for Psoriasis Patients
+
+
+```{r comment = NA}
+set.seed(300718)
+m <- fit_outlier(psor, g, y)
+print(m)
+```
+
+Notice that that the number of observations is $112$ even though we have only observed $111$ psoriasis patients. This is because, under the hypothesis, $H_1$, the new observation $y$ has psoriasis. The other summary statistics is self explanatory. 
+
+## Plotting the Approximated Density of the Test Statistic
+
+```{r plot_outlier, fig.align='center', fig.width=5, fig.height=3,fig.show='hold'}
+plot(m)
+```
+The red area is the critical region (here 5%) and the dotted line is the observed test statistic (the deviance) of $y$. Since the dotted line is outside the critical region, we cannot reject that $y$ has psoriasis.
+
+## Testing all Hypothesis Simultaneously
+
+We can use the `fit_multiple_models` function to test all six hypothesis as follows.
+
+```{r echo = TRUE, eval = FALSE, fit_multiple_models, fig.align='center', message = FALSE, warning = FALSE, fig.width=5, fig.height=2.8,fig.show='hold'}
+set.seed(300718)
+mm <- fit_multiple_models(derma, y, "ES", q = 0,trace = FALSE) 
+plot(mm)
+```
+
+```{r mult_models, echo = FALSE, out.width = "70%", fig.align = 'center'}
+knitr::include_graphics("multiple_models.png")
+```
+
+Thus, we cannot reject that $y$ has either psoriasis, seboreic dermatitis or pityriasis rosea. This is conservative compared to classification methods and hence a little safer. The medical expert should proceed the investigation from here.
+
+## References

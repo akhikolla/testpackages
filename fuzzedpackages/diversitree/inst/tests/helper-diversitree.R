@@ -1,0 +1,10 @@
+suppressMessages({
+  library(testthat)
+  library(diversitree)
+  library(parallel)
+  library(expm)
+  library(caper)
+  library(nlme)
+  library(lubridate)
+  library(minqa)
+})

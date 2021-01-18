@@ -1,0 +1,155 @@
+---
+title: "Linear algebra with the `clifford` package"
+author: "Robin K. S. Hankin"
+date: "`r Sys.Date()`"
+vignette: >
+  %\VignetteIndexEntry{linear algebra}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+This short document shows a nice application of Clifford algebras to
+linear algebra.  Suppose we have vectors $a, b, c$ spanning
+$x\in\mathcal{R}^3$ and wish to write $x=\alpha a+\beta b+\gamma c$.
+The traditional Cramer's rule would be
+
+\[
+\alpha=\frac{
+	\det\begin{bmatrix}
+	x_1&b_1&c_1\\
+	x_2&b_2&c_2\\
+	x_3&b_3&c_3
+	\end{bmatrix}
+	}{
+	\det\begin{bmatrix}
+	a_1&b_1&c_1\\
+	a_2&b_2&c_2\\
+	a_3&b_3&c_3
+	\end{bmatrix}
+}
+\qquad\beta=\frac{
+	\det\begin{bmatrix}
+	a_1&x_1&c_1\\
+	a_2&x_2&c_2\\
+	a_3&x_3&c_3
+	\end{bmatrix}
+	}{
+	\det\begin{bmatrix}
+	a_1&b_1&c_1\\
+	a_2&b_2&c_2\\
+	a_3&b_3&c_3
+	\end{bmatrix}
+}
+\qquad
+\gamma=\frac{
+	\det\begin{bmatrix}
+	a_1&b_1&x_1\\
+	a_2&b_2&x_2\\
+	a_3&b_3&x_3
+	\end{bmatrix}
+	}{
+	\det\begin{bmatrix}
+	a_1&b_1&c_1\\
+	a_2&b_2&c_2\\
+	a_3&b_3&c_3
+	\end{bmatrix}
+}.
+\]
+
+However, observe that this solution, while accurate, requires one to
+take a coordinate basis; and offers little in the way of intuition.
+
+## Using Clifford algebra
+
+Considering $\mathcal{R}^3$ as a vector space and given vectors $a, b,
+c$ spanning the space we can express any vector $x\in\mathcal{R}^3$ as
+
+\[
+\left(\frac{x\wedge b\wedge c}{a\wedge b\wedge c}\right)a+
+\left(\frac{a\wedge x\wedge c}{a\wedge b\wedge c}\right)b+
+\left(\frac{a\wedge b\wedge x}{a\wedge b\wedge c}\right)c
+\]
+
+which is Cramer's rule expressed directly in vector form (rather than
+components).  Package idiom is straightforward:
+
+```{r,results="hide",include=FALSE}
+library("clifford",quietly=TRUE)
+```
+
+```{r,eval=FALSE}
+library("clifford",quietly=TRUE)
+
+```{r,eval=TRUE}
+a <- as.1vector(runif(3))
+b <- as.1vector(runif(3))
+c <- as.1vector(runif(3))
+
+(x <- as.1vector(1:3))
+abc <- a %^% b %^% c
+
+xabc <-
+a*(x %^% b%^% c)/abc  + 
+b*(a %^% x%^% c)/abc  + 
+c*(a %^% b%^% x)/abc  
+```
+
+Thus we have expressed $x$ as a linear combination of $a,b,c$.  To verify:
+
+```{r}
+print(Mod(x-xabc))
+```
+
+
+
+Conversely, we might know the coefficients [here we will use
+$1,2,3$] and try to determine them using package idiom:
+
+```{r}
+y <- a*1 + b*2 + c*3
+c(
+drop((y %^% b %^% c)/abc),
+drop((a %^% y %^% c)/abc),
+drop((a %^% b %^% y)/abc))
+```
+
+
+# Higher dimensional space
+
+To accomplish this in arbitrary-dimensional space:
+
+```{r}
+n <- 13                                                # dimensionality of space
+x <- as.1vector(seq_len(n))                            # target vector
+L <- replicate(n,as.1vector(rnorm(n)),simplify=FALSE)  # spanning vectors
+subst <- function(L,n,x){L[[n]] <- x; return(L)}       # list substitution
+coeff <- function(n,L,x){
+      drop(Reduce(`%^%`,subst(L,n,x))/Reduce(`%^%`,L))
+}
+```
+
+Then the coefficients are given by:
+
+```{r}
+(alpha <- sapply(seq_len(n),coeff,L,x))
+```
+
+and we can reconstitute vector $x$:
+
+
+```{r}
+out <- as.clifford(0)
+f <- function(i){alpha[i]*L[[i]]}
+for(i in seq_len(n)){
+      out <- out + f(i)
+}
+Mod(out-x)  # zero to numerical precision
+```
+
+Or, somewhat slicker:
+
+```{r}
+Reduce(`+`,sapply(seq_len(n),f,simplify=FALSE))
+```
+

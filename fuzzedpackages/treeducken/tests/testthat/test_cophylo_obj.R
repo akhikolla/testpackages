@@ -1,0 +1,1 @@
+#is, as, S3 methods for cophylo all work

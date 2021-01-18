@@ -1,0 +1,149 @@
+---
+title: "Estimating the Model in the Paper"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Estimating the Model in the Paper}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+# Intro
+
+The objective of this vignette is to provide clarity as to the estimation 
+procedure used to obtain the results in the paper. This vignette breaks down 
+each section in the example displayed in `cIRT()` function. 
+
+# Data
+
+Within this vignette, we used two different data sets to generate a Choice
+Item Response Theory Model with the routine located in `cIRT`.
+
+```{r load_pkg}
+library(cIRT)
+```
+
+The first data set, `trial_matrix`, contains whether or not the subject
+correctly identified the spatial rotation. The second dataset, `choice_matrix`,
+provides information regarding the choice decision subjects were asked to make. 
+
+```{r load_data}
+data(trial_matrix)
+data(choice_matrix)
+```
+
+# Constructing the Model Matrix
+Here we construct a thurstone design matrix by obtaining the IDs of hard and easy questions presented for the subject to make a decision upon.
+
+```{r thurstone_design}
+# Create the Thurstone Design Matrices
+hard_items = choice_matrix$hard_q_id
+easy_items = choice_matrix$easy_q_id
+
+D_easy = model.matrix( ~ -1 + factor(easy_items))
+D_hard = -1 * model.matrix( ~ -1 + factor(hard_items))[, -c(5, 10, 15)]
+```
+
+Within this setting, we setup the effect-codes for different constraints. 
+
+```{r effect_coding}
+# Defining effect-coded contrasts
+high_contrasts = rbind(-1, diag(4))
+rownames(high_contrasts) = 12:16
+low_contrasts = rbind(-1, diag(2))
+rownames(low_contrasts) = 4:6
+
+# Creating high & low factors
+high = factor(choice_matrix[, 'high_value'])
+low = factor(choice_matrix[, 'low_value'])
+contrasts(high) = high_contrasts
+contrasts(low) = low_contrasts
+
+fixed_effects = model.matrix( ~ high + low)
+fixed_effects_base = fixed_effects[, 1]
+fixed_effects_int = model.matrix( ~ high * low)
+```
+
+# Modeling the Data
+
+Generate the cIRT model using a Thurstone Design Matrix generated above. 
+
+```{r model_data}
+# Model with Thurstone D matrix
+system.time({
+  out_model_thurstone = cIRT(
+    choice_matrix[, 'subject_id'],
+    cbind(fixed_effects[, -1], D_easy, D_hard),
+    c(1:ncol(fixed_effects)),
+    as.matrix(fixed_effects),
+    as.matrix(trial_matrix),
+    choice_matrix[, 'choose_hard_q'],
+    20000,
+    25000
+  )
+})
+```
+
+We recommend saving the model object as a `.rda` file even though the total
+computational time is less than 2.5 minutes.  
+```
+## Save model output to an rda file.
+# save(out_model_thurstone, file='choiceMCMCoutput.rda')
+
+## Load model output back into R.
+# load(file='choiceMCMCoutput.rda')
+```
+
+# Parameter Estimates
+
+Next up, we obtain the parameter estimates of the model by averaging over the different estimates obtained via the Gibbs sampling technique employed. 
+
+```{r param_ests}
+vlabels_thurstone = colnames(cbind(fixed_effects[, -1], D_easy, D_hard))
+
+G_thurstone = t(apply(
+  out_model_thurstone$gs0,
+  2,
+  FUN = quantile,
+  probs = c(.5, .025, .975)
+))
+rownames(G_thurstone) = vlabels_thurstone
+
+B_thurstone = t(apply(
+  out_model_thurstone$beta,
+  2,
+  FUN = quantile,
+  probs = c(.5, 0.025, .975)
+))
+rownames(B_thurstone) = colnames(fixed_effects)
+
+S_thurstone = solve(
+  apply(out_model_thurstone$Sigma_zeta_inv, c(1, 2), FUN = mean)
+)
+
+inv_sd = diag(1 / sqrt(diag(solve(
+  apply(out_model_thurstone$Sigma_zeta_inv, c(1, 2), FUN = mean)
+))))
+
+corrmat = inv_sd %*% S_thurstone %*% inv_sd
+as = apply(out_model_thurstone$as, 2, FUN = mean)
+bs = apply(out_model_thurstone$bs, 2, FUN = mean)
+```
+
+Thus, we have the following results:
+
+```{r param_results}
+# gs0
+G_thurstone
+# betas
+B_thurstone
+# Sigma Thurstone
+S_thurstone
+
+## Item parameters ----
+
+# a
+as
+# b
+bs
+```

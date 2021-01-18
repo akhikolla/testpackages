@@ -1,0 +1,240 @@
+%\VignetteIndexEntry{Short Introduction to rtkore and STK++}
+
+\documentclass[a4paper,10pt]{article}
+
+%-------------------------
+% preamble for nice lsitings and notes
+\include{rtkpp-preamble}
+
+\geometry{top=3cm, bottom=3cm, left=2cm, right=2cm}
+
+%% need no \usepackage{Sweave.sty}
+<<prelim,echo=FALSE,print=FALSE>>=
+library(rtkore)
+rtkore.version <- packageDescription("rtkore")$Version
+rtkore.date <- packageDescription("rtkore")$Date
+@
+% Title Page
+\title{ rtkore: R and STK++ Integration using Rcpp}
+\author{Serge Iovleff}
+\date{\today}
+
+% start documentation
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+\maketitle
+\begin{abstract}
+This vignette gives some hints about the usage of the \rtkore{} (successor of
+the \rtkpp{}) package. It explains shortly how to wrap R vectors and matrices
+into \stkpp{} structures. It gives also an example of Makevars for linking an R
+package with \rtkore{}. More informations can be found in the other vignettes
+coming with the package about the functionnalities furnished by the \stkpp{} library.
+\end{abstract}
+
+\section{Introduction}
+
+\stkpp{} is a versatile, fast, reliable and elegant collection of \Cpp{}
+classes for statistics, clustering, linear algebra (using native methods or
+Lapack\cite{Lapack}), arrays (with an Eigen-like API \cite{JSS:RcppEigen}),
+regression, dimension reduction, etc. Some functionalities provided by the
+library are available in the \texttt{R} environment as \texttt{R} functions or
+distributed as R packages (\texttt{MixAll} \cite{MixAll}, \texttt{blockcluster}
+\cite{blockcluster} and \texttt{HDPenReg} \cite{HDPenReg} among others).
+
+The \rtkore{} package provides a subset of the \stkpp{}
+library and is only composed of templated classes and inlined functions.
+This package furnishes implementations of \texttt{Rcpp::as} and
+\texttt{Rcpp::wrap} for the \Cpp{} classes defined in \stkpp{}.
+In this sense it is similar to the \texttt{RcppEigen}
+\cite{CRAN:RcppEigen,JSS:RcppEigen} and \texttt{RcppArmadillo}
+\cite{CRAN:RcppArmadillo} packages.
+
+The current version of the stk++ library is given below
+<< >>=
+.Call("stk_version", FALSE, PACKAGE="rtkore")
+@
+
+\section{Wrapping \texttt{R} data with \stkpp{} arrays}
+
+rtkore proposes two objects in order to facilitate data transfer
+\begin{lstlisting}[style=customcpp]
+typename RVector<Type>;
+typename RMatrix<Type>;
+\end{lstlisting}
+\texttt{Rcpp} facilitates conversion of objects from \texttt{R} to
+\Cpp{} through the templated functions \texttt{Rcpp::as}.
+The function \texttt{Rcpp::as} is re-implemented in \stkpp{} but
+it is not strictly necessary to use it. You can rather use this kind
+of code
+\begin{lstlisting}[style=customcpp]
+SEXP myFunction(SEXP data)
+{
+  // wrap a R SEXP struct with a STK++ RMatrix
+  STK::RMatrix<double> mat(data); // if data is not a matrix, an exception is thrown
+  // wrap a Rcpp matrix in a STK++ RMatrix
+  Rcpp::NumericMatrix rmat(100,20);
+  STK::RMatrix<double> mat(rmat);
+  // Constructor with given dimension
+  RMatrix<double> myData(100, 20);
+}
+\end{lstlisting}
+The template class \code{STK::RMatrix} wraps a Rcpp matrix which itself
+wrap the \texttt{R} \verb+SEXP+ structure. You can access directly (and
+eventually modify) the \texttt{R} data in your application like
+an usual \stkpp{} array.
+
+The second template class you can use is \code{STK::RVector} which
+allows to wrap \code{SEXP} struct.
+
+\section{Converting \stkpp{} arrays and expressions to \texttt{R} data}
+
+\texttt{Rcpp} facilitates data conversion from \Cpp{} to \texttt{R}
+through  \texttt{Rcpp::wrap}. This function is extended by \rtkore{} for \stkpp{}
+arrays and vectors.
+
+The following example is taken from the \code{STK::ClusterLauncher} class 
+(in MixAll package)
+\begin{lstlisting}[style=customcpp]
+  Array2D<Real> mean(K, nbVariable), sigma(K, nbVariable);
+  // get estimated parameters
+  // ....
+  // and save them
+  NumericVector m_mean  = Rcpp::wrap(mean);
+  NumericVector m_sigma = Rcpp::wrap(sigma);
+\end{lstlisting}
+
+Note that the \texttt{Rcpp::wrap} is rather limited in its usage and if you
+need, for example, to convert expression rather than arrays then you can use the
+\texttt{STK::wrap} function (see example below).
+
+\section{Using \rtkore{} random number generators}
+
+All the random numbers of R are interfaced in \rtkore{}. You can used them as
+\stkpp{} random number generators like in the following example
+
+\begin{lstlisting}[style=customcpp]
+RcppExport SEXP fastBetaRand( SEXP n, SEXP alpha, SEXP beta)
+{
+  BEGIN_RCPP;
+  // create a STK++ RVector
+  STK::RVector<double> tab(Rcpp::as<int>(n));
+  // Create a Beta distribution function with alpha and beta as parameters
+  STK::Law::Beta law(Rcpp::as<double>(alpha), Rcpp::as<double>(beta));
+  // fill tab with random numbers
+  tab.rand(law);
+  // return the wrapped Rcpp vector
+  return tab.vector();
+  END_RCPP;
+}
+\end{lstlisting}
+
+
+\section{Linking with \rtkore{}}
+
+At the R level, you have to add the \texttt{LinkingTo: rtkore,Rcpp} line in the
+\verb+DESCRIPTION+ file.
+
+\noindent At the C++ level, the only thing to do is to include the header file
+\begin{lstlisting}[style=customcpp]
+// Rcpp.h will be include by rtkore
+#include <RTKpp.h>
+\end{lstlisting}
+in the C++ code.
+
+When compiling the sources, you indicate the location of the stk++ library using
+\verb+rtkore:::CxxFlags()+, \verb+rtkore:::CppFlags()+ and
+\verb+rtkore:::LdFlags()+ in the \texttt{src/Makevars} file.
+
+A minimal Makevars would look like
+\begin{verbatim}
+PKG_CXXFLAGS = `${R_HOME}/bin/Rscript -e "rtkore:::CxxFlags()"`
+PKG_CPPFLAGS = `${R_HOME}/bin/Rscript -e "rtkore:::CppFlags()"` $(SHLIB_OPENMP_CXXFLAGS)
+PKG_LIBS     = `$(R_HOME)/bin/Rscript -e "rtkore:::LdFlags()"` \
+                $(SHLIB_OPENMP_CFLAGS) $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
+\end{verbatim}
+
+\section{Building huge package using \rtkore{}}
+If you are building a package with a lot of cpp files, you may find
+convenient to locate your sources in a separate directory. Hereafter we give an
+example of a Makevars you can modify at your convenience in order to handle
+this situation.
+\begin{verbatim}
+#-----------------------------------------------------------------------
+# Purpose:  Makevars for the R packages using rtkore (stk++)
+#-----------------------------------------------------------------------
+PKGNAME   = NAME_OF_YOUR_SRC  # for example MyPackage
+PKGDIR    = PATH_TO_YOUR_SRC  # for example ./MyPackage
+PKGLIBDIR = $(PKGDIR)/lib     # ./MyPackage/lib
+PKGLIB    = $(PKGLIBDIR)/lib$(PKGNAME).a # ./MyPackage/lib/libMyPackage.a
+
+## Use the R_HOME indirection to support installations of multiple R version.
+PKG_CXXFLAGS = `${R_HOME}/bin/Rscript -e "rtkore:::CxxFlags()"`
+PKG_CPPFLAGS = `${R_HOME}/bin/Rscript -e "rtkore:::CppFlags()"` \
+                $(SHLIB_OPENMP_CXXFLAGS)
+
+## We link the source in the src/ directory with the stkpp library and libMyPackage.a
+## use $(SHLIB_OPENMP_CFLAGS) as stkpp use openMP
+## use $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS) if you want to use lapack and/or stk++
+## wrappers of lapack
+PKG_LIBS = `$(R_HOME)/bin/Rscript -e "rtkore:::LdFlags()"` $(PKGLIB) \
+					$(SHLIB_OPENMP_CFLAGS) \
+          $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
+
+## Define any flags you may need for compiling your sources and export them
+MY_CXXFLAGS = $(PKG_CXXFLAGS)
+MY_CPPFLAGS = $(PKG_CPPFLAGS)
+
+export
+
+.PHONY: all pkglib
+
+## $(SHLIB) is the usual default target that is built automatically from all source
+## files in this directory. pkglib is an additional target for the package
+## that will be found in $(PKGDIR).
+all: $(SHLIB)
+$(SHLIB): pkglib
+
+## build the PKGLIB (lib$(PKGNAME).a)
+pkglib:
+	(cd $(PKGDIR) && $(MAKE)  all)
+	(cd $(PKGDIR) && $(MAKE) clean)
+\end{verbatim}
+
+\section{An example}
+
+The package countMissings is basically composed of one R-script file (countNA.R)
+and one C++ file (countNA.cpp).
+
+Given a R matrix, you get a list composed of two vectors
+constaining respectively the number of missing values in each rows and each
+columns of the R matrix.
+
+The R-script \texttt{countNA.R} is essentially
+\begin{lstlisting}[style=customcpp]
+countNA <- function(data)
+{
+  if (!is.matrix(data)) { stop("in countNA, data must be a matrix.")}
+  .Call("countNA", data, PACKAGE = "countMissings")
+}
+\end{lstlisting}
+and the C++ files is
+\begin{lstlisting}[style=customcpp]
+#include "RTKpp.h"
+RcppExport SEXP countNA( SEXP r_matrix)
+{
+  BEGIN_RCPP
+  STK::RMatrix<double> m_data(r_matrix);
+  // use STK::wrap function (Rcpp::wrap function will not work)
+  return Rcpp::List::create( Rcpp::Named("rows")= STK::wrap(STK::countByRow(m_data.isNA()))
+                           , Rcpp::Named("cols")= STK::wrap(STK::count(m_data.isNA()))
+                           );
+  END_RCPP
+}
+\end{lstlisting}
+
+
+\bibliographystyle{plain}
+\bibliography{rtkore}
+
+\end{document}

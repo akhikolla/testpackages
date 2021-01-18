@@ -1,0 +1,74 @@
+#' Medicial decision data
+#'
+#' Part of the accuracy and response time data presented in Trueblood et al.
+#' (2017) investigating medical decision making among medical professionals
+#' (pathologists) and novices (i.e., undergraduate students). The task of
+#' participants was to judge whether pictures of blood cells show cancerous
+#' cells (i.e., blast cells) or non-cancerous cells (i.e., non-blast cells). The
+#' current data set contains 200 decisions per participant (the "accuracy"
+#' condition from Trueblood et al.).
+#'
+#' @docType data
+#' @keywords dataset
+#' @name med_dec
+#' @usage data(med_dec)
+#'
+#' @details
+#'
+#' At the beginning of the experiment, both novices and medical experts
+#' completed a training to familiarize themselves with blast cells. After that,
+#' each participant performed the main task in which they judged whether or not
+#' presented images were blast cells or non-blast cells. Among them, some of the
+#' cells were judged as easy and some as difficult trials by an additional group
+#' of experts. The current data set only contains the data from the "accuracy"
+#' condition (i.e., Trueblood et al. considered additional conditions that are
+#' not part of the current data set).
+#'
+#' The relevant part of the method section for the accuracy condition from the
+#' original paper is as follows:
+#'
+#' "The main task consisted of six blocks with 100 trials in each block. The
+#' main task was the same as the practice block, where participants were asked
+#' to identify single images. However, participants did not receive
+#' trial-by-trial feedback about their choices. They received feedback about
+#' their performance at the end of each block. The 100 trials in each block were
+#' composed of equal numbers of easy blast images, hard blast images, easy
+#' non-blast images, and hard non-blast images, fully randomized.
+#'
+#' There were three manipulations across blocks: accuracy, speed, and bias. In
+#' the accuracy blocks, participants were instructed to respond as accurately as
+#' possible and were given 5 s to respond. [...] If they responded after the
+#' deadline, they received the message "Too Slow!" The 5-s [...] response
+#' windows for the accuracy [...] [condition was] based on the response time
+#' data from the three expert raters. The 0.975 quantile of the expert raters'
+#' response times was 4.96 s; thus, we set the accuracy response window to 5 s.
+#'
+#' The order of the first three blocks was randomized but with the constraint
+#' that there was one block for each type of manipulation (i.e., accuracy,
+#' speed, and bias). The order of the last three blocks was identical to the
+#' order of the first three blocks."
+#'
+#' Note that this dataset contains some negative response times that indicate a
+#' missing response (i.e., the response value for that trial is `NA`). Take care
+#' in removing these values before using this dataset. See our Validity vignette
+#' for an example of use in an optimization setting.
+#'
+#' @format A data frame with 11000 rows and 9 variables:
+#' \describe{
+#'   \item{id}{identification number of the participant}
+#'   \item{group}{expertise of participant; "experienced", "inexperienced", or "novice". The first two levels refer to different type of medical professional (i.e., experts).}
+#'   \item{block}{block number}
+#'   \item{trial}{index of trial for each participant}
+#'   \item{classification}{true classification of the pictured cell; i.e. the correct response}
+#'   \item{difficulty}{adjudged difficulty of the task for the particular image}
+#'   \item{response}{response given by the participant; either "blast" or "non-blast"}
+#'   \item{rt}{the response time associated with the response, in seconds}
+#'   \item{stimulus}{the image file used for the specific trial}
+#' }
+#' @example examples/examples.med_dec.R
+#'
+#' @source Trueblood, J.S., Holmes, W.R., Seegmiller, A.C. et al. The impact of
+#'   speed and bias on the cognitive processes of experts and novices in medical
+#'   image decision-making. Cogn. Research 3, 28 (2018).
+#'   https://doi.org/10.1186/s41235-018-0119-2
+"med_dec"

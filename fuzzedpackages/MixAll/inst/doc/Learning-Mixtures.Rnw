@@ -1,0 +1,386 @@
+%\VignetteIndexEntry{Learning With MixAll}
+%\VignetteKeywords{Rcpp, C++, STK++, Learning, Missing Values}
+%\VignettePackage{MixAll}
+
+\documentclass[shortnames,nojss,article]{jss}
+
+%------------------------------------------------
+%
+\usepackage{amsfonts,amstext,amsmath,amssymb}
+
+%------------------------------------------------
+%
+\usepackage{Sweave}
+
+\SweaveOpts{concordance=TRUE}
+
+<<prelim,echo=FALSE,print=FALSE>>=
+library(MixAll)
+MixAll.version <- packageDescription("MixAll")$Version
+MixAll.date <- packageDescription("MixAll")$Date
+set.seed(39)
+@
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{float}
+
+%------------------------------------------------
+% Sets
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Rd}{{\mathbb{R}^d}}
+
+\newcommand{\X}{{\mathcal{X}}}
+\newcommand{\Z}{{\mathcal{Z}}}
+\newcommand{\Xd}{{\mathcal{X}^d}}
+
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Nd}{{\mathbb{N}^d}}
+
+% bold letters
+\newcommand{\ba}{\mathbf{a}}
+\newcommand{\bb}{\mathbf{b}}
+\newcommand{\bc}{\mathbf{c}}
+\newcommand{\bg}{\mathbf{g}}
+\newcommand{\be}{\mathbf{e}}
+\newcommand{\bp}{\mathbf{p}}
+\newcommand{\bu}{\mathbf{u}}
+\newcommand{\bx}{\mathbf{x}}
+\newcommand{\bX}{\mathbf{X}}
+%\newcommand{\bZ}{\mathbf{Z}}
+\newcommand{\bz}{\mathbf{z}}
+\newcommand{\bt}{\mathbf{t}}
+\newcommand{\by}{\mathbf{y}}
+
+% bold greek letters \usepackage{amssymb}
+\newcommand{\balpha}{\boldsymbol{\alpha}}
+\newcommand{\bbeta}{\boldsymbol{\beta}}
+\newcommand{\bsigma}{\boldsymbol{\sigma}}
+\newcommand{\bDelta}{\boldsymbol{\Delta}}
+\newcommand{\bepsilon}{\boldsymbol{\epsilon}}
+\newcommand{\bGamma}{\boldsymbol{\Gamma}}
+\newcommand{\blambda}{\boldsymbol{\lambda}}
+\newcommand{\bmu}{\boldsymbol{\mu}}
+\newcommand{\bpi}{\boldsymbol{\pi}}
+\newcommand{\bphi}{\boldsymbol{\phi}}
+\newcommand{\brho}{\boldsymbol{\rho}}
+\newcommand{\btheta}{\boldsymbol{\theta}}
+\newcommand{\bTheta}{\boldsymbol{\Theta}}
+\newcommand{\bvarepsilon}{\boldsymbol{\varepsilon}}
+
+%% Hilbert space and scalar product
+\newcommand{\Hil}{\mathcal{H}} %% RKHS
+\newcommand{\scalprod}[2]{\left\langle#1,#2\right\rangle}
+
+\newcommand{\ttcode}[1]{{\tt #1}}
+%---------------------------------------------------------
+\title{\pkg{MixAll}: Learning mixture models}
+\Plaintitle{MixAll:  Learning mixture models with Mixed data and Missing Values}
+\Shorttitle{MixAll: Learning data}
+
+\Abstract{
+  The MixALL package can also be used in order to learn mixture models when the
+  labels class are known. This short vignette assume that you have already read
+  the vignette "Clustering With MixAll" (\cite{CRAN:MixAll}).
+}
+
+\Keywords{\proglang{R}, \proglang{C++}, \proglang{STK++}, Learning, missing
+values}
+\Plainkeywords{R, C++, STK++, Clustering, missing values}
+
+
+\Address{
+  Serge Iovleff\\
+  Univ. Lille 1, CNRS U.M.R. 8524, Inria Lille Nord Europe \\
+  59655 Villeneuve d'Ascq Cedex, France \\
+  E-mail: \email{Serge.Iovleff@stkpp.org} \\
+  URL: \url{http://www.stkpp.org}\\
+}
+
+
+% Title Page
+\author{Serge Iovleff\\University Lille 1}
+\date{now.data}
+
+\begin{document}
+
+\SweaveOpts{concordance=FALSE}
+\maketitle
+
+%\tableofcontents
+
+\section{Introduction}
+
+It is possible to perform supervised learning with MixAll when the labels of the
+individuals are known. Let us recall the notations defined in the
+\cite{CRAN:MixAll} vignette. $\X$ denote an arbitrary measurable space,
+$\Z=\{1,\ldots,K\}$ is the label set and
+$(\bx,\bz)=\{({\bx}_1,{\bz}_1),...,({\bx}_n,\bz_n)\}$ represents $n$ independent
+vectors in $\X\times\Z$ such that each $\Pr({\bz}_i=k) = p_k$ and such that
+conditionnaly to ${\bz}_i=k$, ${\bx}_i$ arises from a probability distribution
+with density
+\begin{equation}
+  h({\bx}_{i}| \blambda_{k},\balpha)
+\end{equation}
+parameterized by $\blambda_k$ and $\balpha$.
+
+Given the matrix of obervation $\bx$ and the vector of labels $\bz$, the
+learning methods will estimate the unknown parameters $\blambda_k$ and
+$\balpha$. The learning R functions will also return a \ttcode{S4} class
+instance containing the posterior probabilities membership $t_{ik}$ and the
+predicted class membership $z_i$ of each individuals (\ttcode{ziFit} data member
+class).
+
+\section{Learning with MixAll}
+\label{sec:LearnWithMixAll}
+
+Learning analysis can be performed with the functions
+\begin{enumerate}
+\item \code{learnDiagGaussian} for diagonal Gaussian mixture models,
+\item \code{learnCategorical} for Categorical mixture models,
+\item \code{learnPoisson} for Poisson mixture models,
+\item \code{learnGamma} for gamma mixture models,
+%\item \code{learnKernel} for kernel mixture models,
+\item \code{learnMixedData} for MixedData mixture models.
+\end{enumerate}
+
+These functions have a common set of parameters with default values given
+in the table~\ref{tab:learnCommon}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{0.3\textwidth}|p{0.65\textwidth}|}
+\hline
+Input Parameter & Description \\
+\hline
+\code{data} & A matrix (or a list of matrix for mixed data) with the data
+to learn. \\
+\hline
+\code{labels} & A vector with the classes of each individuals. Values must
+be between $1$ and $K$.\\
+\hline
+\code{models} & A \code{vector} with the models to adjust to each data set in
+case of mixed data, or a set of models to try to adjust. Default is
+\code{cluster*Names()} where '*' stands for DiagGaussian, Poisson, Gamma or
+Categorical.\\
+\hline
+\code{prop} & A vector of size $K$ with the proportions of each class.
+If \code{prop} is \code{NULL} then the proportions are computed using
+the empirical distribution of the \code{labels}.\\
+\hline
+\code{algo} & A string defining the algorithm to use for the missing values.
+Possible values \code{"impute"}, \code{"simul"}. \\
+\hline
+\code{nbIter} & maximal number of iteration to perform. Default value
+is 100. Note that if there is no missing values, it should be 1.\\
+\hline
+\code{epsilon} &  threshold to use in order to stop the iterations
+(not used by the \code{"simul"} algorithm). Default value 1e-08.\\
+\hline
+\code{criterion} & A string defining the model selection criterion to use.
+The  best model is the one with the lowest criterion value.
+Possible values: \code{"AIC"}, \code{"BIC"}, \code{"ICL"}. Default is
+\code{"ICL"}.\\
+\hline
+\code{nbCore} & An integer defining the number of processor to use. Default
+is 1, 0 for all cores. \\
+\hline
+\end{tabular}
+\caption{List of common parameters of the learning functions.}
+\label{tab:learnCommon}
+\end{table}
+
+%The \code{learnKernel} function has two more arguments described in
+%table~\ref{tab:learnKernel}.
+%\begin{table}[H]
+%\centering
+%\begin{tabular}{|p{0.3\textwidth}|p{0.65\textwidth}|}
+%\hline
+%Input Parameter & Description \\
+%\hline
+%\code{kernelName} & A \code{string} defining the kernel to use. Use
+%a \code{"gaussian"} kernel by default. Possible values are \code{"gaussian"},
+%"polynomial" or "exponential".\\
+%\hline
+%\code{kernelParameters} & A vector with the kernel parameter value(s). Default
+%value is $1$.\\
+%\hline
+%\end{tabular}
+%\caption{List of all the specific parameters of the
+%\code{learnKernel} function.}
+%\label{tab:learnKernel}
+%\end{table}
+
+\subsection{Learning Multivariate (diagonal) Gaussian Mixture Models}
+\label{subsec:learnDiagGaussian}
+
+Multivariate Gaussian mixture models (without correlations) can be learned using
+the \code{learnDiagGaussian} function. We illustrate this function with the well
+known geyser data set (\cite{azzalini1990},\cite{hardle1991}).
+
+The model selected by ICL criteria among the models with fixed proportion
+is Gaussian with the same standard deviations among the groups and the
+variables.
+<<>>=
+data(iris);
+x <- as.matrix(iris[,1:4]); z <- as.vector(iris[,5]); n <- nrow(x); p <- ncol(x);
+indexes <- matrix(c(round(runif(5,1,n)), round(runif(5,1,p))), ncol=2);
+cbind(indexes, x[indexes]) # store true values
+x[indexes] <- NA;          # and set them as missing
+model <- learnDiagGaussian( data=x, labels = z
+                          , models = clusterDiagGaussianNames(prop = "equal"))
+summary(model)
+@
+
+Estimated missing values and comparison between the true membership labels class
+and the fitted membership labels class are given below.
+<<fig=TRUE>>=
+# get estimated missing vallues
+missingValues(model)
+# compare predictions with true values
+table(model@zi,model@ziFit)
+plot(model)
+@
+
+\subsection{Learning Multivariate categorical Mixture Models}
+\label{subsec:learnCategorical}
+
+Categorical (nominal) data can be learned using the \code{learnCategorical}
+function. We illustrate this function with the birds data set.
+<<>>=
+data(birds)
+## add 10 missing values
+x <- as.matrix(birds[,2:5]); z <- as.vector(birds[,1]); n <- nrow(x); p <- ncol(x);
+indexes <- matrix(c(round(runif(5,1,n)), round(runif(5,1,p))), ncol=2)
+cbind(indexes, x[indexes]) # print true values
+x[indexes] <- NA;          # set them as missing
+model <- learnCategorical( data=x, labels=z
+                         , models = clusterCategoricalNames(prop = "equal")
+                         , algo="simul", nbIter = 2)
+summary(model)
+@
+
+Estimated missing values and comparison between the true membership labels class
+and the fitted membership labels class are given below.
+<<fig=TRUE>>=
+# get estimated missing vallues
+missingValues(model)
+# compare predictions
+table(model@zi,model@ziFit)
+plot(model)
+@
+
+
+\subsection{Learning Multivariate Gamma Mixture Models}
+\label{subsec:learnGamma}
+
+Gamma data can be learned using the \code{learnGamma} function.
+We illustrate this function with the iris data set.
+<<>>=
+data(iris)
+x <- as.matrix(iris[,1:4]); z <- as.vector(iris[,5]); n <- nrow(x); p <- ncol(x);
+indexes <- matrix(c(round(runif(5,1,n)), round(runif(5,1,p))), ncol=2);
+cbind(indexes, x[indexes]) # print true values
+x[indexes] <- NA;          # set them as missing
+model <- learnGamma( data=x, labels= z
+                   , models = clusterGammaNames(prop = "equal")
+                   , algo = "simul", nbIter = 2, epsilon = 1e-08
+                )
+summary(model)
+# get estimated missing values
+missingValues(model)
+@
+  
+Estimated missing values and comparison between the true membership labels class
+and the fitted membership labels class are given below.
+<<fig=TRUE>>=
+  # compare predictions
+table(model@zi,model@ziFit)
+plot(model)
+@
+
+\subsection{Learning Multivariate Poisson Models}
+\label{subsec:learnPoisson}
+
+Poisson data (count data) can be learned using the \code{learnPoisson}
+function.
+
+We illustrate this function with the debTrivedi data set.
+<<>>=
+data(DebTrivedi)
+x <- DebTrivedi[, c(1, 6, 8, 15)]; z <- DebTrivedi$medicaid; n <- nrow(x); p <- ncol(x);
+indexes <- matrix(c(round(runif(5,1,n)), round(runif(5,1,p))), ncol=2);
+cbind(indexes, x[indexes]) # print true values
+x[indexes] <- NA;          # set them as missing
+model <- learnPoisson( data=x, labels=z
+                     , models = clusterPoissonNames(prop = "equal")
+                     , algo="simul", nbIter = 2, epsilon =  1e-08
+)
+summary(model)
+# get estimated missing vallues
+missingValues(model)
+@
+  
+Estimated missing values and comparison between the true membership labels class
+and the fitted membership labels class are given below.
+<<fig=TRUE>>=
+# compare predictions
+table(model@zi,model@ziFit)
+plot(model)
+@
+
+%\subsection{Learning Kernel Mixture Models}
+%\label{subsec:learnKernel}
+
+%Data can be clustered using the \code{learnKernel} function.
+
+%We illustrate this function with the bullsEye data set.
+%<<fig=TRUE>>=
+%data(bullsEye)
+%x <- bullsEye[,1:2]; x = as.matrix(x); n <- nrow(x); p <- ncol(x);
+%z <- bullsEye[,3];
+%model <- learnKernel( data=x, labels=z
+%                    , models = clusterKernelNames(prop = "equal")
+%                    , dim = 50, kernelName = "gaussian", kernelParameters = 1.
+%                    , algo="impute", nbIter = 1, epsilon =  1e-08
+%                    )
+%summary(model)
+%plot(model)
+%@
+
+\subsection{Learning Mixed data sets}
+\label{subsec:learnMixedData}
+
+Mixed data sets can be learned using the \code{learnMixedData}
+function. The original mixed data set has to be splited in multiple
+homogeneous data sets and each one associated to a mixture model name.
+
+We illustrate this function with the HeartDisease data set
+(\cite{detrano1989international}).
+
+<<>>=
+data(HeartDisease.cat)
+data(HeartDisease.cont)
+data(HeartDisease.target)
+ldata = list(HeartDisease.cat, HeartDisease.cont);
+models = c("categorical_pk_pjk","gaussian_pk_sjk")
+z<-HeartDisease.target[[1]];
+model <- learnMixedData(ldata, models, z, algo="simul", nbIter=2)
+summary(model)
+@
+
+Estimated missing values and comparison between the true membership labels class
+and the fitted membership labels class are given below.
+<<fig=TRUE>>=
+# get estimated missing values
+missingValues(model)
+# compare predictions
+table(model@zi,model@ziFit)
+plot(model)
+@
+
+\bibliography{MixAll}
+
+
+\end{document}

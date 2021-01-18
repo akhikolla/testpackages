@@ -1,0 +1,137 @@
+---
+title: "PandemicLP - Sum of Regions"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{PandemicLP - Sum of Regions}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(PandemicLP)
+library(stats)
+```
+
+In this vignette, we present an advanced use of the PandemicLP package for adjusting pandemic models for multiple regions. The package uses the theory presented in http://est.ufmg.br/covidlp/home/en/ and the main goal of this vignette is to present a way to make predictions for 2 or more regions in which the future values are calculated as the sum of each individual forecast. 
+
+If the user wishes to use any other epidemic or pandemic data, it is his responsibility to prepare the database for each of the regions considered. To see how to prepare the data check `?covid19BH`.
+
+## Determining the data settings
+
+Considering that the wish is to run the model for Covid-19 data, the first step is to define the vector that contains all the desired regions and define the final date to be considered for the available data. Besides that, the case_type can be 'confirmed' or 'deaths' and it determines which type of Covid data will be considered.
+
+To exemplify, this vignette will make the prediction for the South Region of Brazil Covid-19 deaths using the data until October 1st.
+
+```{r}
+regions <- c("PR", "SC","RS")
+last_date <- "2020-10-01"
+case_type <- "deaths"
+```
+
+If the user needs to run this example for other regions, he needs to change these variables above (regions, last_date and case_type) and then run the rest of the code without needing to change anything.
+
+## Loading data, estimating model and making predictions
+
+With the regions well defined, a loop is created to download the covid data from online repositories using function `load_covid()` and then run the model and make predictions using functions `pandemic_model()` and `posterior_predict()`, respectively. The explanations about each of these functions can be accessed through the help of the package. 
+
+Inside the loop, it is possible to see that an "ifesle" statement is done to check if the regions specified are some Brazilian states. The check is done comparing the regions provided with the available states, listed by function `state_list()`. Besides that, it is important to mention that with the function `pandemic_model()`, it is possible to adjust models with different configurations (check `?pandemic_model`) so the user can change it to their need. In this vignette, however, the configuration will be equal to the one used on the app (http://www.est.ufmg.br/covidlp/), which can be accessed through the argument 'covidLPconfig = TRUE' at `pandemic_model()` function. 
+
+The data, outputs, and predictions for each region are stored in lists. 
+
+```{r}
+data <- list()
+outputs <- list()
+preds <- list()
+states <- state_list()
+# Load precomputed MCMC
+download.file("http://github.com/CovidLP/PandemicLP/raw/master/temp/PandemicLP_SumRegions.rda","./PandemicLP_SumRegions.rda")
+load("./PandemicLP_SumRegions.rda")
+for(i in 1:length(regions)) { 
+  if (is.na(match(regions[i],states$state_abb))){
+    data[[i]] <- load_covid(country_name=regions[i],last_date=last_date)
+  } else {
+    data[[i]] <- load_covid(country_name="Brazil", state_name = regions[i],last_date=last_date)
+  }
+  # Commenting to reduce vignette runtime
+  # outputs[[i]] <- pandemic_model(data[[i]],case_type = case_type, covidLPconfig = TRUE)
+  preds[[i]] <- posterior_predict(outputs[[i]])
+}
+# Load precomputed MCMC
+download.file("http://github.com/CovidLP/PandemicLP/raw/master/temp/PandemicLP_SumRegions.rda","./PandemicLP_SumRegions.rda")
+load("./PandemicLP_SumRegions.rda")
+```
+
+
+## Preparing the data 
+
+After doing all the sums, we want the final object (pred_final) to be `pandemicPredicted` class and to contain the predictions, the data, the name of the regions considered, the type of case used, and the past and future mu's. So, to make sure that the `pred_final` reflects all necessary format, we make it equal to the result of the `posterior_predict` function for the first considered region, and then we will add the information using a loop starting from the second region until all the regions are added.
+
+```{r,}
+pred_final <- preds[[1]] # Just to get the class and format
+mu_t <- t(preds[[1]]$pastMu)
+mu_final <- data.frame(data = preds[[1]]$data$date,mu_t)
+names_mu <- names(preds[[1]]$pastMu)
+
+bind_regions <- regions[1]
+for (i in 2:length(regions)) {
+bind_regions <- paste(bind_regions, "and", regions[i])
+}
+pred_final$location <- bind_regions
+```
+
+## Doing the sum
+
+In order to make the predictions considering the sum of all regions, some data manipulation is required. The predictions (long and short) and the futures mu's can be summed since the end date is the same for all regions, so the forecasts start at the same moment. For the sum of the data, however, it is necessary to pay attention to the dates because the pandemic starts in each region at a different time so we must sum the cases only on the same date. All this will be done in a loop starting from the second region until the last one, since the information of the first region is already contained in the object  (explained previously).
+
+In the case of the past mu, the data frames containing the mu values are transposed in a way that each line represents a date and the columns are the values of each mu. After adding the column with the date, the data frame for each region is combined in only one and, at the end of the loop, it is aggregated by date. The final data frame must have the date column deleted and needs to be transposed again to stay in the original format.
+
+To sum the covid data for each region, each dataset is merged by date in a way that all the information is considered for both objects in the merge. When there is data on a given date for one region and not for another, the column for the region that does not have the information is shown as "NA", so it is changed to 0 to be added. Then, each column from one dataset is added to the corresponding column of the second one, respecting the dates. In the end, the duplicated column is deleted so that the loop can start again for another region without any problem. 
+
+```{r}
+for (i in 2:length(preds)){
+  pred_final$predictive_Long <- pred_final$predictive_Long + preds[[i]]$predictive_Long
+  pred_final$predictive_Short <- pred_final$predictive_Short + preds[[i]]$predictive_Short
+  pred_final$futMu <- pred_final$futMu + preds[[i]]$futMu
+  
+  mu_t <- t(preds[[i]]$pastMu)
+  mu_2 <- data.frame(data = preds[[i]]$data$date,mu_t)
+  names_mu <- c(names_mu,names(preds[[i]]$pastMu))
+  mu_final <- rbind(mu_final,mu_2)
+  
+  # Merging the data -> can't sum directly because the dates may be different
+  # Use merge to avoid sum different dates
+  pred_final$data <- merge(pred_final$data,preds[[i]]$data, by = "date", all = TRUE)
+  pred_final$data[is.na(pred_final$data)] = 0
+  pred_final$data$cases.x = pred_final$data$cases.x + pred_final$data$cases.y
+  pred_final$data$deaths.x = pred_final$data$deaths.x + pred_final$data$deaths.y
+  pred_final$data$new_cases.x = pred_final$data$new_cases.x + pred_final$data$new_cases.y
+  pred_final$data$new_deaths.x = pred_final$data$new_deaths.x + pred_final$data$new_deaths.y
+  pred_final$data <- pred_final$data[,-c(6:9)]
+  names(pred_final$data) <- c("date","cases","deaths","new_cases","new_deaths")
+}
+
+# Aggregate the mu
+mu_final <- aggregate(. ~ data, data=mu_final, FUN=sum)
+mu_final <- mu_final[,-1]
+mu_final <- t(mu_final)
+names_mu <- unique(names_mu)
+colnames(mu_final) <- names_mu
+pred_final$pastMu <- mu_final
+```
+
+## Using the information
+
+After finishing all the data manipulation, the object pred_final is the final object that can be used to create plots or any other analysis that the user may want. In this part, it is important to highlight that the argument "summary = FALSE" in the plot function works to take out the notes on the graph with the summary measures. When plotting the results for the sum of regions, this is important once the function used to calculate these statistics does not work properly in this scenario (this will be fixed in future versions).
+
+```{r, fig.asp=2/(sqrt(5)+1), fig.width=8, fig.align='center', warnings = FALSE}
+plots <- plot(pred_final,term = "both",summary = FALSE)
+plots$long
+plots$short
+```

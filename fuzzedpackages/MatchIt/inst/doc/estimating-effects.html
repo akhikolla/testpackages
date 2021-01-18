@@ -1,0 +1,1517 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<meta name="author" content="Noah Greifer" />
+
+<meta name="date" content="2020-12-15" />
+
+<title>Estimating Effects After Matching</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    for (var j = 0; j < rules.length; j++) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") continue;
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') continue;
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+<style type="text/css">
+/* for pandoc --citeproc since 2.11 */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+}
+.hanging div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}
+</style>
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Estimating Effects After Matching</h1>
+<h4 class="author">Noah Greifer</h4>
+<h4 class="date">2020-12-15</h4>
+
+
+<div id="TOC">
+<ul>
+<li><a href="#introduction">Introduction</a>
+<ul>
+<li><a href="#identifying-the-estimand">Identifying the estimand</a></li>
+<li><a href="#modeling-the-outcome">Modeling the Outcome</a></li>
+<li><a href="#estimating-standard-errors-and-confidence-intervals">Estimating Standard Errors and Confidence Intervals</a></li>
+</ul></li>
+<li><a href="#estimating-treatment-effects-and-standard-errors-after-matching">Estimating Treatment Effects and Standard Errors After Matching</a>
+<ul>
+<li><a href="#after-pair-matching-without-replacement">After Pair Matching Without Replacement</a></li>
+<li><a href="#after-pair-matching-with-replacement">After Pair Matching With Replacement</a></li>
+<li><a href="#after-full-matching">After Full Matching</a></li>
+<li><a href="#after-stratum-matching">After Stratum Matching</a></li>
+<li><a href="#estimating-conditional-effects">Estimating Conditional Effects</a></li>
+<li><a href="#reporting-results">Reporting Results</a></li>
+</ul></li>
+<li><a href="#common-mistakes">Common Mistakes</a>
+<ul>
+<li><a href="#failing-to-include-weights">1. Failing to include weights</a></li>
+<li><a href="#failing-to-use-robust-or-cluster-robust-standard-errors">2. Failing to use robust or cluster-robust standard errors</a></li>
+<li><a href="#interpreting-conditional-effects-as-marginal-effects">3. Interpreting conditional effects as marginal effects</a></li>
+</ul></li>
+<li><a href="#references">References</a></li>
+<li><a href="#code-to-generate-data-used-in-examples">Code to Generate Data used in Examples</a></li>
+</ul>
+</div>
+
+<style>
+pre {
+  overflow-x: auto;
+}
+pre code {
+  word-wrap: normal;
+  white-space: pre;
+}
+</style>
+<div id="introduction" class="section level2">
+<h2>Introduction</h2>
+<p>After assessing balance and deciding on a matching specification, it comes time to estimate the effect of the treatment in the matched sample. How the effect is estimated and interpreted depends on the desired estimand and the type of model used (if any). In addition to estimating effects, estimating the uncertainty of the effects is critical in communicating them and assessing whether the observed effect is compatible with there being no effect in the population. This guide explains how to estimate effects after various forms of matching and with various outcome types. There may be situations that are not covered here for which additional methodological research may be required, but some of the recommended methods here can be used to guide such applications.</p>
+<p>This guide is structured as follows: first, information on the concepts related to effect and standard error estimation is presented below. Then, instructions for how to estimate effects and standard errors are described. This section is split up first by the type of matching method performed (matching without replacement, matching with replacement, full matching, and subclassification) and then by the type of outcome (continuous, binary, and survival). Finally recommendations for reporting results and tips to avoid making common mistakes are presented.</p>
+<div id="identifying-the-estimand" class="section level3">
+<h3>Identifying the estimand</h3>
+<p>Before an effect is estimated, the estimand must be specified and clarified. Although some aspects of the estimand depend not only on how the effect is estimated after matching but also on the matching method itself, other aspects must be considered at the tine of effect estimation and interpretation. Here, we consider three aspects of the estimand: the population the effect is meant to generalize to (the target population), the effect measure, and whether the effect is marginal or conditional.</p>
+<p><strong>The target population.</strong> Different matching methods allow you to estimate effects that can generalize to different target populations. The most common estimand in matching the average treatment effect in the treated (ATT), which is the average effect of treatment for those who receive treatment. This estimand is estimable for matching methods that do not change the treated units (i.e., by weighting or discarding units) and is requested in <code>matchit()</code> by setting <code>estimand = &quot;ATT&quot;</code> (which is the default). The average treatment effect in the population (ATE) is the average effect of treatment for the population from which the sample is a random sample. This estimand is estimable only for methods that allow the ATE and do not discard units from the sample, which in <code>MatchIt</code> is limited to full matching and subclassification when setting <code>estimand = &quot;ATE&quot;</code>. When treated units are discarded (e.g., through the use of common support restrictions, calipers, or [coarsened] exact matching), the estimand corresponds to neither the population ATT nor the population ATE, but rather to an average treatment effect in the remaining matched sample (ATM), which may not correspond to any specific target population.</p>
+<p><strong>Marginal and conditional effects.</strong> A marginal effect is a comparison between the expected potential outcome under treatment and the expected potential outcome under control. This is the same quantity estimated in randomized trials without blocking or covariate adjustment and is particularly useful for quantifying the overall effect of a policy or population-wide intervention. A conditional effect is the comparison between the expected potential outcomes in the treatment groups within strata. This is useful for identifying the effect of a treatment for an individual patient or a subset of the population.</p>
+<p><strong>Effect measures.</strong> The outcome types we consider here are continuous, with the effect measured by the mean difference; binary, with the effect measured by the risk difference (RD), risk ratio (RR), or odds ratio (OR); and time-to-event (i.e., survival), with the effect measured by the hazard ratio (HR). The RR, OR, and HR are <em>noncollapsible</em> effect measures, which means the marginal effect on that scale is not a (possibly) weighted average of the conditional effects within strata, even if the stratum-specific effects are of the same magnitude. For these effect measures, it is critical to distinguish between marginal and conditional effects because different statistical methods target different types of effects. The mean difference and RD are <em>collapsible</em> effect measures, so the same methods can be used to estimate marginal and conditional effects.</p>
+<p>In this guide, we will provide examples for estimating the ATT, ATE, and ATM for each of the three outcomes types. Our primary focus will be on marginal effects, which are appropriate for all effect measures, easily interpretable, and require few modeling assumptions. We will include a short section on estimating the conditional OR. The “Common Mistakes” section includes examples of commonly used methods that estimate conditional rather than marginal effects and should not be used when marginal effects are desired.</p>
+</div>
+<div id="modeling-the-outcome" class="section level3">
+<h3>Modeling the Outcome</h3>
+<p>The type and form of the model used to estimate the treatment effect depend on the effect measure desired, whether a marginal or conditional effect is desired, whether covariates are to be included in the model, and whether effect modification by the covariates is present. For continuous outcomes, one can use a linear model regressing the outcome on the treatment; for binary outcomes, one can use a generalized linear model with a link function appropriate for the desired effect measure (e.g., a logistic link for the OR); for time-to-event outcomes, one can use a Cox proportional hazards model.</p>
+<p>An additional decision to make is whether (and how) to include covariates in the outcome model. One may ask, why use matching at all if you are going to model the outcome with covariates anyway? Matching reduces the dependence of the effect estimate on correct specification of the outcome model; this is the central thesis of Ho et al. <span class="citation">(<a href="#ref-ho2007" role="doc-biblioref">2007</a>)</span>. Including covariates in the outcome model after matching has several functions: it can increase precision in the effect estimate, reduce the bias due to residual imbalance, and make the effect estimate “doubly robust,” which means it is consistent if either the matching reduces sufficient imbalance in the covariates or if the outcome model is correct. For these reasons, we recommend covariate adjustment after matching when possible. There is some evidence that covariate adjustment is most helpful for covariates with standardized mean differences greater than .1 <span class="citation">(<a href="#ref-nguyen2017" role="doc-biblioref">Nguyen et al. 2017</a>)</span>, so these covariates and covariates thought to be highly predictive of the outcome should be prioritized in treatment effect models if not all can be included due to sample size constraints.</p>
+<p>For continuous outcomes, we can simply include the covariates in the regression of the outcome on the treatment in the matched sample (i.e., using the matching weights). Because the mean difference is collapsible, the effect estimate conditioning on the covariates is still a marginal effect estimate. This is not the case with binary and time-to-event outcomes; including covariates in the outcome model makes the treatment effect a conditional effect. To recover a marginal effect while including covariates in an outcome model, one has to perform a marginal effects procedure, also known as g-computation <span class="citation">(<a href="#ref-snowden2011" role="doc-biblioref">Snowden, Rose, and Mortimer 2011</a>)</span> or regression estimation <span class="citation">(<a href="#ref-schafer2008" role="doc-biblioref">Schafer and Kang 2008</a>)</span>, which involves simulating the average potential outcomes under each treatment level and computing the effect as a contrast between those average potential outcomes. G-computation can also be used to estimate marginal effects when modeling effect modification by the covariates. We demonstrate examples of this below.</p>
+<p>Although there are many possible ways to include covariates (i.e., not just main effects but interactions, smoothing terms like splines, or other nonlinear transformations), it is important not to engage in specification search (i.e., trying many outcomes models in search of the “best” one). Doing so can invalidate results and yield a conclusion that fails to replicate. For this reason, we recommend only including the same terms included in the propensity score model unless there is a strong <em>a priori</em> and justifiable reason to model the outcome differently. Second, it is important not to interpret the coefficients and tests of the other covariates in the outcome model. These are not causal effects and their estimates may be severely confounded. Only the treatment effect estimate can be interpreted as causal assuming the relevant assumptions about unconfoundedness are met. Inappropriately interpreting the coefficients of covariates in the outcome model is known as the Table 2 fallacy <span class="citation">(<a href="#ref-westreich2013" role="doc-biblioref">Westreich and Greenland 2013</a>)</span>. To avoid this, in all examples that incorporate covariates in the outcome model, we restrict the output of outcome regression models to just the treatment coefficient.</p>
+</div>
+<div id="estimating-standard-errors-and-confidence-intervals" class="section level3">
+<h3>Estimating Standard Errors and Confidence Intervals</h3>
+<p>Uncertainty estimation (i.e., of standard errors, confidence intervals, and p-values) may consider the variety of sources of uncertainty present in the analysis, including (but not limited to!) estimation of the propensity score (if used), matching (i.e., because treated units might be matched to different control units if others had been sampled), and estimation of the treatment effect (i.e., because of sampling error). In general, there are no analytic solutions to all these issues, so much of the research done on uncertainty estimation after matching has relied on simulation studies. The two primary methods that have been shown to perform well in matched samples are using cluster-robust standard errors and the bootstrap.</p>
+<div id="robust-and-cluster-robust-standard-errors" class="section level4">
+<h4>Robust and Cluster-Robust Standard Errors</h4>
+<p><strong>Robust standard errors.</strong> Also known as sandwich standard errors (due to the form of the formula for computing them), heteroscedasticity-consistent standard errors, or Huber-White standard errors, robust standard errors are an adjustment to the usual maximum likelihood or ordinary least squares standard errors that are robust to violations of some of the assumptions required for usual standard errors to be valid <span class="citation">(<a href="#ref-mackinnon1985" role="doc-biblioref">MacKinnon and White 1985</a>)</span>. Although there has been some debate about their utility <span class="citation">(<a href="#ref-king2015" role="doc-biblioref">King and Roberts 2015</a>)</span>, robust standard errors rarely degrade inferences and often improve them. Generally, robust standard errors <strong>must</strong> be used when any non-uniform weights are included in the estimation (e.g., with full matching or inverse probability weighting).</p>
+<p><strong>Cluster-robust standard errors.</strong> A version of robust standard errors known as cluster-robust standard errors <span class="citation">(<a href="#ref-liang1986" role="doc-biblioref">Liang and Zeger 1986</a>)</span> can be used to account for dependence between observations within clusters (e.g., matched pairs). Abadie and Spiess <span class="citation">(<a href="#ref-abadie2019" role="doc-biblioref">2019</a>)</span> demonstrate analytically that cluster-robust standard errors are generally valid after matching, whereas regular robust standard errors can over- or under-estimate the true sampling variability of the effect estimator depending on the specification of the outcome model (if any) and degree of effect modification. A plethora of simulation studies have further confirmed the validity of cluster-robust standard errors after matching <span class="citation">(e.g., <a href="#ref-austin2009a" role="doc-biblioref">Austin 2009</a>, <a href="#ref-austin2013" role="doc-biblioref">2013a</a>; <a href="#ref-austin2014" role="doc-biblioref">Austin and Small 2014</a>; <a href="#ref-gayat2012" role="doc-biblioref">Gayat et al. 2012</a>; <a href="#ref-wan2019" role="doc-biblioref">Wan 2019</a>)</span>. Given this evidence favoring the use of cluster-robust standard errors, we recommend them in most cases and use them judiciously in the this guide<a href="#fn1" class="footnote-ref" id="fnref1"><sup>1</sup></a>.</p>
+<p>Here, we will use linear and generalized linear models as implemented by <code>lm()</code> and <code>glm()</code> and use <code>lmtest::coeftest()</code> and <code>lmtest::coefci()</code> along with <code>sandwich::vcovHC()</code> for robust standard errors and <code>sandwich::vcovCL()</code> for cluster-robust standard errors. There are several “types” (e.g., HC0, HC1, etc.) of robust standard errors that adjust the original standard errors in different ways; although more research is required on the benefits of using different types for estimating standard errors after matching, we use the default types here.</p>
+</div>
+<div id="bootstrapping" class="section level4">
+<h4>Bootstrapping</h4>
+<p>Bootstrapping is a technique used to simulate the sampling distribution of an estimator by repeatedly drawing samples with replacement and estimating the effect in each bootstrap sample <span class="citation">(<a href="#ref-efron1993" role="doc-biblioref">Efron and Tibshirani 1993</a>)</span>. From the bootstrap distribution, standard errors and confidence interval can be computed in several ways, including using the standard deviation of the bootstrap estimates as the standard error estimate or using the 2.5 and 97.5 percentiles as 95% confidence interval bounds. Bootstrapping tends to be most useful when no analytic estimator of a standard error is possible or has been derived yet. Although Abadie and Imbens <span class="citation">(<a href="#ref-abadie2008" role="doc-biblioref">2008</a>)</span> found analytically that the bootstrap is inappropriate for matched samples, simulation evidence has found it to be adequate in many cases <span class="citation">(<a href="#ref-hill2006" role="doc-biblioref">Hill and Reiter 2006</a>; <a href="#ref-austin2014" role="doc-biblioref">Austin and Small 2014</a>; <a href="#ref-austin2017" role="doc-biblioref">Austin and Stuart 2017</a>)</span>. It is the most accessible method for computing standard errors after g-computation for nonlinear models.</p>
+<p>Typically, bootstrapping involves performing the entire estimation process in each bootstrap sample, including propensity score estimation, matching, and effect estimation. This tends to be the most straightforward route, though intervals from this method may be conservative in some cases (i.e., they are wider than necessary to achieve nominal coverage) <span class="citation">(<a href="#ref-austin2014" role="doc-biblioref">Austin and Small 2014</a>)</span>. Less conservative and more accurate intervals have been found when using different forms of the bootstrap, including the wild bootstrap develop by Bodory et al. <span class="citation">(<a href="#ref-bodory2020" role="doc-biblioref">2020</a>)</span> and the matched bootstrap described by Austin and Small <span class="citation">(<a href="#ref-austin2014" role="doc-biblioref">2014</a>)</span> and Abadie and Spiess <span class="citation">(<a href="#ref-abadie2019" role="doc-biblioref">Abadie and Spiess 2019</a>)</span>. The block bootstrap involves sampling matched pairs/strata of units from the matched sample and performing the analysis within each sample composed of the sampled pairs. Abadie and Spiess <span class="citation">(<a href="#ref-abadie2019" role="doc-biblioref">Abadie and Spiess 2019</a>)</span> derived analytically that the block bootstrap is valid for estimating SEs and CIs in the same circumstances cluster robust SEs are; indeed, the block bootstrap SE is known to approximate the cluster-robust SE <span class="citation">(<a href="#ref-cameron2015" role="doc-biblioref">Cameron and Miller 2015</a>)</span>. We use <code>boot()</code> from the <code>boot</code> package to implement bootstrapping.</p>
+<p>With bootstrapping, more bootstrap replications are always better but can take time and increase the chances that at least one error will occur within the bootstrap analysis (e.g., a bootstrap sample with zero treated units or zero units with an event). In general, numbers of replications upwards of 999 are recommended, with values one less than a multiple of 100 preferred to avoid interpolation when using the percentiles as confidence interval limits <span class="citation">(<a href="#ref-mackinnon2006" role="doc-biblioref">MacKinnon 2006</a>)</span>. There are several methods of computing bootstrap confidence intervals, but the bias-corrected accelerated (BCa) bootstrap confidence interval often performs best <span class="citation">(<a href="#ref-austin2014" role="doc-biblioref">Austin and Small 2014</a>; <a href="#ref-carpenter2000" role="doc-biblioref">Carpenter and Bithell 2000</a>)</span> and is easy to implement, simply by setting <code>type = &quot;bca&quot;</code> in the call to <code>boot.ci()</code> after running <code>boot()</code><a href="#fn2" class="footnote-ref" id="fnref2"><sup>2</sup></a>.</p>
+</div>
+</div>
+</div>
+<div id="estimating-treatment-effects-and-standard-errors-after-matching" class="section level2">
+<h2>Estimating Treatment Effects and Standard Errors After Matching</h2>
+<p>Below, we describe effect estimation after several methods of matching. We consider four broad types of matching that require their own specific methods for estimation effects: 1) pair matching without replacement, 2) pair matching with replacement, 3) full matching, and 4) stratification. In some cases, methods for estimating effects are similar across methods, and we err on the side of redundancy here in our instructions. We also consider three different outcome types: 1) continuous, 2) binary, and 3) survival.</p>
+<p>We’ll be using a simulated toy dataset <code>d</code> with several outcome types. Code to generate the dataset is at the end of this document. The focus here is not on evaluating the methods but simply on demonstrating them. In all cases, the correct propensity score model is used. Below we display the first six rows of <code>d</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(d)</span></code></pre></div>
+<pre><code>##   A      X1      X2      X3       X4 X5      X6      X7      X8       X9      Y_C Y_B     Y_S
+## 1 0  0.1725 -1.4283 -0.4103 -2.36059  1 -1.1199  0.6398 -0.4840 -0.59385  0.07104   0  278.46
+## 2 0 -1.0959  0.8463  0.2456 -0.12333  1 -2.2687 -1.4491 -0.5514 -0.31439  0.15619   0  330.63
+## 3 0  0.1768  0.7905 -0.8436  0.82366  1 -0.2221  0.2971 -0.6966 -0.69516 -0.85180   1  369.94
+## 4 0 -0.4595  0.1726  1.9542 -0.62661  1 -0.4019 -0.8294 -0.5384  0.20729 -2.35184   0   91.06
+## 5 1  0.3563 -1.8121  0.8135 -0.67189  1 -0.8297  1.7297 -0.6439 -0.02648  0.68058   0  182.73
+## 6 0 -2.4313 -1.7984 -1.2940  0.04609  1 -1.2419 -1.1252 -1.8659 -0.56513 -5.62260   0 2563.73</code></pre>
+<p><code>A</code> is the treatment variable, <code>X1</code> through <code>X9</code> are covariates, <code>Y_C</code> is a continuous outcome, <code>Y_B</code> is a binary outcome, and <code>Y_S</code> is a survival outcome.</p>
+<p>We will need to the following packages to perform the desired analyses:</p>
+<ul>
+<li><code>lmtest</code> provides the <code>coeftest()</code> and <code>coefci()</code> functions for estimating coefficients, standard errors, and confidence intervals incorporating robust standard errors</li>
+<li><code>sandwich</code> provides robust and cluster robust standard errors through the <code>vcovHC()</code> and <code>vcovCL()</code> functions, respectively</li>
+<li><code>boot</code> provides the <code>boot()</code> and <code>boot.ci()</code> functions for performing bootstrapping and estimating bootstrap effects, standard errors, and confidence intervals.</li>
+<li><code>survival</code> provides the functions <code>survdiff()</code> and <code>coxph()</code> to perform the log-rank test for differences in survival curves and estimate the coefficients in a Cox-proportional hazards model for the marginal hazard ratio, respectively, which we will use for survival outcomes.</li>
+</ul>
+<p>Of course, we also need <code>MatchIt</code> to perform the matching.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(<span class="st">&quot;MatchIt&quot;</span>)</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(<span class="st">&quot;lmtest&quot;</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(<span class="st">&quot;sandwich&quot;</span>)</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(<span class="st">&quot;boot&quot;</span>)</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(<span class="st">&quot;survival&quot;</span>)</span></code></pre></div>
+<p>Other packages may be of use but are not used here. The <code>margins</code> package can be useful for computing marginal effects and standard errors without bootstrapping. Some examples using <code>margins</code> are presented. The <code>survey</code> package can be used to estimate robust standard errors incorporating weights and provides functions for survey-weighted generalized linear models and Cox-proportional hazards models. It is often used with propensity score weighting. The <code>Zelig</code> package provides a broad interface to estimating marginal and conditional effects using simulation and was included in the original documentation for <code>MatchIt</code>. The <code>lme4</code> (and <code>lmerTest</code>) package performs mixed effects modeling, which can be useful for accounting for pair membership or other clustering features of the data.</p>
+<p>Because different matching methods require different treatments, instructions for each method are organized in the following sections, as designated by the table below. It is important to ensure the right methods are used with the matching specification used in order for the estimated effects and standard errors to be valid.</p>
+<table>
+<colgroup>
+<col width="41%" />
+<col width="58%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Section</th>
+<th>Matching Method</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#after-pair-matching-without-replacement">After Pair Matching Without Replacement</a></td>
+<td>Nearest neighbor matching without replacement</td>
+</tr>
+<tr class="even">
+<td>-</td>
+<td>Optimal matching</td>
+</tr>
+<tr class="odd">
+<td>-</td>
+<td>Genetic matching without replacement</td>
+</tr>
+<tr class="even">
+<td>-</td>
+<td>Coarsened exact matching with <code>k2k = TRUE</code></td>
+</tr>
+<tr class="odd">
+<td><a href="#after-pair-matching-with-replacement">After Pair Matching With Replacement</a></td>
+<td>Nearest neighbor matching with replacement</td>
+</tr>
+<tr class="even">
+<td>-</td>
+<td>Genetic matching with replacement</td>
+</tr>
+<tr class="odd">
+<td><a href="#after-full-matching">After Full Matching</a></td>
+<td>Full matching</td>
+</tr>
+<tr class="even">
+<td><a href="#after-stratum-matching">After Stratum Matching</a></td>
+<td>Propensity score subclassification</td>
+</tr>
+<tr class="odd">
+<td>-</td>
+<td>Exact matching</td>
+</tr>
+<tr class="even">
+<td>-</td>
+<td>Coarsened exact matching with <code>k2k = FALSE</code> (the default)</td>
+</tr>
+</tbody>
+</table>
+<div id="after-pair-matching-without-replacement" class="section level3">
+<h3>After Pair Matching Without Replacement</h3>
+<p>Pair matching without replacement yields the simplest way to estimate treatment effects and standard errors. In general, whether a caliper, common support restriction, exact matching specification, or <span class="math inline">\(k\)</span>:1 matching specification is used, estimating the effect in the matched dataset (i.e., the output of <code>match.data()</code>) is straightforward and involves fitting a model for the outcome that incorporates the matching weights<a href="#fn3" class="footnote-ref" id="fnref3"><sup>3</sup></a>.</p>
+<p>First, we will perform nearest 1:1 neighbor propensity score matching without replacement.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>mNN <span class="ot">&lt;-</span> <span class="fu">matchit</span>(A <span class="sc">~</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>                 X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9, <span class="at">data =</span> d)</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>mNN</span></code></pre></div>
+<pre><code>## A matchit object
+##  - method: 1:1 nearest neighbor matching without replacement
+##  - distance: Propensity score
+##              - estimated with logistic regression
+##  - number of obs.: 2000 (original), 882 (matched)
+##  - target estimand: ATT
+##  - covariates: X1, X2, X3, X4, X5, X6, X7, X8, X9</code></pre>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>md <span class="ot">&lt;-</span> <span class="fu">match.data</span>(mNN)</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(md)</span></code></pre></div>
+<pre><code>##    A       X1      X2      X3      X4 X5      X6      X7      X8       X9      Y_C Y_B     Y_S distance weights subclass
+## 1  0  0.17254 -1.4283 -0.4103 -2.3606  1 -1.1199  0.6398 -0.4840 -0.59385  0.07104   0  278.46  0.08461       1      167
+## 3  0  0.17677  0.7905 -0.8436  0.8237  1 -0.2221  0.2971 -0.6966 -0.69516 -0.85180   1  369.94  0.22210       1      210
+## 5  1  0.35631 -1.8121  0.8135 -0.6719  1 -0.8297  1.7297 -0.6439 -0.02648  0.68058   0  182.73  0.43291       1      322
+## 9  0  0.78080  1.3137  0.6580  0.8540  1  0.9495 -0.5731 -0.2362 -0.14580 15.89771   1   67.53  0.15751       1        3
+## 10 1 -0.56513 -0.1053 -0.1369  1.6233  1 -0.5304 -0.3342  0.4184  0.46308  1.07888   1  113.70  0.16697       1        1
+## 11 0  0.07053 -0.1320 -1.8882  0.3077  0 -1.6558  0.8405 -0.5723 -1.01382 -6.55597   0 1632.69  0.45623       1      298</code></pre>
+<p>Typically one would assess balance and ensure that this matching specification works, but we will skip that step here to focus on effect estimation. See <code>vignette(&quot;MatchIt&quot;)</code> and <code>vignette(&quot;assessing-balance&quot;)</code> for more information on this necessary step. Because we did not use a caliper, the target estimand is the ATT.</p>
+<div id="for-continuous-outcomes" class="section level4">
+<h4>For continuous outcomes</h4>
+<p>For continuous outcomes, estimating effects is fairly straightforward using linear regression. We perform all analyses using the matched dataset, <code>md</code>, which contains only units retained in the sample.</p>
+<p><strong>Without covariate adjustment.</strong> To estimate the effect without covariate adjustment, we can run the following:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Linear model without covariates</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>fit1 <span class="ot">&lt;-</span> <span class="fu">lm</span>(Y_C <span class="sc">~</span> A, <span class="at">data =</span> md, <span class="at">weights =</span> weights)</span></code></pre></div>
+<p>First, we will estimate the standard errors while accounting for pair membership using cluster-robust standard errors.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Cluster-robust standard errors</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">coeftest</span>(fit1, <span class="at">vcov. =</span> vcovCL, <span class="at">cluster =</span> <span class="sc">~</span>subclass)</span></code></pre></div>
+<pre><code>## 
+## t test of coefficients:
+## 
+##             Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)    1.779      0.303    5.88  5.8e-09 ***
+## A              2.114      0.409    5.18  2.8e-07 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
+<p><strong>Using the bootstrap.</strong> We demonstrate bootstrapping here using the block bootstrap as recommended by Abadie and Spiess <span class="citation">(<a href="#ref-abadie2019" role="doc-biblioref">2019</a>)</span>. The process is generalizable to other matching methods for which cluster-robust standard errors are valid and to other outcome types. We first need to write a function, <code>est_fun</code>, which takes in a vector of pair identifiers and an ordering and outputs an effect estimate. This function should include the effect estimation, though no standard error is required.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Block bootstrap confidence interval</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="co"># library(boot)</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>pair_ids <span class="ot">&lt;-</span> <span class="fu">levels</span>(md<span class="sc">$</span>subclass)</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>est_fun <span class="ot">&lt;-</span> <span class="cf">function</span>(pairs, i) {</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Compute number of times each pair is present</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>  numreps <span class="ot">&lt;-</span> <span class="fu">table</span>(pairs[i])</span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>  <span class="co">#For each pair p, copy corresponding md row indices numreps[p] times</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>  ids <span class="ot">&lt;-</span> <span class="fu">unlist</span>(<span class="fu">lapply</span>(pair_ids[pair_ids <span class="sc">%in%</span> <span class="fu">names</span>(numreps)],</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>                       <span class="cf">function</span>(p) <span class="fu">rep</span>(<span class="fu">which</span>(md<span class="sc">$</span>subclass <span class="sc">==</span> p), </span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>                                              numreps[p])))</span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Subset md with block bootstrapped ids</span></span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>  md_boot <span class="ot">&lt;-</span> md[ids,]</span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Effect estimation</span></span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>  fit_boot <span class="ot">&lt;-</span> <span class="fu">lm</span>(Y_C <span class="sc">~</span> A, <span class="at">data =</span> md_boot, <span class="at">weights =</span> weights)</span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Return the coefficient on treatment</span></span>
+<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(<span class="fu">coef</span>(fit_boot)[<span class="st">&quot;A&quot;</span>])</span>
+<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb11-25"><a href="#cb11-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-26"><a href="#cb11-26" aria-hidden="true" tabindex="-1"></a>boot_est <span class="ot">&lt;-</span> <span class="fu">boot</span>(pair_ids, est_fun, <span class="at">R =</span> <span class="dv">499</span>)</span>
+<span id="cb11-27"><a href="#cb11-27" aria-hidden="true" tabindex="-1"></a>boot_est</span></code></pre></div>
+<pre><code>## 
+## ORDINARY NONPARAMETRIC BOOTSTRAP
+## 
+## 
+## Call:
+## boot(data = pair_ids, statistic = est_fun, R = 499)
+## 
+## 
+## Bootstrap Statistics :
+##     original   bias    std. error
+## t1*    2.114 0.003777      0.3862</code></pre>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">boot.ci</span>(boot_est, <span class="at">type =</span> <span class="st">&quot;bca&quot;</span>)</span></code></pre></div>
+<pre><code>## BOOTSTRAP CONFIDENCE INTERVAL CALCULATIONS
+## Based on 499 bootstrap replicates
+## 
+## CALL : 
+## boot.ci(boot.out = boot_est, type = &quot;bca&quot;)
+## 
+## Intervals : 
+## Level       BCa          
+## 95%   ( 1.317,  2.758 )  
+## Calculations and Intervals on Original Scale
+## Some BCa intervals may be unstable</code></pre>
+<p>The value <code>t1*</code> in the <code>Bootstrap Statistics</code> table contains the effect estimate and its bootstrap standard error, and the interval in the confidence interval output is the bootstrap confidence interval computed using the specified type (here, <code>&quot;bca&quot;</code>).</p>
+<p><strong>With covariate adjustment.</strong> Including covariates in the outcome model is straightforward with a continuous outcome. We can include main effects for each variable and use the coefficient on the treatment as the treatment effect estimate. It can also be helpful to include interactions between the covariates and treatment if effect modification is suspected, though it is important to center the covariates at their means in the focal (i.e., treated) group if the coefficient on the treatment is to be interpreted as an average treatment effect estimate (which we demonstrate with full matching). A marginal effects procedure can also be used, which we demonstrate with binary outcomes. Below we simply include main effects of each covariate, which is the most typical way to include covariates.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Linear model with covariates</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>fit3 <span class="ot">&lt;-</span> <span class="fu">lm</span>(Y_C <span class="sc">~</span> A <span class="sc">+</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>             X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9, <span class="at">data =</span> md,</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>           <span class="at">weights =</span> weights)</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="fu">coeftest</span>(fit3, <span class="at">vcov. =</span> vcovCL, <span class="at">cluster =</span> <span class="sc">~</span>subclass)[<span class="st">&quot;A&quot;</span>,,drop<span class="ot">=</span><span class="cn">FALSE</span>]</span></code></pre></div>
+<pre><code>##   Estimate Std. Error t value  Pr(&gt;|t|)
+## A    2.029     0.3202   6.338 3.735e-10</code></pre>
+<p>As previously mentioned, it is important to avoid interpreting coefficients in the outcome model on predictors other than the treatment, as the coefficients do no correspond to causal effects and are likely confounded. In the code above, we restricted the output to just the treatment effect. Note that sometimes the intercept of the outcome model can be useful as an estimate of the average potential outcome under control, but the covariates in the model (if any) must be centered at their means in the target population to allow for this interpretation. Without centering the covariates, the intercept is uninterpretable.</p>
+</div>
+<div id="for-binary-outcomes" class="section level4">
+<h4>For binary outcomes</h4>
+<p>For binary outcomes, effect estimation can be a bit more challenging, especially when including covariates. There are several measures of the effect one can consider, which include the odds ratio (OR), risk ratio/relative risk (RR), and risk difference (RD).</p>
+<p><strong>Without covariate adjustment.</strong> When omitting covariates from the outcome model, effect and standard error estimation is fairly straightforward. Below we demonstrate how to estimate the marginal log OR after nearest neighbor matching without replacement.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Generalized linear model without covariates</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>fit4 <span class="ot">&lt;-</span> <span class="fu">glm</span>(Y_B <span class="sc">~</span> A, <span class="at">data =</span> md, <span class="at">family =</span> <span class="fu">binomial</span>(<span class="at">link =</span> <span class="st">&quot;logit&quot;</span>))</span></code></pre></div>
+<p>By specifying <code>link = &quot;logit&quot;</code>, we fit a logistic regression model to estimate the marginal OR for treatment. To estimate the marginal RR we can specify <code>link = &quot;log&quot;</code>, and to estimate the RD we can specify <code>link = &quot;identity&quot;</code> or use <code>lm()</code> instead of <code>glm()</code>. Below we estimate cluster-robust standard errors, though it should be noted that these standard errors can be biased for the OR and should be used with caution <span class="citation">(<a href="#ref-austin2007a" role="doc-biblioref">Austin 2007</a>)</span>. Because we want the OR and the effects are estimated on the log OR scale, we have to exponentiate the coefficient on treatment to arrive at the OR (one would do this when estimating the OR or RR, but not the RD).</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Cluster-robust standard errors</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="fu">coeftest</span>(fit4, <span class="at">vcov. =</span> vcovCL, <span class="at">cluster =</span> <span class="sc">~</span>subclass)</span></code></pre></div>
+<pre><code>## 
+## z test of coefficients:
+## 
+##             Estimate Std. Error z value Pr(&gt;|z|)    
+## (Intercept)   -0.939      0.106   -8.85  &lt; 2e-16 ***
+## A              0.834      0.143    5.82  5.7e-09 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
+<div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(<span class="fu">coef</span>(fit4)) <span class="co">#OR</span></span></code></pre></div>
+<pre><code>## (Intercept)           A 
+##      0.3912      2.3030</code></pre>
+<p><strong>With covariate adjustment and bootstrapping.</strong> If we want to include covariates in the model, we have to do some additional work to estimate the effect and its standard error. This is because the coefficient on treatment in a nonlinear model with covariates corresponds to the conditional rather than marginal effect. To estimate a marginal effect, we have to perform a marginal effects procedure, which is equivalent to g-computation in the matched set. First we estimate an outcome model including the covariates, and then we use the predictions from the outcome model to compute the contrast of the average potential outcomes under treatment and control. Bootstrapping is the most straightforward method to estimate standard errors. We demonstrate this below using the block bootstrap as recommended by Abadie and Spiess <span class="citation">(<a href="#ref-abadie2019" role="doc-biblioref">2019</a>)</span>.</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Block bootstrap confidence interval</span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="co"># library(boot)</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>pair_ids <span class="ot">&lt;-</span> <span class="fu">levels</span>(md<span class="sc">$</span>subclass)</span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a>est_fun <span class="ot">&lt;-</span> <span class="cf">function</span>(pairs, i) {</span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Compute number of times each pair is present</span></span>
+<span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a>  numreps <span class="ot">&lt;-</span> <span class="fu">table</span>(pairs[i])</span>
+<span id="cb22-10"><a href="#cb22-10" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb22-11"><a href="#cb22-11" aria-hidden="true" tabindex="-1"></a>  <span class="co">#For each pair p, copy corresponding md row indices numreps[p] times</span></span>
+<span id="cb22-12"><a href="#cb22-12" aria-hidden="true" tabindex="-1"></a>  ids <span class="ot">&lt;-</span> <span class="fu">unlist</span>(<span class="fu">lapply</span>(pair_ids[pair_ids <span class="sc">%in%</span> <span class="fu">names</span>(numreps)],</span>
+<span id="cb22-13"><a href="#cb22-13" aria-hidden="true" tabindex="-1"></a>                       <span class="cf">function</span>(p) <span class="fu">rep</span>(<span class="fu">which</span>(md<span class="sc">$</span>subclass <span class="sc">==</span> p), </span>
+<span id="cb22-14"><a href="#cb22-14" aria-hidden="true" tabindex="-1"></a>                                              numreps[p])))</span>
+<span id="cb22-15"><a href="#cb22-15" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb22-16"><a href="#cb22-16" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Subset md with block bootstrapped ids</span></span>
+<span id="cb22-17"><a href="#cb22-17" aria-hidden="true" tabindex="-1"></a>  md_boot <span class="ot">&lt;-</span> md[ids,]</span>
+<span id="cb22-18"><a href="#cb22-18" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb22-19"><a href="#cb22-19" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Fitting outcome the model</span></span>
+<span id="cb22-20"><a href="#cb22-20" aria-hidden="true" tabindex="-1"></a>  fit_boot <span class="ot">&lt;-</span> <span class="fu">glm</span>(Y_B <span class="sc">~</span> A <span class="sc">+</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb22-21"><a href="#cb22-21" aria-hidden="true" tabindex="-1"></a>                    X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9, <span class="at">data =</span> md_boot, </span>
+<span id="cb22-22"><a href="#cb22-22" aria-hidden="true" tabindex="-1"></a>                  <span class="at">family =</span> <span class="fu">binomial</span>(<span class="at">link =</span> <span class="st">&quot;logit&quot;</span>),</span>
+<span id="cb22-23"><a href="#cb22-23" aria-hidden="true" tabindex="-1"></a>                  <span class="at">weights =</span> weights)</span>
+<span id="cb22-24"><a href="#cb22-24" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb22-25"><a href="#cb22-25" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Estimate potential outcomes for each unit</span></span>
+<span id="cb22-26"><a href="#cb22-26" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Under control</span></span>
+<span id="cb22-27"><a href="#cb22-27" aria-hidden="true" tabindex="-1"></a>  md_boot<span class="sc">$</span>A <span class="ot">&lt;-</span> <span class="dv">0</span></span>
+<span id="cb22-28"><a href="#cb22-28" aria-hidden="true" tabindex="-1"></a>  P0 <span class="ot">&lt;-</span> <span class="fu">weighted.mean</span>(<span class="fu">predict</span>(fit_boot, md_boot, <span class="at">type =</span> <span class="st">&quot;response&quot;</span>),</span>
+<span id="cb22-29"><a href="#cb22-29" aria-hidden="true" tabindex="-1"></a>                      <span class="at">w =</span> md_boot<span class="sc">$</span>weights)</span>
+<span id="cb22-30"><a href="#cb22-30" aria-hidden="true" tabindex="-1"></a>  Odds0 <span class="ot">&lt;-</span> P0 <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> P0)</span>
+<span id="cb22-31"><a href="#cb22-31" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb22-32"><a href="#cb22-32" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Under treatment</span></span>
+<span id="cb22-33"><a href="#cb22-33" aria-hidden="true" tabindex="-1"></a>  md_boot<span class="sc">$</span>A <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb22-34"><a href="#cb22-34" aria-hidden="true" tabindex="-1"></a>  P1 <span class="ot">&lt;-</span> <span class="fu">weighted.mean</span>(<span class="fu">predict</span>(fit_boot, md_boot, <span class="at">type =</span> <span class="st">&quot;response&quot;</span>),</span>
+<span id="cb22-35"><a href="#cb22-35" aria-hidden="true" tabindex="-1"></a>                      <span class="at">w =</span> md_boot<span class="sc">$</span>weights)</span>
+<span id="cb22-36"><a href="#cb22-36" aria-hidden="true" tabindex="-1"></a>  Odds1 <span class="ot">&lt;-</span> P1 <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> P1)</span>
+<span id="cb22-37"><a href="#cb22-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-38"><a href="#cb22-38" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Return marginal odds ratio</span></span>
+<span id="cb22-39"><a href="#cb22-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(Odds1 <span class="sc">/</span> Odds0)</span>
+<span id="cb22-40"><a href="#cb22-40" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb22-41"><a href="#cb22-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-42"><a href="#cb22-42" aria-hidden="true" tabindex="-1"></a>boot_est <span class="ot">&lt;-</span> <span class="fu">boot</span>(pair_ids, est_fun, <span class="at">R =</span> <span class="dv">499</span>)</span>
+<span id="cb22-43"><a href="#cb22-43" aria-hidden="true" tabindex="-1"></a>boot_est</span></code></pre></div>
+<pre><code>## 
+## ORDINARY NONPARAMETRIC BOOTSTRAP
+## 
+## 
+## Call:
+## boot(data = pair_ids, statistic = est_fun, R = 499)
+## 
+## 
+## Bootstrap Statistics :
+##     original  bias    std. error
+## t1*    2.225  0.0291      0.2727</code></pre>
+<div class="sourceCode" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">boot.ci</span>(boot_est, <span class="at">type =</span> <span class="st">&quot;bca&quot;</span>)</span></code></pre></div>
+<pre><code>## BOOTSTRAP CONFIDENCE INTERVAL CALCULATIONS
+## Based on 499 bootstrap replicates
+## 
+## CALL : 
+## boot.ci(boot.out = boot_est, type = &quot;bca&quot;)
+## 
+## Intervals : 
+## Level       BCa          
+## 95%   ( 1.785,  2.827 )  
+## Calculations and Intervals on Original Scale
+## Some BCa intervals may be unstable</code></pre>
+<p>To use bootstrapping for the RR or RD, the part of the code that computes the marginal OR can be replaced with code to compute the marginal RR (<code>P1 / P0</code>) or marginal RD (<code>P1 - P0</code>). Interactions between the treatment and covariates can be included in the outcome model; no other part of the procedure needs to be changed. Doing so can add robustness when effect modification is possible.</p>
+</div>
+<div id="for-survival-outcomes" class="section level4">
+<h4>For survival outcomes</h4>
+<p>There are several measures of effect size for survival outcomes. When using the Cox proportional hazards model, the quantity of interest is the HR between the treated and control groups. As with the OR, the HR is non-collapsible, which means the estimated HR will only be a valid estimate of the marginal HR when no other covariates are included in the model. Other effect measures, such as the difference in mean survival times or probability of survival after a given time, can be treated just like continuous and binary outcomes as previously described. Here we describe estimating the marginal HR.</p>
+<p><strong>Without covariate adjustment.</strong> Below we demonstrate estimation of the marginal hazard ratio using <code>coxph()</code> from the <code>survival</code> package. To request cluster-robust standard errors as recommended by Austin <span class="citation">(<a href="#ref-austin2013a" role="doc-biblioref">2013b</a>)</span>, we need to supply pair membership (stored in the <code>subclass</code> column of <code>md</code>) to the <code>cluster</code> argument and set <code>robust = TRUE</code>.</p>
+<div class="sourceCode" id="cb26"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Cox Regression for marginal HR</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a><span class="fu">coxph</span>(<span class="fu">Surv</span>(Y_S) <span class="sc">~</span> A, <span class="at">data =</span> md, <span class="at">robust =</span> <span class="cn">TRUE</span>, </span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>      <span class="at">cluster =</span> subclass)</span></code></pre></div>
+<pre><code>## Call:
+## coxph(formula = Surv(Y_S) ~ A, data = md, robust = TRUE, cluster = subclass)
+## 
+##   coef exp(coef) se(coef) robust se z     p
+## A 0.43      1.53     0.07      0.07 6 1e-09
+## 
+## Likelihood ratio test=39  on 1 df, p=5e-10
+## n= 882, number of events= 882</code></pre>
+<p>The <code>coef</code> column contains the log HR, and <code>exp(coef)</code> contains the HR. Remember to always use the <code>robust se</code> for the standard error of the log HR. The displayed z-test p-value results from using the robust standard error.</p>
+<p><strong>Using the bootstrap.</strong> Austin and Small <span class="citation">(<a href="#ref-austin2014" role="doc-biblioref">2014</a>)</span> found bootstrap confidence intervals to work well for marginal hazard ratios. Below we demonstrate this using similar code as before to implement the block bootstrap:</p>
+<div class="sourceCode" id="cb28"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Block bootstrap confidence interval</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="co"># library(boot)</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a>pair_ids <span class="ot">&lt;-</span> <span class="fu">levels</span>(md<span class="sc">$</span>subclass)</span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a>est_fun <span class="ot">&lt;-</span> <span class="cf">function</span>(pairs, i) {</span>
+<span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Compute number of times each pair is present</span></span>
+<span id="cb28-9"><a href="#cb28-9" aria-hidden="true" tabindex="-1"></a>  numreps <span class="ot">&lt;-</span> <span class="fu">table</span>(pairs[i])</span>
+<span id="cb28-10"><a href="#cb28-10" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb28-11"><a href="#cb28-11" aria-hidden="true" tabindex="-1"></a>  <span class="co">#For each pair p, copy corresponding md row indices numreps[p] times</span></span>
+<span id="cb28-12"><a href="#cb28-12" aria-hidden="true" tabindex="-1"></a>  ids <span class="ot">&lt;-</span> <span class="fu">unlist</span>(<span class="fu">lapply</span>(pair_ids[pair_ids <span class="sc">%in%</span> <span class="fu">names</span>(numreps)],</span>
+<span id="cb28-13"><a href="#cb28-13" aria-hidden="true" tabindex="-1"></a>                       <span class="cf">function</span>(p) <span class="fu">rep</span>(<span class="fu">which</span>(md<span class="sc">$</span>subclass <span class="sc">==</span> p), </span>
+<span id="cb28-14"><a href="#cb28-14" aria-hidden="true" tabindex="-1"></a>                                              numreps[p])))</span>
+<span id="cb28-15"><a href="#cb28-15" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb28-16"><a href="#cb28-16" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Subset md with block bootstrapped ids</span></span>
+<span id="cb28-17"><a href="#cb28-17" aria-hidden="true" tabindex="-1"></a>  md_boot <span class="ot">&lt;-</span> md[ids,]</span>
+<span id="cb28-18"><a href="#cb28-18" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb28-19"><a href="#cb28-19" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Effect estimation</span></span>
+<span id="cb28-20"><a href="#cb28-20" aria-hidden="true" tabindex="-1"></a>  cox_fit_boot <span class="ot">&lt;-</span> <span class="fu">coxph</span>(<span class="fu">Surv</span>(Y_S) <span class="sc">~</span> A, <span class="at">data =</span> md_boot)</span>
+<span id="cb28-21"><a href="#cb28-21" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb28-22"><a href="#cb28-22" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Compute the marginal HR by exponentiating the coefficient</span></span>
+<span id="cb28-23"><a href="#cb28-23" aria-hidden="true" tabindex="-1"></a>  <span class="co">#on treatment</span></span>
+<span id="cb28-24"><a href="#cb28-24" aria-hidden="true" tabindex="-1"></a>  HR <span class="ot">&lt;-</span> <span class="fu">exp</span>(<span class="fu">coef</span>(cox_fit_boot)[<span class="st">&quot;A&quot;</span>])</span>
+<span id="cb28-25"><a href="#cb28-25" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb28-26"><a href="#cb28-26" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Return the HR</span></span>
+<span id="cb28-27"><a href="#cb28-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(HR)</span>
+<span id="cb28-28"><a href="#cb28-28" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb28-29"><a href="#cb28-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-30"><a href="#cb28-30" aria-hidden="true" tabindex="-1"></a>boot_est <span class="ot">&lt;-</span> <span class="fu">boot</span>(pair_ids, est_fun, <span class="at">R =</span> <span class="dv">499</span>)</span>
+<span id="cb28-31"><a href="#cb28-31" aria-hidden="true" tabindex="-1"></a>boot_est</span>
+<span id="cb28-32"><a href="#cb28-32" aria-hidden="true" tabindex="-1"></a><span class="fu">boot.ci</span>(boot_est, <span class="at">type =</span> <span class="st">&quot;bca&quot;</span>)</span></code></pre></div>
+<p><strong>With covariate adjustment.</strong> As with binary outcomes, if covariates are included in the model, the resulting hazard ratios will be conditional rather than marginal. Austin, Thomas, and Rubin <span class="citation">(<a href="#ref-austin2020" role="doc-biblioref">2020</a>)</span> describe several ways of including covariates in a model to estimate the marginal HR, but because they do not develop standard errors and little research has been done on this method, we will not present it here.</p>
+</div>
+</div>
+<div id="after-pair-matching-with-replacement" class="section level3">
+<h3>After Pair Matching With Replacement</h3>
+<p>Pair matching with replacement makes estimating effects and standard errors a bit less straightforward. Control units paired with multiple treated units belong to multiple pairs at the same time and appear multiple times in the matched dataset. Effect and standard error estimation need to account for control unit multiplicity (i.e., repeated use) and within-pair correlations <span class="citation">(<a href="#ref-hill2006" role="doc-biblioref">Hill and Reiter 2006</a>; <a href="#ref-austin2020a" role="doc-biblioref">Austin and Cafri 2020</a>)</span>.</p>
+<p><code>MatchIt</code> provides two interfaces for extracting the matched dataset after matching with replacement. The first uses <code>match.data()</code> and provides the same output as when used after matching without replacement, except that the <code>subclass</code> column is absent because units are not assigned to a single subclass but rather to several. Control units will have weights that differ from 1 to reflect their use as matches for multiple treated units. When using the <code>match.data()</code> interface, including the weights in the estimation of effects is crucial. Because pair membership is omitted, accounting for it (if desired) must be done by conditioning on covariates used to match the pairs or by bootstrapping the entire process.</p>
+<p>The second interface uses <code>get_matches()</code>, which functions similarly to <code>match.data()</code> except that the dataset contains one row per unit per pair, so control units matched to multiple treated units will have multiple rows in the dataset, and a <code>subclass</code> column is included denoting pair membership. In the <code>get_matches()</code> output, each reused control unit will have multiple rows, identical to each other except with different <code>subclass</code> membership. When performing k:1 matching, weights must also be included in effect estimation when using <code>get_matches()</code>.</p>
+<p>Here we will demonstrate the estimation of effects using both <code>match.data()</code> and <code>get_matches()</code> output. The <code>match.data()</code> output is preferred when pair membership is not directly included in the analysis, and the <code>get_matches()</code> output is preferred when pair membership is to be included. Here will will use 3:1 matching with replacement and with a caliper; note that because a caliper was used, the estimand corresponds to neither the ATT nor the ATE but rather to an ATM.</p>
+<div class="sourceCode" id="cb29"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>mNNr <span class="ot">&lt;-</span> <span class="fu">matchit</span>(A <span class="sc">~</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>                 X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9, <span class="at">data =</span> d,</span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>               <span class="at">link =</span> <span class="st">&quot;linear.logit&quot;</span>, <span class="at">caliper =</span> .<span class="dv">1</span>,</span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>               <span class="at">ratio =</span> <span class="dv">3</span>, <span class="at">replace =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a>mNNr</span></code></pre></div>
+<pre><code>## A matchit object
+##  - method: 3:1 nearest neighbor matching with replacement
+##  - distance: Propensity score [caliper]
+##              - estimated with logistic regression and linearized
+##  - caliper: &lt;distance&gt; (0.13)
+##  - number of obs.: 2000 (original), 1040 (matched)
+##  - target estimand: ATT
+##  - covariates: X1, X2, X3, X4, X5, X6, X7, X8, X9</code></pre>
+<div class="sourceCode" id="cb31"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="co">#match.data output</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>md <span class="ot">&lt;-</span> <span class="fu">match.data</span>(mNNr)</span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a><span class="fu">nrow</span>(md)</span></code></pre></div>
+<pre><code>## [1] 1040</code></pre>
+<div class="sourceCode" id="cb33"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(md)</span></code></pre></div>
+<pre><code>##    A      X1      X2      X3      X4 X5      X6      X7      X8       X9      Y_C Y_B    Y_S distance weights
+## 1  0  0.1725 -1.4283 -0.4103 -2.3606  1 -1.1199  0.6398 -0.4840 -0.59385  0.07104   0 278.46   -2.381  0.9571
+## 3  0  0.1768  0.7905 -0.8436  0.8237  1 -0.2221  0.2971 -0.6966 -0.69516 -0.85180   1 369.94   -1.253  0.4785
+## 5  1  0.3563 -1.8121  0.8135 -0.6719  1 -0.8297  1.7297 -0.6439 -0.02648  0.68058   0 182.73   -0.270  1.0000
+## 7  0  1.8402  1.7601 -1.0746 -1.6428  1  1.4482  0.7131  0.6972 -0.94673  4.28651   1  97.49   -2.281  0.4785
+## 9  0  0.7808  1.3137  0.6580  0.8540  1  0.9495 -0.5731 -0.2362 -0.14580 15.89771   1  67.53   -1.677  0.4785
+## 10 1 -0.5651 -0.1053 -0.1369  1.6233  1 -0.5304 -0.3342  0.4184  0.46308  1.07888   1 113.70   -1.607  1.0000</code></pre>
+<div class="sourceCode" id="cb35"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="co">#get_matches output</span></span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>gm <span class="ot">&lt;-</span> <span class="fu">get_matches</span>(mNNr)</span>
+<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a><span class="fu">nrow</span>(gm)</span></code></pre></div>
+<pre><code>## [1] 1681</code></pre>
+<div class="sourceCode" id="cb37"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(gm)</span></code></pre></div>
+<pre><code>##    id subclass weights A       X1      X2       X3      X4 X5      X6      X7      X8       X9     Y_C Y_B    Y_S distance
+## 1   5        1  1.0000 1  0.35631 -1.8121  0.81349 -0.6719  1 -0.8297  1.7297 -0.6439 -0.02648  0.6806   0 182.73  -0.2700
+## 2 740        1  0.3333 0  0.02725 -0.4570 -0.32506  1.1203  1  0.3795  0.6468 -0.9992  0.01917 -0.9042   1 215.25  -0.2736
+## 3 939        1  0.3333 0  0.92888 -0.2562  0.39077  0.3305  1  0.2654  1.2038  0.1720  1.21006  7.8923   0  83.85  -0.2736
+## 4 860        1  0.3333 0 -0.88047  0.9117 -0.38871  1.0696  0  1.7953  0.2470 -1.6115  1.49297  5.3808   0 236.01  -0.2752
+## 5  10        2  1.0000 1 -0.56513 -0.1053 -0.13685  1.6233  1 -0.5304 -0.3342  0.4184  0.46308  1.0789   1 113.70  -1.6073
+## 6 399        2  0.3333 0  0.80396 -0.8760  0.03938 -0.5895  1  0.2819 -0.6540 -0.5423  1.16852  4.4816   1 117.28  -1.6065</code></pre>
+<p>The <code>get_matches()</code> output provides some additional information about the match. We can count how many times control units are reused and how many units are in each match strata (not all will have 3 control units due to the caliper).</p>
+<div class="sourceCode" id="cb39"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Number of time control units are rematched</span></span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a><span class="fu">table</span>(<span class="fu">table</span>(gm<span class="sc">$</span>id[gm<span class="sc">$</span>A <span class="sc">==</span> <span class="dv">0</span>]))</span></code></pre></div>
+<pre><code>## 
+##   1   2   3   4   5   6   7   8   9  10  13  14 
+## 332 138  62  29  19   9  14   4   2   2   1   1</code></pre>
+<p>Here we can see that 332 control units were only used in one pair each, and one control unit was paired with 14 treated units (i.e., heavily reused).</p>
+<div class="sourceCode" id="cb41"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Number of control units in each match stratum</span></span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a><span class="fu">table</span>(<span class="fu">table</span>(gm<span class="sc">$</span>subclass[gm<span class="sc">$</span>A <span class="sc">==</span> <span class="dv">0</span>]))</span></code></pre></div>
+<pre><code>## 
+##   1   2   3 
+##   9   9 409</code></pre>
+<p>Here we can see that 409 treated units have three matches, nine have two matches, and nine only have one match. The caliper did not end up restricting too many matches.</p>
+<div id="for-continuous-outcomes-1" class="section level4">
+<h4>For continuous outcomes</h4>
+<p><strong>Without covariate adjustment.</strong> For continuous outcomes, we can regress the outcome on the treatment and include the weights in the estimation. We do this regardless of whether we are using the <code>match.data()</code> output or the <code>get_matches()</code> output (if we were doing 1:1 matching, the weights would not be necessary when using the <code>get_matches()</code> output, but they don’t change the results if included).</p>
+<p>If we don’t mind ignoring pair membership, we can use the <code>match.data()</code> output to estimate the effect and standard errors. Here we use <code>vcovHC()</code> to estimate regular robust standard errors that ignoring pairing. Hill and Reiter <span class="citation">(<a href="#ref-hill2006" role="doc-biblioref">2006</a>)</span> found these standard errors to be conservative for continuous outcomes.</p>
+<div class="sourceCode" id="cb43"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="co">#match.data() output</span></span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a>fit1md <span class="ot">&lt;-</span> <span class="fu">lm</span>(Y_C <span class="sc">~</span> A, <span class="at">data =</span> md, <span class="at">weights =</span> weights)</span>
+<span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a><span class="fu">coeftest</span>(fit1md, <span class="at">vcov. =</span> vcovHC)</span></code></pre></div>
+<pre><code>## 
+## t test of coefficients:
+## 
+##             Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)    1.798      0.420    4.28  2.0e-05 ***
+## A              2.065      0.514    4.02  6.3e-05 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
+<p>If we want to incorporate pair membership into the standard error estimation, we have to use the <code>get_matches()</code> output. In addition to supplying pair membership (<code>subclass</code>) to the standard error estimator, we also supply unit ID (<code>id</code>) to account for the fact that several rows may refer to the same control unit.</p>
+<div class="sourceCode" id="cb45"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="co">#get_matches() output</span></span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a>fit1gm <span class="ot">&lt;-</span> <span class="fu">lm</span>(Y_C <span class="sc">~</span> A, <span class="at">data =</span> gm, <span class="at">weights =</span> weights)</span>
+<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a><span class="fu">coeftest</span>(fit1gm, <span class="at">vcov. =</span> vcovCL, <span class="at">cluster =</span> <span class="sc">~</span>subclass <span class="sc">+</span> id)</span></code></pre></div>
+<pre><code>## 
+## t test of coefficients:
+## 
+##             Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)    1.798      0.416    4.32  1.7e-05 ***
+## A              2.065      0.510    4.05  5.4e-05 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
+<p>Note that the effect estimates are identical; only the standard errors and p-values differ between the approaches<a href="#fn4" class="footnote-ref" id="fnref4"><sup>4</sup></a>.</p>
+<p><strong>Using the bootstrap.</strong> We can also use bootstrapping to estimate standard errors and confidence intervals. Although Abadie and Imbens <span class="citation">(<a href="#ref-abadie2008" role="doc-biblioref">2008</a>)</span> demonstrated analytically that bootstrap standard errors may be invalid for matching with replacement, simulation work by Hill and Reiter <span class="citation">(<a href="#ref-hill2006" role="doc-biblioref">2006</a>)</span> and Bodory et al. <span class="citation">(<a href="#ref-bodory2020" role="doc-biblioref">2020</a>)</span> has found that bootstrap standard errors are adequate and generally slightly conservative. Given this disagreement, it may be worth proceeding with caution when using bootstrapping to estimate standard errors after matching with replacement. Simulation experiments with matching with replacement have only considered the full bootstrap and found it to yield confidence intervals with approximately nominal coverage, so we recommend this approach over the block bootstrap for now and demonstrate it below.</p>
+<div class="sourceCode" id="cb47"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Full bootstrap confidence interval</span></span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a><span class="co"># library(boot)</span></span>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-4"><a href="#cb47-4" aria-hidden="true" tabindex="-1"></a>est_fun <span class="ot">&lt;-</span> <span class="cf">function</span>(data, i) {</span>
+<span id="cb47-5"><a href="#cb47-5" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Matching function</span></span>
+<span id="cb47-6"><a href="#cb47-6" aria-hidden="true" tabindex="-1"></a>  mNNr_boot <span class="ot">&lt;-</span> <span class="fu">matchit</span>(A <span class="sc">~</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb47-7"><a href="#cb47-7" aria-hidden="true" tabindex="-1"></a>                         X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9, <span class="at">data =</span> data[i,],</span>
+<span id="cb47-8"><a href="#cb47-8" aria-hidden="true" tabindex="-1"></a>                       <span class="at">link =</span> <span class="st">&quot;linear.logit&quot;</span>, <span class="at">caliper =</span> .<span class="dv">1</span>,</span>
+<span id="cb47-9"><a href="#cb47-9" aria-hidden="true" tabindex="-1"></a>                       <span class="at">ratio =</span> <span class="dv">3</span>, <span class="at">replace =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb47-10"><a href="#cb47-10" aria-hidden="true" tabindex="-1"></a>  md_boot <span class="ot">&lt;-</span> <span class="fu">match.data</span>(mNNr_boot)</span>
+<span id="cb47-11"><a href="#cb47-11" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb47-12"><a href="#cb47-12" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Effect estimation</span></span>
+<span id="cb47-13"><a href="#cb47-13" aria-hidden="true" tabindex="-1"></a>  fit_boot <span class="ot">&lt;-</span> <span class="fu">lm</span>(Y_C <span class="sc">~</span> A, <span class="at">data =</span> md_boot, <span class="at">weights =</span> weights)</span>
+<span id="cb47-14"><a href="#cb47-14" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb47-15"><a href="#cb47-15" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Return the coefficient on treatment</span></span>
+<span id="cb47-16"><a href="#cb47-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(<span class="fu">coef</span>(fit_boot)[<span class="st">&quot;A&quot;</span>])</span>
+<span id="cb47-17"><a href="#cb47-17" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb47-18"><a href="#cb47-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-19"><a href="#cb47-19" aria-hidden="true" tabindex="-1"></a>boot_est <span class="ot">&lt;-</span> <span class="fu">boot</span>(d, est_fun, <span class="at">R =</span> <span class="dv">499</span>)</span>
+<span id="cb47-20"><a href="#cb47-20" aria-hidden="true" tabindex="-1"></a>boot_est</span></code></pre></div>
+<pre><code>## 
+## ORDINARY NONPARAMETRIC BOOTSTRAP
+## 
+## 
+## Call:
+## boot(data = d, statistic = est_fun, R = 499)
+## 
+## 
+## Bootstrap Statistics :
+##     original  bias    std. error
+## t1*    2.065 -0.1287      0.4398</code></pre>
+<div class="sourceCode" id="cb49"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a><span class="fu">boot.ci</span>(boot_est, <span class="at">type =</span> <span class="st">&quot;perc&quot;</span>)</span></code></pre></div>
+<pre><code>## BOOTSTRAP CONFIDENCE INTERVAL CALCULATIONS
+## Based on 499 bootstrap replicates
+## 
+## CALL : 
+## boot.ci(boot.out = boot_est, type = &quot;perc&quot;)
+## 
+## Intervals : 
+## Level     Percentile     
+## 95%   ( 1.049,  2.796 )  
+## Calculations and Intervals on Original Scale</code></pre>
+<p><strong>With covariate adjustment.</strong> We can include covariates in the outcome model just as we could when matching without replacement. Hill and Reiter <span class="citation">(<a href="#ref-hill2006" role="doc-biblioref">2006</a>)</span> found that standard errors that fail to account for pair membership can have lower the nominal confidence interval coverage, so we recommend using the <code>get_matches()</code> output to address both multiplicity and clustering.</p>
+<div class="sourceCode" id="cb51"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a>fit2md <span class="ot">&lt;-</span> <span class="fu">lm</span>(Y_C <span class="sc">~</span> A <span class="sc">+</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a>                 X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9, <span class="at">data =</span> gm, </span>
+<span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a>             <span class="at">weights =</span> weights)</span>
+<span id="cb51-4"><a href="#cb51-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-5"><a href="#cb51-5" aria-hidden="true" tabindex="-1"></a><span class="fu">coeftest</span>(fit1gm, <span class="at">vcov. =</span> vcovCL, <span class="at">cluster =</span> <span class="sc">~</span>subclass <span class="sc">+</span> id)[<span class="st">&quot;A&quot;</span>,,drop <span class="ot">=</span> <span class="cn">FALSE</span>]</span></code></pre></div>
+<pre><code>##   Estimate Std. Error t value  Pr(&gt;|t|)
+## A    2.065       0.51   4.048 5.392e-05</code></pre>
+<p>Remember that the coefficients and tests on the predictors other than the treatment should not be interpreted because they may be subject to confounding even if the treatment is not, so we omit them here.</p>
+</div>
+<div id="for-binary-outcomes-1" class="section level4">
+<h4>For binary outcomes</h4>
+<p>The primary difference between dealing with binary and continuous outcomes is the noncollapsibility of the effect measures for binary outcomes, meaning that including covariates in the outcome model is less straightforward because the coefficient on treatment does not correspond to the marginal treatment effect. Similar to continuous outcomes, when estimating the treatment effect, we can use either the output of <code>match.data()</code> or the output of <code>get_matches()</code>, only the latter of which allows us to account both for multiplicity in the control units and for pair membership. Below we’ll demonstrate estimating the marginal OR accounting for pair membership using the <code>get_matches()</code> output. Then we will demonstrate using the bootstrap to estimate standard errors that include covariates in the model. Note that there has been little research on the use of matching with replacement with binary outcomes, so one should proceed with caution and consider using a better-studied matching method.</p>
+<p><strong>Without covariate adjustment.</strong> We include the weights in the call to <code>glm()</code> and we include both <code>subclass</code> and <code>id</code> as clustering variables in computing the cluster-robust standard errors, just as we would with a continuous outcome. We can use <code>family = quasibinomial</code> instead of <code>family = binomial</code> to avoid a warning due to the use of weights; the estimates will be the same either way. To estimate the marginal RR or RD, <code>&quot;logit&quot;</code> would be replaced with <code>&quot;log&quot;</code> or <code>&quot;identity&quot;</code>, respectively.</p>
+<div class="sourceCode" id="cb53"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a>fit3gm <span class="ot">&lt;-</span> <span class="fu">glm</span>(Y_B <span class="sc">~</span> A, <span class="at">data =</span> gm, <span class="at">weights =</span> weights,</span>
+<span id="cb53-2"><a href="#cb53-2" aria-hidden="true" tabindex="-1"></a>              <span class="at">family =</span> <span class="fu">quasibinomial</span>(<span class="at">link =</span> <span class="st">&quot;logit&quot;</span>))</span>
+<span id="cb53-3"><a href="#cb53-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-4"><a href="#cb53-4" aria-hidden="true" tabindex="-1"></a><span class="fu">coeftest</span>(fit3gm, <span class="at">vcov. =</span> vcovCL, <span class="at">cluster =</span> <span class="sc">~</span> subclass <span class="sc">+</span> id)</span></code></pre></div>
+<pre><code>## 
+## z test of coefficients:
+## 
+##             Estimate Std. Error z value Pr(&gt;|z|)    
+## (Intercept)   -0.766      0.139   -5.50  3.9e-08 ***
+## A              0.639      0.169    3.78  0.00016 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
+<div class="sourceCode" id="cb55"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(<span class="fu">coef</span>(fit3gm)) <span class="co">#OR</span></span></code></pre></div>
+<pre><code>## (Intercept)           A 
+##      0.4648      1.8954</code></pre>
+<p><strong>With covariate adjustment and bootstrapping.</strong> To include covariates, we can use the bootstrap as we did before when matching without replacement. It doesn’t matter whether the <code>match.data()</code> or <code>get_matches()</code> output is used because, as we saw before, both yield the same effect estimate in each bootstrap replication. Here we use the full bootstrap rather than the block bootstrap because the performance of the block bootstrap after matching with replacement has not been evaluated.</p>
+<div class="sourceCode" id="cb57"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Bootstrap confidence intervals</span></span>
+<span id="cb57-2"><a href="#cb57-2" aria-hidden="true" tabindex="-1"></a><span class="co"># library(boot)</span></span>
+<span id="cb57-3"><a href="#cb57-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb57-4"><a href="#cb57-4" aria-hidden="true" tabindex="-1"></a>est_fun <span class="ot">&lt;-</span> <span class="cf">function</span>(data, i) {</span>
+<span id="cb57-5"><a href="#cb57-5" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Matching function</span></span>
+<span id="cb57-6"><a href="#cb57-6" aria-hidden="true" tabindex="-1"></a>  mNNr_boot <span class="ot">&lt;-</span> <span class="fu">matchit</span>(A <span class="sc">~</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb57-7"><a href="#cb57-7" aria-hidden="true" tabindex="-1"></a>                 X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9, <span class="at">data =</span> data[i,],</span>
+<span id="cb57-8"><a href="#cb57-8" aria-hidden="true" tabindex="-1"></a>               <span class="at">link =</span> <span class="st">&quot;linear.logit&quot;</span>, <span class="at">caliper =</span> .<span class="dv">1</span>,</span>
+<span id="cb57-9"><a href="#cb57-9" aria-hidden="true" tabindex="-1"></a>               <span class="at">ratio =</span> <span class="dv">3</span>, <span class="at">replace =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb57-10"><a href="#cb57-10" aria-hidden="true" tabindex="-1"></a>  md_boot <span class="ot">&lt;-</span> <span class="fu">match.data</span>(mNNr_boot)</span>
+<span id="cb57-11"><a href="#cb57-11" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb57-12"><a href="#cb57-12" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Fitting the model</span></span>
+<span id="cb57-13"><a href="#cb57-13" aria-hidden="true" tabindex="-1"></a>  fit_boot <span class="ot">&lt;-</span> <span class="fu">glm</span>(Y_B <span class="sc">~</span> A <span class="sc">+</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb57-14"><a href="#cb57-14" aria-hidden="true" tabindex="-1"></a>                    X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9, <span class="at">data =</span> md_boot, </span>
+<span id="cb57-15"><a href="#cb57-15" aria-hidden="true" tabindex="-1"></a>                  <span class="at">family =</span> <span class="fu">quasibinomial</span>(<span class="at">link =</span> <span class="st">&quot;logit&quot;</span>),</span>
+<span id="cb57-16"><a href="#cb57-16" aria-hidden="true" tabindex="-1"></a>                  <span class="at">weights =</span> weights)</span>
+<span id="cb57-17"><a href="#cb57-17" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb57-18"><a href="#cb57-18" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Estimate potential outcomes for each unit</span></span>
+<span id="cb57-19"><a href="#cb57-19" aria-hidden="true" tabindex="-1"></a>  md_boot<span class="sc">$</span>A <span class="ot">&lt;-</span> <span class="dv">0</span></span>
+<span id="cb57-20"><a href="#cb57-20" aria-hidden="true" tabindex="-1"></a>  P0 <span class="ot">&lt;-</span> <span class="fu">weighted.mean</span>(<span class="fu">predict</span>(fit_boot, md_boot, <span class="at">type =</span> <span class="st">&quot;response&quot;</span>),</span>
+<span id="cb57-21"><a href="#cb57-21" aria-hidden="true" tabindex="-1"></a>                      <span class="at">w =</span> md_boot<span class="sc">$</span>weights)</span>
+<span id="cb57-22"><a href="#cb57-22" aria-hidden="true" tabindex="-1"></a>  Odds0 <span class="ot">&lt;-</span> P0 <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> P0)</span>
+<span id="cb57-23"><a href="#cb57-23" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb57-24"><a href="#cb57-24" aria-hidden="true" tabindex="-1"></a>  md_boot<span class="sc">$</span>A <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb57-25"><a href="#cb57-25" aria-hidden="true" tabindex="-1"></a>  P1 <span class="ot">&lt;-</span> <span class="fu">weighted.mean</span>(<span class="fu">predict</span>(fit_boot, md_boot, <span class="at">type =</span> <span class="st">&quot;response&quot;</span>),</span>
+<span id="cb57-26"><a href="#cb57-26" aria-hidden="true" tabindex="-1"></a>                      <span class="at">w =</span> md_boot<span class="sc">$</span>weights)</span>
+<span id="cb57-27"><a href="#cb57-27" aria-hidden="true" tabindex="-1"></a>  Odds1 <span class="ot">&lt;-</span> P1 <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> P1)</span>
+<span id="cb57-28"><a href="#cb57-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb57-29"><a href="#cb57-29" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Return marginal odds ratio</span></span>
+<span id="cb57-30"><a href="#cb57-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(Odds1 <span class="sc">/</span> Odds0)</span>
+<span id="cb57-31"><a href="#cb57-31" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb57-32"><a href="#cb57-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb57-33"><a href="#cb57-33" aria-hidden="true" tabindex="-1"></a>boot_est <span class="ot">&lt;-</span> <span class="fu">boot</span>(d, est_fun, <span class="at">R =</span> <span class="dv">4999</span>)</span>
+<span id="cb57-34"><a href="#cb57-34" aria-hidden="true" tabindex="-1"></a>boot_est</span>
+<span id="cb57-35"><a href="#cb57-35" aria-hidden="true" tabindex="-1"></a><span class="fu">boot.ci</span>(boot_est, <span class="at">type =</span> <span class="st">&quot;bca&quot;</span>)</span></code></pre></div>
+<p>As before, to use bootstrapping for the RR or RD, the part of the code that computes the marginal OR can be replaced with code to compute the marginal RR (<code>P1 / P0</code>) or marginal RD (<code>P1 - P0</code>). The outcome model can additionally include treatment-covariate interactions if desired.</p>
+</div>
+<div id="for-survival-outcomes-1" class="section level4">
+<h4>For survival outcomes</h4>
+<p>Standard error estimation for the marginal HR after matching with replacement is not a well-studied area, with Austin and Cafri <span class="citation">(<a href="#ref-austin2020a" role="doc-biblioref">2020</a>)</span> providing the sole examination into appropriate methods for doing so. With survival outcomes, other matching methods may be more appropriate until matching with replacement is better understood. Here we provide an example that implements the recommendations by Austin and Cafri <span class="citation">(<a href="#ref-austin2020a" role="doc-biblioref">2020</a>)</span>. Any other methods (e.g., bootstrap) should be used with caution until they have been formally evaluated.</p>
+<p><strong>Without covariate adjustment.</strong> According to the results of Austin and Cafri’s <span class="citation">(<a href="#ref-austin2020a" role="doc-biblioref">2020</a>)</span> simulation studies, when prevalence of the treatment is low (&lt;30%), a standard error that does not involve pair membership is sufficient. When treatment prevalence is higher, the standard error that ignores pair membership may be too low, and the authors recommend a custom standard error estimator that uses information about both multiplicity and pairing.</p>
+<p>For the continuous and binary outcomes, accounting for both multiplicity and pair membership is fairly straightforward thanks to the ability of the <code>sandwich</code> package functions to include multiple sources of clustering. Unfortunately, this must be done manually for survival models. We perform this analysis below, adapting code from the appendix of Austin and Cafri <span class="citation">(<a href="#ref-austin2020a" role="doc-biblioref">2020</a>)</span> to the <code>get_matches()</code> output.</p>
+<div class="sourceCode" id="cb58"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Austin &amp; Cafri&#39;s (2020) SE estimator</span></span>
+<span id="cb58-2"><a href="#cb58-2" aria-hidden="true" tabindex="-1"></a>fs <span class="ot">&lt;-</span> <span class="fu">coxph</span>(<span class="fu">Surv</span>(Y_S) <span class="sc">~</span> A, <span class="at">data =</span> gm, <span class="at">robust =</span> <span class="cn">TRUE</span>, </span>
+<span id="cb58-3"><a href="#cb58-3" aria-hidden="true" tabindex="-1"></a>      <span class="at">weights =</span> weights, <span class="at">cluster =</span> subclass)</span>
+<span id="cb58-4"><a href="#cb58-4" aria-hidden="true" tabindex="-1"></a>Vs <span class="ot">&lt;-</span> fs<span class="sc">$</span>var</span>
+<span id="cb58-5"><a href="#cb58-5" aria-hidden="true" tabindex="-1"></a>ks <span class="ot">&lt;-</span> <span class="fu">nlevels</span>(gm<span class="sc">$</span>subclass)</span>
+<span id="cb58-6"><a href="#cb58-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb58-7"><a href="#cb58-7" aria-hidden="true" tabindex="-1"></a>fi <span class="ot">&lt;-</span> <span class="fu">coxph</span>(<span class="fu">Surv</span>(Y_S) <span class="sc">~</span> A, <span class="at">data =</span> gm, <span class="at">robust =</span> <span class="cn">TRUE</span>, </span>
+<span id="cb58-8"><a href="#cb58-8" aria-hidden="true" tabindex="-1"></a>      <span class="at">weights =</span> weights, <span class="at">cluster =</span> id)</span>
+<span id="cb58-9"><a href="#cb58-9" aria-hidden="true" tabindex="-1"></a>Vi <span class="ot">&lt;-</span> fi<span class="sc">$</span>var</span>
+<span id="cb58-10"><a href="#cb58-10" aria-hidden="true" tabindex="-1"></a>ki <span class="ot">&lt;-</span> <span class="fu">length</span>(<span class="fu">unique</span>(gm<span class="sc">$</span>id))</span>
+<span id="cb58-11"><a href="#cb58-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb58-12"><a href="#cb58-12" aria-hidden="true" tabindex="-1"></a>fc <span class="ot">&lt;-</span> <span class="fu">coxph</span>(<span class="fu">Surv</span>(Y_S) <span class="sc">~</span> A, <span class="at">data =</span> gm, <span class="at">robust =</span> <span class="cn">TRUE</span>, </span>
+<span id="cb58-13"><a href="#cb58-13" aria-hidden="true" tabindex="-1"></a>      <span class="at">weights =</span> weights)</span>
+<span id="cb58-14"><a href="#cb58-14" aria-hidden="true" tabindex="-1"></a>Vc <span class="ot">&lt;-</span> fc<span class="sc">$</span>var</span>
+<span id="cb58-15"><a href="#cb58-15" aria-hidden="true" tabindex="-1"></a>kc <span class="ot">&lt;-</span> <span class="fu">nrow</span>(gm)</span>
+<span id="cb58-16"><a href="#cb58-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb58-17"><a href="#cb58-17" aria-hidden="true" tabindex="-1"></a><span class="co">#Compute the variance</span></span>
+<span id="cb58-18"><a href="#cb58-18" aria-hidden="true" tabindex="-1"></a>V <span class="ot">&lt;-</span> (ks<span class="sc">/</span>(ks<span class="dv">-1</span>))<span class="sc">*</span>Vs <span class="sc">+</span> (ki<span class="sc">/</span>(ki<span class="dv">-1</span>))<span class="sc">*</span>Vi <span class="sc">-</span> (kc<span class="sc">/</span>(kc<span class="dv">-1</span>))<span class="sc">*</span>Vc</span>
+<span id="cb58-19"><a href="#cb58-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb58-20"><a href="#cb58-20" aria-hidden="true" tabindex="-1"></a><span class="co">#Sneak it back into the fit object</span></span>
+<span id="cb58-21"><a href="#cb58-21" aria-hidden="true" tabindex="-1"></a>fc<span class="sc">$</span>var <span class="ot">&lt;-</span> V</span>
+<span id="cb58-22"><a href="#cb58-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb58-23"><a href="#cb58-23" aria-hidden="true" tabindex="-1"></a>fc</span></code></pre></div>
+<pre><code>## Call:
+## coxph(formula = Surv(Y_S) ~ A, data = gm, weights = weights, 
+##     robust = TRUE)
+## 
+##   coef exp(coef) se(coef) robust se z     p
+## A 0.44      1.55     0.07      0.07 6 1e-09
+## 
+## Likelihood ratio test=40  on 1 df, p=2e-10
+## n= 1681, number of events= 1681</code></pre>
+<p>The <code>robust se</code> column contains the computed standard error, and the reported Z-test uses this standard error. The <code>se(coef)</code> column should be ignored.</p>
+</div>
+</div>
+<div id="after-full-matching" class="section level3">
+<h3>After Full Matching</h3>
+<p>Full matching presents fairly straightforward methods of effect and standard error estimation. The most common and recommended way to estimate effects after full matching is to use the computed matching weights to estimate weighted effects. These matching weights function essentially like inverse probability weights and can be treated as such in all analyses, including with respect to standard error estimation. For empirical comparisons between full matching and propensity score weighting, see Austin and Stuart <span class="citation">(<a href="#ref-austin2015b" role="doc-biblioref">2015b</a>, <a href="#ref-austin2017" role="doc-biblioref">2017</a>, <a href="#ref-austin2015a" role="doc-biblioref">2015a</a>)</span>.</p>
+<p>Standard error estimation involves using a cluster-robust standard error as recommended by Austin and Stuart <span class="citation">(<a href="#ref-austin2017" role="doc-biblioref">2017</a>)</span>. Including covariates can improve precision and add robustness when valid. Note that the methods described here also work for other estimators that rely on matching weights, including matching without replacement. The main difference is that full matching can be used to estimate the ATE, which we demonstrate below.</p>
+<p>Below, we perform optimal full propensity score matching. Here we use full matching to estimate the ATE, but the procedure is nearly identical when estimating the ATT, and we point out any differences.</p>
+<div class="sourceCode" id="cb60"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a>mF <span class="ot">&lt;-</span> <span class="fu">matchit</span>(A <span class="sc">~</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb60-2"><a href="#cb60-2" aria-hidden="true" tabindex="-1"></a>                 X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9, <span class="at">data =</span> d,</span>
+<span id="cb60-3"><a href="#cb60-3" aria-hidden="true" tabindex="-1"></a>              <span class="at">method =</span> <span class="st">&quot;full&quot;</span>, <span class="at">estimand =</span> <span class="st">&quot;ATE&quot;</span>)</span>
+<span id="cb60-4"><a href="#cb60-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb60-5"><a href="#cb60-5" aria-hidden="true" tabindex="-1"></a>mF</span></code></pre></div>
+<pre><code>## A matchit object
+##  - method: Optimal full matching
+##  - distance: Propensity score
+##              - estimated with logistic regression
+##  - number of obs.: 2000 (original), 2000 (matched)
+##  - target estimand: ATE
+##  - covariates: X1, X2, X3, X4, X5, X6, X7, X8, X9</code></pre>
+<div class="sourceCode" id="cb62"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb62-1"><a href="#cb62-1" aria-hidden="true" tabindex="-1"></a>md <span class="ot">&lt;-</span> <span class="fu">match.data</span>(mF)</span>
+<span id="cb62-2"><a href="#cb62-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb62-3"><a href="#cb62-3" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(md)</span></code></pre></div>
+<pre><code>##   A      X1      X2      X3       X4 X5      X6      X7      X8       X9      Y_C Y_B     Y_S distance weights subclass
+## 1 0  0.1725 -1.4283 -0.4103 -2.36059  1 -1.1199  0.6398 -0.4840 -0.59385  0.07104   0  278.46  0.08461  0.8166       58
+## 2 0 -1.0959  0.8463  0.2456 -0.12333  1 -2.2687 -1.4491 -0.5514 -0.31439  0.15619   0  330.63  0.01855  0.7899      132
+## 3 0  0.1768  0.7905 -0.8436  0.82366  1 -0.2221  0.2971 -0.6966 -0.69516 -0.85180   1  369.94  0.22210  1.0393       97
+## 4 0 -0.4595  0.1726  1.9542 -0.62661  1 -0.4019 -0.8294 -0.5384  0.20729 -2.35184   0   91.06  0.04180  0.8445      136
+## 5 1  0.3563 -1.8121  0.8135 -0.67189  1 -0.8297  1.7297 -0.6439 -0.02648  0.68058   0  182.73  0.43291  0.3307      204
+## 6 0 -2.4313 -1.7984 -1.2940  0.04609  1 -1.2419 -1.1252 -1.8659 -0.56513 -5.62260   0 2563.73  0.04998  0.7990      168</code></pre>
+<p>A benefit of full matching is that no units are discarded, which has the potential to improve precision and prevent bias due to incomplete matching. However, the “effective” sample size implied by the matching weights is lower than the actual remaining sample size, so one should not always expect full matching to yield more precise estimates than other forms of matching.</p>
+<div id="for-continuous-outcomes-2" class="section level4">
+<h4>For continuous outcomes</h4>
+<p><strong>Without covariate adjustment.</strong> Estimating effects and standard errors for continuous outcomes after full matching involves including the matching weights in the outcome model and using a cluster-robust standard error.</p>
+<div class="sourceCode" id="cb64"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb64-1"><a href="#cb64-1" aria-hidden="true" tabindex="-1"></a>fit1 <span class="ot">&lt;-</span> <span class="fu">lm</span>(Y_C <span class="sc">~</span> A, <span class="at">data =</span> md, <span class="at">weights =</span> weights)</span>
+<span id="cb64-2"><a href="#cb64-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb64-3"><a href="#cb64-3" aria-hidden="true" tabindex="-1"></a><span class="fu">coeftest</span>(fit1, <span class="at">vcov. =</span> vcovCL, <span class="at">cluster =</span> <span class="sc">~</span>subclass)</span></code></pre></div>
+<pre><code>## 
+## t test of coefficients:
+## 
+##             Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)    1.436      0.250    5.75    1e-08 ***
+## A              1.892      0.519    3.65  0.00027 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
+<p><strong>Using the bootstrap.</strong> Computing bootstrap standard errors and confidence intervals after full matching is identical to doing so after pair matching without replacement, so we do not demonstrate it again here. Covariates can be included in the outcome model used in the bootstrap replications. See below for a note on centering the covariates when including treatment-covariate interactions, as this must be done when using the bootstrap as well.</p>
+<p><strong>With covariate adjustment.</strong> As previously mentioned, it is generally acceptable to include just the main effects, but including interactions between the treatment and covariates can be beneficial when effect modification by the covariates may be present. Because we have not demonstrated this strategy so far, we demonstrate it below.</p>
+<p>In order to interpret the coefficient on treatment as a marginal effect estimate, we need to center the covariates at their means in the target population (i.e., the original sample for the ATE, the treated units for the ATT, or the retained units for an ATM); we could also use a marginal effects procedure as has been demonstrated with binary outcomes for other matching methods. Below we use the strategy of centering the covariates at their means. Note that when factor predictors are present, they need to be split into dummy (0/1) variables prior to centering. The <code>splitfactor()</code> function in <code>cobalt</code> can make this straightforward. Although this procedure is more involved compared to simply including main effects, it can provide extra precision and robustness.</p>
+<div class="sourceCode" id="cb66"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb66-1"><a href="#cb66-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Estimating a covariate-adjusted marginal effect</span></span>
+<span id="cb66-2"><a href="#cb66-2" aria-hidden="true" tabindex="-1"></a><span class="co">#with treatment-covariate interactions</span></span>
+<span id="cb66-3"><a href="#cb66-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb66-4"><a href="#cb66-4" aria-hidden="true" tabindex="-1"></a><span class="co">#Create a new dataset for centered variables</span></span>
+<span id="cb66-5"><a href="#cb66-5" aria-hidden="true" tabindex="-1"></a>md_cen <span class="ot">&lt;-</span> md</span>
+<span id="cb66-6"><a href="#cb66-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb66-7"><a href="#cb66-7" aria-hidden="true" tabindex="-1"></a>covs_to_center <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">&quot;X1&quot;</span>, <span class="st">&quot;X2&quot;</span>, <span class="st">&quot;X3&quot;</span>, <span class="st">&quot;X4&quot;</span>, <span class="st">&quot;X5&quot;</span>,</span>
+<span id="cb66-8"><a href="#cb66-8" aria-hidden="true" tabindex="-1"></a>                    <span class="st">&quot;X6&quot;</span>, <span class="st">&quot;X7&quot;</span>, <span class="st">&quot;X8&quot;</span>, <span class="st">&quot;X9&quot;</span>)</span>
+<span id="cb66-9"><a href="#cb66-9" aria-hidden="true" tabindex="-1"></a>md_cen[covs_to_center] <span class="ot">&lt;-</span> <span class="fu">scale</span>(md_cen[covs_to_center], </span>
+<span id="cb66-10"><a href="#cb66-10" aria-hidden="true" tabindex="-1"></a>                                <span class="at">scale =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb66-11"><a href="#cb66-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb66-12"><a href="#cb66-12" aria-hidden="true" tabindex="-1"></a><span class="co">#Fit the model with every covariate interacting with treatment</span></span>
+<span id="cb66-13"><a href="#cb66-13" aria-hidden="true" tabindex="-1"></a>fit2 <span class="ot">&lt;-</span> <span class="fu">lm</span>(Y_C <span class="sc">~</span> A <span class="sc">*</span> (X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb66-14"><a href="#cb66-14" aria-hidden="true" tabindex="-1"></a>                      X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9),</span>
+<span id="cb66-15"><a href="#cb66-15" aria-hidden="true" tabindex="-1"></a>           <span class="at">data =</span> md_cen, <span class="at">weights =</span> weights)</span>
+<span id="cb66-16"><a href="#cb66-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb66-17"><a href="#cb66-17" aria-hidden="true" tabindex="-1"></a><span class="co">#Only output the intercept and coefficient on treatment</span></span>
+<span id="cb66-18"><a href="#cb66-18" aria-hidden="true" tabindex="-1"></a><span class="fu">coeftest</span>(fit2, <span class="at">vcov. =</span> vcovCL, <span class="at">cluster =</span> <span class="sc">~</span>subclass)[<span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>,]</span></code></pre></div>
+<pre><code>##             Estimate Std. Error t value  Pr(&gt;|t|)
+## (Intercept)    1.400     0.1645   8.511 3.349e-17
+## A              1.979     0.4169   4.748 2.207e-06</code></pre>
+<p>Remember not to interpret the coefficients on the covariates or the treatment-covariate interactions, as they are likely confounded. To keep the output clean, above we restricted the output to just the intercept and coefficient on treatment. Another benefit of centering the covariates is that we can interpret the intercept as an estimate of the average potential outcome under control.</p>
+<p>Note that the above strategy can be applied to all matching methods when analyzing continuous outcomes (but not binary or survival outcomes, which require bootstrapping to validly estimate standard errors with covariate adjustment). It is critical to center the covariates at their means in the target group, which may require some additional programming for estimands other than the ATE.</p>
+</div>
+<div id="for-binary-outcomes-2" class="section level4">
+<h4>For binary outcomes</h4>
+<p>Using full matching with binary outcomes was described by Austin and Stuart <span class="citation">(<a href="#ref-austin2017" role="doc-biblioref">2017</a>)</span>. In general, the procedures look similar to how they do with other matching methods.</p>
+<p><strong>Without covariate adjustment.</strong> We can use a weighted generalized linear model regressing the outcome on the treatment with a link function appropriate to the effect measure of interest. Below we demonstrate estimating the marginal OR after full matching in a model without covariates:</p>
+<div class="sourceCode" id="cb68"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb68-1"><a href="#cb68-1" aria-hidden="true" tabindex="-1"></a>fit3 <span class="ot">&lt;-</span> <span class="fu">glm</span>(Y_B <span class="sc">~</span> A, <span class="at">data =</span> md, <span class="at">weights =</span> weights,</span>
+<span id="cb68-2"><a href="#cb68-2" aria-hidden="true" tabindex="-1"></a>            <span class="at">family =</span> <span class="fu">quasibinomial</span>(<span class="at">link =</span> <span class="st">&quot;logit&quot;</span>))</span>
+<span id="cb68-3"><a href="#cb68-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb68-4"><a href="#cb68-4" aria-hidden="true" tabindex="-1"></a><span class="fu">coeftest</span>(fit3, <span class="at">vcov. =</span> vcovCL, <span class="at">cluster =</span> <span class="sc">~</span>subclass)</span></code></pre></div>
+<pre><code>## 
+## z test of coefficients:
+## 
+##             Estimate Std. Error z value Pr(&gt;|z|)    
+## (Intercept)  -0.9146     0.0826  -11.07   &lt;2e-16 ***
+## A             0.5545     0.1722    3.22   0.0013 ** 
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
+<div class="sourceCode" id="cb70"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb70-1"><a href="#cb70-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(<span class="fu">coef</span>(fit3)) <span class="co">#OR</span></span></code></pre></div>
+<pre><code>## (Intercept)           A 
+##      0.4007      1.7410</code></pre>
+<p>As with matching with replacement, we include weights in the call to <code>glm()</code> and set <code>family = quasibinomial()</code> to prevent a warning that occurs when using weights with binomial regression models (though the results do not differ). Setting <code>link = &quot;logit&quot;</code> provides the marginal OR; for the marginal RR, we would replace <code>&quot;logit&quot;</code> with <code>&quot;log&quot;</code>, and for the marginal RD, we would replace <code>&quot;logit&quot;</code> with <code>&quot;identity&quot;</code> and not exponentiate the coefficient.</p>
+<p><strong>With covariate adjustment and bootstrapping.</strong> To include covariates in the model, a marginal effects procedure must be used with bootstrapping to recover the marginal effect because the coefficient on treatment in such a model corresponds to a conditional effect. A bootstrap must be used to estimate the standard error and confidence interval of the marginal effect. Either the full bootstrap or block bootstrap can be used, though the performance of the latter has not been formally evaluated (but because it is an approximation to cluster-robust standard errors, which are valid, it is likely valid). The code for the full bootstrap with full matching is identical to the code for bootstrapping with binary outcomes for pair matching with replacement (except that the call to <code>matchit()</code> in the <code>est_fun</code> function must be adjusted to perform full matching), and the code for the block bootstrap with full matching is identical to the code for bootstrapping with binary outcomes for pair matching without replacement, so we do not repeat it here.</p>
+</div>
+<div id="for-survival-outcomes-2" class="section level4">
+<h4>For survival outcomes</h4>
+<p>Austin and Stuart <span class="citation">(<a href="#ref-austin2015b" role="doc-biblioref">2015b</a>)</span> describe the use of the full matching with survival outcomes.</p>
+<p><strong>Without covariate adjustment.</strong> To estimate the marginal HR, we can regress the outcome on the treatment in a Cox regression model weighted by the matching weights and including subclasses as a cluster. Below we demonstrate how to estimate the marginal HR and its standard error after full matching.</p>
+<div class="sourceCode" id="cb72"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb72-1"><a href="#cb72-1" aria-hidden="true" tabindex="-1"></a><span class="fu">coxph</span>(<span class="fu">Surv</span>(Y_S) <span class="sc">~</span> A, <span class="at">data =</span> md, <span class="at">robust =</span> <span class="cn">TRUE</span>, </span>
+<span id="cb72-2"><a href="#cb72-2" aria-hidden="true" tabindex="-1"></a>      <span class="at">weights =</span> weights, <span class="at">cluster =</span> subclass)</span></code></pre></div>
+<pre><code>## Call:
+## coxph(formula = Surv(Y_S) ~ A, data = md, weights = weights, 
+##     robust = TRUE, cluster = subclass)
+## 
+##   coef exp(coef) se(coef) robust se z     p
+## A 0.42      1.52     0.05      0.09 5 2e-06
+## 
+## Likelihood ratio test=54  on 1 df, p=2e-13
+## n= 2000, number of events= 2000</code></pre>
+<p>To perform the log-rank test or compute survival curves after full matching, functions designed for performing these tasks with inverse probability weights can be used with the matching weights; the <code>RISCA</code> package offers functionality for this purpose.</p>
+<p>Including covariates in the model is less straightforward because the resulting HR estimate is conditional rather than marginal.</p>
+</div>
+</div>
+<div id="after-stratum-matching" class="section level3">
+<h3>After Stratum Matching</h3>
+<p>Stratum matching includes exact matching, coarsened exact matching, and propensity score subclassification. There are two natural ways to estimate marginal effects after stratum matching: the first is to estimate stratum-specific treatment effects and pool them, and the second is to use the stratum weights to estimate a single marginal effect. This latter approach is also known as marginal mean weighting through stratification (MMWS), and is described in detail by Hong <span class="citation">(<a href="#ref-hong2010" role="doc-biblioref">2010</a>)</span><a href="#fn5" class="footnote-ref" id="fnref5"><sup>5</sup></a>. When done properly, both methods should yield similar or identical estimates of the treatment effect. MMWS is generally preferable because it is far simpler to implement and avoids issues of noncollapsibility with non-continuous outcomes. All of the methods described above for use with full matching also work with MMWS because the formation of the weights is the same; the only difference is that it is not appropriate to use cluster-robust standard errors with MMWS because of how few clusters are present.</p>
+<p>Unless exact matching is used, estimating stratum-specific treatment effects can be fraught because balance may not be achieved within strata even if balance is achieved across strata. Stratum-specific effects should be interpreted with caution. Stratum-specific effects are conditional effects, but conditional on stratum membership, which may not always be a useful conditioning variable.</p>
+<p>For each outcome type, we focus on estimating marginal effects using MMWS and using the strata directly. Below, we perform propensity score subclassification for the ATT using 8 subclasses.</p>
+<div class="sourceCode" id="cb74"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a>mS <span class="ot">&lt;-</span> <span class="fu">matchit</span>(A <span class="sc">~</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a>                 X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9, <span class="at">data =</span> d,</span>
+<span id="cb74-3"><a href="#cb74-3" aria-hidden="true" tabindex="-1"></a>              <span class="at">method =</span> <span class="st">&quot;subclass&quot;</span>, <span class="at">estimand =</span> <span class="st">&quot;ATT&quot;</span>,</span>
+<span id="cb74-4"><a href="#cb74-4" aria-hidden="true" tabindex="-1"></a>              <span class="at">subclass =</span> <span class="dv">8</span>)</span>
+<span id="cb74-5"><a href="#cb74-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb74-6"><a href="#cb74-6" aria-hidden="true" tabindex="-1"></a>mS</span></code></pre></div>
+<pre><code>## A matchit object
+##  - method: Subclassification (8 subclasses)
+##  - distance: Propensity score
+##              - estimated with logistic regression
+##  - number of obs.: 2000 (original), 2000 (matched)
+##  - target estimand: ATT
+##  - covariates: X1, X2, X3, X4, X5, X6, X7, X8, X9</code></pre>
+<div class="sourceCode" id="cb76"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb76-1"><a href="#cb76-1" aria-hidden="true" tabindex="-1"></a>md <span class="ot">&lt;-</span> <span class="fu">match.data</span>(mS)</span>
+<span id="cb76-2"><a href="#cb76-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb76-3"><a href="#cb76-3" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(md)</span></code></pre></div>
+<pre><code>##   A      X1      X2      X3       X4 X5      X6      X7      X8       X9      Y_C Y_B     Y_S distance weights subclass
+## 1 0  0.1725 -1.4283 -0.4103 -2.36059  1 -1.1199  0.6398 -0.4840 -0.59385  0.07104   0  278.46  0.08461  0.2458        1
+## 2 0 -1.0959  0.8463  0.2456 -0.12333  1 -2.2687 -1.4491 -0.5514 -0.31439  0.15619   0  330.63  0.01855  0.2458        1
+## 3 0  0.1768  0.7905 -0.8436  0.82366  1 -0.2221  0.2971 -0.6966 -0.69516 -0.85180   1  369.94  0.22210  1.0742        3
+## 4 0 -0.4595  0.1726  1.9542 -0.62661  1 -0.4019 -0.8294 -0.5384  0.20729 -2.35184   0   91.06  0.04180  0.2458        1
+## 5 1  0.3563 -1.8121  0.8135 -0.67189  1 -0.8297  1.7297 -0.6439 -0.02648  0.68058   0  182.73  0.43291  1.0000        5
+## 6 0 -2.4313 -1.7984 -1.2940  0.04609  1 -1.2419 -1.1252 -1.8659 -0.56513 -5.62260   0 2563.73  0.04998  0.2458        1</code></pre>
+<div id="for-continuous-outcomes-3" class="section level4">
+<h4>For continuous outcomes</h4>
+<p>For continuous outcomes, we can use either MMWS or compute the weighted average of within-subclass effects. First we illustrate weighting.</p>
+<p><strong>Without covariate adjustment.</strong> With weighting, we can supply the weights that are in the <code>match.data()</code> output to a call to <code>lm()</code> to perform weighted least squares regression, as we did with full matching. We need a robust standard error estimator to account for the weights. Note that the subclasses don’t even need to enter this analysis; they are fully incorporated through the MMWS weights<a href="#fn6" class="footnote-ref" id="fnref6"><sup>6</sup></a>. We use <code>vcovHC()</code> to estimate the regular robust standard error instead of the cluster-robust standard error used with other methods.</p>
+<div class="sourceCode" id="cb78"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb78-1"><a href="#cb78-1" aria-hidden="true" tabindex="-1"></a>fit1 <span class="ot">&lt;-</span> <span class="fu">lm</span>(Y_C <span class="sc">~</span> A, <span class="at">data =</span> md, <span class="at">weights =</span> weights)</span>
+<span id="cb78-2"><a href="#cb78-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-3"><a href="#cb78-3" aria-hidden="true" tabindex="-1"></a><span class="fu">coeftest</span>(fit1, <span class="at">vcov. =</span> vcovHC)</span></code></pre></div>
+<pre><code>## 
+## t test of coefficients:
+## 
+##             Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)    1.964      0.287    6.85  9.8e-12 ***
+## A              1.930      0.407    4.74  2.2e-06 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
+<p>We can also fit a model within each subclass to estimate the within-stratum treatment effects and then compute a weighted average of them to be used as the marginal effect. The stratum weights in the weighted average must be equal to the proportion of treated units in each subclass if the ATT is targeted. If the ATE is targeted, the weights must be equal to the proportion of all units in each subclass. There are other ways to construct weight to minimize variance at the expense of losing the original target population <span class="citation">(<a href="#ref-rudolph2016" role="doc-biblioref">Rudolph et al. 2016</a>)</span>.</p>
+<p>Instead of fitting separate models for each subclass, we can fit a single model that fully interacts the treatment with subclass membership and then perform a linear hypothesis test. To do so, we use the form <code>Y ~ S + S:A - 1</code> in the call to <code>lm()</code>. This includes main effects for subclass and treatment interaction terms for each subclass and omits an intercept. The fit of this model is equivalent to that of a traditional full factorial model, so no information is lost using this parameterization and using it makes it easier to construct the stratum weights. This estimates the subclass-specific intercept and subclass-specific treatment effect in each subclass. We would use a robust standard error to account for different residual variance across subclasses.</p>
+<div class="sourceCode" id="cb80"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb80-1"><a href="#cb80-1" aria-hidden="true" tabindex="-1"></a>fit2 <span class="ot">&lt;-</span> <span class="fu">lm</span>(Y_C <span class="sc">~</span> subclass <span class="sc">+</span> subclass<span class="sc">:</span>A <span class="sc">-</span> <span class="dv">1</span>, <span class="at">data =</span> md)</span>
+<span id="cb80-2"><a href="#cb80-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-3"><a href="#cb80-3" aria-hidden="true" tabindex="-1"></a><span class="co">#Within-subclass effects</span></span>
+<span id="cb80-4"><a href="#cb80-4" aria-hidden="true" tabindex="-1"></a><span class="co"># coeftest(fit2, vcov. = vcovHC)</span></span></code></pre></div>
+<p>The within-subclass effects should only be trusted if balance is achieved in each subclass. In this example, balance has not been achieved within some subclasses, so we would not interpret these effects. Next we construct the weights to form the weighted average of the subclass effects. The weights take the form of a linear contrast matrix with zeroes for the subclass-specific intercepts and the subclass proportions for the corresponding subclass-specific treatment effect coefficients.</p>
+<div class="sourceCode" id="cb81"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb81-1"><a href="#cb81-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Subclass weights for ATT</span></span>
+<span id="cb81-2"><a href="#cb81-2" aria-hidden="true" tabindex="-1"></a>sub_w <span class="ot">&lt;-</span> <span class="fu">with</span>(md, <span class="fu">c</span>(<span class="fu">rep</span>(<span class="dv">0</span>, <span class="fu">nlevels</span>(subclass)), </span>
+<span id="cb81-3"><a href="#cb81-3" aria-hidden="true" tabindex="-1"></a>                    <span class="fu">table</span>(subclass[A<span class="sc">==</span><span class="dv">1</span>])<span class="sc">/</span><span class="fu">sum</span>(A<span class="sc">==</span><span class="dv">1</span>)))</span>
+<span id="cb81-4"><a href="#cb81-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb81-5"><a href="#cb81-5" aria-hidden="true" tabindex="-1"></a><span class="co">#Subclass weights for ATE (requires estimand = &quot;ATE&quot; in matchit())</span></span>
+<span id="cb81-6"><a href="#cb81-6" aria-hidden="true" tabindex="-1"></a><span class="co"># sub_w &lt;- with(md, c(rep(0, nlevels(subclass)), </span></span>
+<span id="cb81-7"><a href="#cb81-7" aria-hidden="true" tabindex="-1"></a><span class="co">#                     table(subclass)/nrow(md)))</span></span>
+<span id="cb81-8"><a href="#cb81-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb81-9"><a href="#cb81-9" aria-hidden="true" tabindex="-1"></a><span class="co">#Marginal effect</span></span>
+<span id="cb81-10"><a href="#cb81-10" aria-hidden="true" tabindex="-1"></a>(est <span class="ot">&lt;-</span> <span class="fu">weighted.mean</span>(<span class="fu">coef</span>(fit2), sub_w))</span></code></pre></div>
+<pre><code>## [1] 1.93</code></pre>
+<div class="sourceCode" id="cb83"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb83-1"><a href="#cb83-1" aria-hidden="true" tabindex="-1"></a><span class="co">#SE of marginal effect</span></span>
+<span id="cb83-2"><a href="#cb83-2" aria-hidden="true" tabindex="-1"></a>(se <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(<span class="fu">drop</span>(sub_w <span class="sc">%*%</span> <span class="fu">vcovHC</span>(fit2) <span class="sc">%*%</span> sub_w)))</span></code></pre></div>
+<pre><code>## [1] 0.4036</code></pre>
+<div class="sourceCode" id="cb85"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb85-1"><a href="#cb85-1" aria-hidden="true" tabindex="-1"></a><span class="co">#CI</span></span>
+<span id="cb85-2"><a href="#cb85-2" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">ci_low =</span> est <span class="sc">-</span> <span class="fl">1.96</span><span class="sc">*</span>se, <span class="at">ci_hi =</span> est <span class="sc">+</span> <span class="fl">1.96</span><span class="sc">*</span>se)</span></code></pre></div>
+<pre><code>## ci_low  ci_hi 
+##  1.139  2.721</code></pre>
+<p>The following lines would have produced the same output but require the <code>margins</code> package:</p>
+<div class="sourceCode" id="cb87"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb87-1"><a href="#cb87-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Using margins() from margins</span></span>
+<span id="cb87-2"><a href="#cb87-2" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(margins<span class="sc">::</span><span class="fu">margins</span>(fit2, <span class="at">variables =</span> <span class="st">&quot;A&quot;</span>, </span>
+<span id="cb87-3"><a href="#cb87-3" aria-hidden="true" tabindex="-1"></a>                         <span class="at">data =</span> md[md<span class="sc">$</span>A <span class="sc">==</span> <span class="dv">1</span>,],</span>
+<span id="cb87-4"><a href="#cb87-4" aria-hidden="true" tabindex="-1"></a>                         <span class="at">vcov =</span> <span class="fu">vcovHC</span>(fit2)))</span>
+<span id="cb87-5"><a href="#cb87-5" aria-hidden="true" tabindex="-1"></a><span class="co">#For ATE, omit the second line. </span></span></code></pre></div>
+<p><strong>With covariate adjustment.</strong> To include covariates in the model when using MMWS, we can modify the code used for weighting after full matching, the only difference being that regular robust standard errors should be used with MMWS. As before, treatment-covariate interactions are optional but can reduce bias and improve precision when there effect modification by the covariates. When including these interactions in the outcome model, it is important to center the covariates at their means in the target population (i.e., the full sample for the ATE and the treated units for the ATT) in order to interpret the coefficient on treatment as a marginal effect.</p>
+<p>To include covariates in the model when combining subclass-specific effect estimates, it can be challenging to correctly parameterize the model so that the linear contrast matrix method works as expected. The simplest way would be to include covariates as desired, which include as main effects, interactions with treatment, interactions with subclass, or all three, and use the <code>margins()</code> code above, which should automatically provide the correct output.</p>
+</div>
+<div id="for-binary-outcomes-3" class="section level4">
+<h4>For binary outcomes</h4>
+<p>Using stratification with binary outcomes is slightly more complicated than it is with continuous outcomes. This is because the OR and RR are not collapsible, so the marginal OR and RR cannot be computed as the weighted average of the stratum-specific effects. Instead, one must compute the average of the predicted stratum-specific risks under each treatment and then compute the marginal effect estimate from these marginal risks. Although stratum-specific conditional ORs are valid effect measures, they generally do not correspond to meaningful subpopulation effects unless the strata themselves are meaningful subpopulations. After exact matching or coarsened exact matching, strata may be meaningful because they correspond to specific combinations of covariates that may come close to designating specific patient attributes, but after propensity score subclassification, the strata correspond to propensity score bins, which are generally not meaningful. Although some researchers have interpreted stratum-specific effects after propensity score subclassification as representing effects at various risks or propensities for treatment, because the primary purpose of the propensity score is as a balancing score and not as an accurate estimate of propensity for treatment, such an interpretation should be regarded with caution.</p>
+<p>Austin <span class="citation">(<a href="#ref-austin2007a" role="doc-biblioref">2007</a>)</span> compared several methods of propensity score adjustment for estimating marginal ORs, including two methods based on propensity score stratification, one of which involved the stratified Mantel-Haenszel estimator, and the other of which involved averaging stratum-specific effects. Both of these estimate a common conditional OR, not a marginal OR <span class="citation">(<a href="#ref-forbes2008" role="doc-biblioref">Forbes and Shortreed 2008</a>; <a href="#ref-stampf2010" role="doc-biblioref">Stampf et al. 2010</a>)</span>, and both yielded positively biased effect estimates for non-null treatment effects, a common pattern when using conditional effect estimates as estimates of marginal effects. Given the difficulties in estimating marginal ORs after stratification, the most straightforward way to do so is to use MMWS. We do, however, also demonstrate estimating the marginal odds ratio and its standard error using bootstrapping in a way that can incorporate covariate adjustment and allow for differential effect modification across strata.</p>
+<p><strong>Without covariate adjustment.</strong> As before, we can supply the stratification weights to a weighted generalized linear model with just the treatment as the sole predictor, and the coefficient on treatment will correspond to a marginal treatment effect. We use <code>vcovHC()</code> to estimate the regular robust standard error.</p>
+<div class="sourceCode" id="cb88"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb88-1"><a href="#cb88-1" aria-hidden="true" tabindex="-1"></a>fit3 <span class="ot">&lt;-</span> <span class="fu">glm</span>(Y_B <span class="sc">~</span> A, <span class="at">data =</span> md, <span class="at">weights =</span> weights,</span>
+<span id="cb88-2"><a href="#cb88-2" aria-hidden="true" tabindex="-1"></a>            <span class="at">family =</span> <span class="fu">quasibinomial</span>(<span class="at">link =</span> <span class="st">&quot;logit&quot;</span>))</span>
+<span id="cb88-3"><a href="#cb88-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb88-4"><a href="#cb88-4" aria-hidden="true" tabindex="-1"></a><span class="fu">coeftest</span>(fit3, <span class="at">vcov. =</span> vcovHC)</span></code></pre></div>
+<pre><code>## 
+## z test of coefficients:
+## 
+##             Estimate Std. Error z value Pr(&gt;|z|)    
+## (Intercept)   -0.831      0.108   -7.71  1.3e-14 ***
+## A              0.726      0.144    5.04  4.6e-07 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
+<div class="sourceCode" id="cb90"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb90-1"><a href="#cb90-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(<span class="fu">coef</span>(fit3))</span></code></pre></div>
+<pre><code>## (Intercept)           A 
+##      0.4357      2.0675</code></pre>
+<p>As with other matching methods, we include weights in the call to <code>glm()</code> and set <code>family = quasibinomial()</code> to prevent a warning that occurs when using weights with binomial regression models (though the results do not differ). Setting <code>link = &quot;logit&quot;</code> provides the marginal OR; for the marginal RR, we would replace <code>&quot;logit&quot;</code> with <code>&quot;log&quot;</code>, and for the marginal RD, we would replace <code>&quot;logit&quot;</code> with <code>&quot;identity&quot;</code> and not exponentiate the coefficient.</p>
+<p><strong>With covariate adjustment and bootstrapping.</strong> We can use bootstrapping to estimate the marginal OR and its standard error by estimating the average of the stratum-specific risks under each treatment level, computing the marginal risks under each treatment, and computing marginal effects from the marginal risks. This also makes it fairly straightforward to include covariates in the model. Below we illustrate bootstrapping for the marginal OR with covariates included in the outcome model.</p>
+<div class="sourceCode" id="cb92"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb92-1"><a href="#cb92-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Bootstrap confidence intervals</span></span>
+<span id="cb92-2"><a href="#cb92-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(boot)</span>
+<span id="cb92-3"><a href="#cb92-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb92-4"><a href="#cb92-4" aria-hidden="true" tabindex="-1"></a>est_fun <span class="ot">&lt;-</span> <span class="cf">function</span>(data, i) {</span>
+<span id="cb92-5"><a href="#cb92-5" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Subclassification function</span></span>
+<span id="cb92-6"><a href="#cb92-6" aria-hidden="true" tabindex="-1"></a>  mS_boot <span class="ot">&lt;-</span> <span class="fu">matchit</span>(A <span class="sc">~</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb92-7"><a href="#cb92-7" aria-hidden="true" tabindex="-1"></a>                       X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9, <span class="at">data =</span> data[i,],</span>
+<span id="cb92-8"><a href="#cb92-8" aria-hidden="true" tabindex="-1"></a>                     <span class="at">method =</span> <span class="st">&quot;subclass&quot;</span>, <span class="at">estimand =</span> <span class="st">&quot;ATT&quot;</span>,</span>
+<span id="cb92-9"><a href="#cb92-9" aria-hidden="true" tabindex="-1"></a>                     <span class="at">subclass =</span> <span class="dv">8</span>)</span>
+<span id="cb92-10"><a href="#cb92-10" aria-hidden="true" tabindex="-1"></a>  md_boot <span class="ot">&lt;-</span> <span class="fu">match.data</span>(mS_boot)</span>
+<span id="cb92-11"><a href="#cb92-11" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb92-12"><a href="#cb92-12" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Fitting the model</span></span>
+<span id="cb92-13"><a href="#cb92-13" aria-hidden="true" tabindex="-1"></a>  fit_boot <span class="ot">&lt;-</span> <span class="fu">glm</span>(Y_B <span class="sc">~</span> A <span class="sc">*</span> (subclass <span class="sc">+</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb92-14"><a href="#cb92-14" aria-hidden="true" tabindex="-1"></a>                    X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9), <span class="at">data =</span> md_boot,</span>
+<span id="cb92-15"><a href="#cb92-15" aria-hidden="true" tabindex="-1"></a>                  <span class="at">family =</span> <span class="fu">quasibinomial</span>(<span class="at">link =</span> <span class="st">&quot;logit&quot;</span>))</span>
+<span id="cb92-16"><a href="#cb92-16" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb92-17"><a href="#cb92-17" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Estimate potential outcomes for each unit</span></span>
+<span id="cb92-18"><a href="#cb92-18" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb92-19"><a href="#cb92-19" aria-hidden="true" tabindex="-1"></a>  <span class="do">## Subset to just the treated for the ATT; remove this for the ATE</span></span>
+<span id="cb92-20"><a href="#cb92-20" aria-hidden="true" tabindex="-1"></a>  md_boot <span class="ot">&lt;-</span> md_boot[md_boot<span class="sc">$</span>A <span class="sc">==</span> <span class="dv">1</span>,]</span>
+<span id="cb92-21"><a href="#cb92-21" aria-hidden="true" tabindex="-1"></a>  <span class="do">##</span></span>
+<span id="cb92-22"><a href="#cb92-22" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb92-23"><a href="#cb92-23" aria-hidden="true" tabindex="-1"></a>  md_boot<span class="sc">$</span>A <span class="ot">&lt;-</span> <span class="dv">0</span></span>
+<span id="cb92-24"><a href="#cb92-24" aria-hidden="true" tabindex="-1"></a>  P0 <span class="ot">&lt;-</span> <span class="fu">mean</span>(<span class="fu">predict</span>(fit_boot, md_boot, <span class="at">type =</span> <span class="st">&quot;response&quot;</span>))</span>
+<span id="cb92-25"><a href="#cb92-25" aria-hidden="true" tabindex="-1"></a>  Odds0 <span class="ot">&lt;-</span> P0 <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> P0)</span>
+<span id="cb92-26"><a href="#cb92-26" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb92-27"><a href="#cb92-27" aria-hidden="true" tabindex="-1"></a>  md_boot<span class="sc">$</span>A <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb92-28"><a href="#cb92-28" aria-hidden="true" tabindex="-1"></a>  P1 <span class="ot">&lt;-</span> <span class="fu">mean</span>(<span class="fu">predict</span>(fit_boot, md_boot, <span class="at">type =</span> <span class="st">&quot;response&quot;</span>))</span>
+<span id="cb92-29"><a href="#cb92-29" aria-hidden="true" tabindex="-1"></a>  Odds1 <span class="ot">&lt;-</span> P1 <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> P1)</span>
+<span id="cb92-30"><a href="#cb92-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb92-31"><a href="#cb92-31" aria-hidden="true" tabindex="-1"></a>  <span class="co">#Return marginal odds ratio</span></span>
+<span id="cb92-32"><a href="#cb92-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(Odds1 <span class="sc">/</span> Odds0)</span>
+<span id="cb92-33"><a href="#cb92-33" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb92-34"><a href="#cb92-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb92-35"><a href="#cb92-35" aria-hidden="true" tabindex="-1"></a>boot_est <span class="ot">&lt;-</span> <span class="fu">boot</span>(d, est_fun, <span class="at">R =</span> <span class="dv">4999</span>)</span>
+<span id="cb92-36"><a href="#cb92-36" aria-hidden="true" tabindex="-1"></a>boot_est</span>
+<span id="cb92-37"><a href="#cb92-37" aria-hidden="true" tabindex="-1"></a><span class="fu">boot.ci</span>(boot_est, <span class="at">type =</span> <span class="st">&quot;bca&quot;</span>)</span></code></pre></div>
+<p>In this example, we included interactions between treatment and subclass and between treatment and each covariate. Note that because we are interested in the ATT, we restricted the sample used to compute the predicted marginal risks (<code>P0</code>) and (<code>P1</code>) to just those with <code>A = 1</code>. If we were instead estimating the ATE, we would supply <code>&quot;ATE&quot;</code> that to the <code>estimand</code> argument in the call to <code>matchit()</code> and skip the step of restricting the data used for prediction of the marginal risks.</p>
+<p>As with other methods, to estimate the marginal RR or RD using the above code, the returned object can instead be specified as <code>P1 / P0</code> or <code>P1 - P0</code>, respectively.</p>
+</div>
+<div id="for-survival-outcomes-3" class="section level4">
+<h4>For survival outcomes</h4>
+<p>Like ORs, HRs are not collapsible, so it is not straightforward to estimate marginal HRs using within-stratum HRs. Austin <span class="citation">(<a href="#ref-austin2013" role="doc-biblioref">2013a</a>)</span> examined the performance of several propensity score subclassification-based estimators of the marginal HR and found all to be positively biased for non-null effects, consistent with the use of conditional effect estimates as estimates of marginal effects; indeed, the subclassification methods examined all relied on pooling stratum-specific effects. Given these difficulties, the most straightforward method to estimate marginal HRs is to use MMWS weights. We demonstrate this below using essentially the same syntax as used with full matching, only omitting subclass membership as a clustering variable.</p>
+<div class="sourceCode" id="cb93"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb93-1"><a href="#cb93-1" aria-hidden="true" tabindex="-1"></a><span class="fu">coxph</span>(<span class="fu">Surv</span>(Y_S) <span class="sc">~</span> A, <span class="at">data =</span> md, <span class="at">robust =</span> <span class="cn">TRUE</span>, </span>
+<span id="cb93-2"><a href="#cb93-2" aria-hidden="true" tabindex="-1"></a>      <span class="at">weights =</span> weights)</span></code></pre></div>
+<pre><code>## Call:
+## coxph(formula = Surv(Y_S) ~ A, data = md, weights = weights, 
+##     robust = TRUE)
+## 
+##   coef exp(coef) se(coef) robust se z     p
+## A 0.46      1.58     0.05      0.07 7 2e-11
+## 
+## Likelihood ratio test=64  on 1 df, p=1e-15
+## n= 2000, number of events= 2000</code></pre>
+<p>The robust standard error must be used because of the MMWS weights.</p>
+</div>
+</div>
+<div id="estimating-conditional-effects" class="section level3">
+<h3>Estimating Conditional Effects</h3>
+<p>As discussed previously, with binary and time-to-event outcomes, marginal and conditional effects generally differ. Though we have primarily focused on marginal effects, we offer some guidance here on estimating conditional effect as well. Estimating conditional effects typically involves modeling the outcome, and inferences are dependent on this model being correct, even in the presence is perfect covariate balance. Matching provides robustness to some forms of misspecification, however, by limiting the range of the covariate space. So, even though outcome modeling is required, matching prior to modeling the outcome can be beneficial in terms of reducing bias due to model misspecification.</p>
+<p>On some effect measures, conditional effects typically vary depending on the covariate values at which the conditional effect is to be estimated; for example, the decrease in the risk of death (i.e., on the RD scale) corresponding to receipt of a treatment for a patient with a high baseline risk of death will by higher than that for a patient with a low baseline risk of death. In this sense, there is necessarily effect modification of the RD by baseline risk (which depends on a patient’s covariate values). Similarly, for an exposure that increases the risk by a factor (e.g., doubles the risk, for a RR of 2), a patient with a high baseline risk cannot experience the same change in risk as a patient with a low baseline risk could; for example, a RR of 2 is impossible for a patient with a baseline risk of .6 but is certainly plausible for a patient with a baseline risk of .02. In this sense, there is necessarily effect modification of the RR by baseline risk. This is not true for the OR; it is plausible that the effect on the OR scale could be consistent across levels of levels of the predictors because any OR is compatible with possible baselines risks. For this reason, we only consider estimating the conditional OR and not other effect measures.</p>
+<p>Although several methods exist for estimating conditional ORs after matching or subclassification, the one that generally works well is to run a logistic regression of the outcome on the treatment and covariates and use the coefficient on treatment as an estimate of the effect on the log OR scale. We demonstrate this below using full matching for the ATT:</p>
+<div class="sourceCode" id="cb95"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb95-1"><a href="#cb95-1" aria-hidden="true" tabindex="-1"></a>mF <span class="ot">&lt;-</span> <span class="fu">matchit</span>(A <span class="sc">~</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb95-2"><a href="#cb95-2" aria-hidden="true" tabindex="-1"></a>                 X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9, <span class="at">data =</span> d,</span>
+<span id="cb95-3"><a href="#cb95-3" aria-hidden="true" tabindex="-1"></a>              <span class="at">method =</span> <span class="st">&quot;full&quot;</span>, <span class="at">estimand =</span> <span class="st">&quot;ATT&quot;</span>)</span>
+<span id="cb95-4"><a href="#cb95-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb95-5"><a href="#cb95-5" aria-hidden="true" tabindex="-1"></a>md <span class="ot">&lt;-</span> <span class="fu">match.data</span>(mF)</span>
+<span id="cb95-6"><a href="#cb95-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb95-7"><a href="#cb95-7" aria-hidden="true" tabindex="-1"></a>fitcond <span class="ot">&lt;-</span> <span class="fu">lm</span>(Y_B <span class="sc">~</span> A <span class="sc">+</span> X1 <span class="sc">+</span> X2 <span class="sc">+</span> X3 <span class="sc">+</span> X4 <span class="sc">+</span> X5 <span class="sc">+</span> </span>
+<span id="cb95-8"><a href="#cb95-8" aria-hidden="true" tabindex="-1"></a>                 X6 <span class="sc">+</span> X7 <span class="sc">+</span> X8 <span class="sc">+</span> X9, <span class="at">data =</span> md, </span>
+<span id="cb95-9"><a href="#cb95-9" aria-hidden="true" tabindex="-1"></a>             <span class="at">weights =</span> weights)</span>
+<span id="cb95-10"><a href="#cb95-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb95-11"><a href="#cb95-11" aria-hidden="true" tabindex="-1"></a><span class="fu">coeftest</span>(fitcond, <span class="at">vcov. =</span> vcovCL, <span class="at">cluster =</span> <span class="sc">~</span>subclass)[<span class="st">&quot;A&quot;</span>,,drop <span class="ot">=</span> <span class="cn">FALSE</span>]</span></code></pre></div>
+<pre><code>##   Estimate Std. Error t value Pr(&gt;|t|)
+## A   0.1219    0.04171   2.922 0.003516</code></pre>
+<div class="sourceCode" id="cb97"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb97-1"><a href="#cb97-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(<span class="fu">coef</span>(fitcond)[<span class="st">&quot;A&quot;</span>])</span></code></pre></div>
+<pre><code>##    A 
+## 1.13</code></pre>
+<p>As with other covariate-adjusted models, it is important not to interpret the coefficients on covariates other than treatment to avoid committing the table 2 fallacy. Other causes of the outcome can be included in the outcome model even if they were not the focus of matching as long as they are not (even possibly) caused by the treatment.</p>
+<p>Alternative methods of estimating conditional effects include conditional logistic regression after matching and estimating stratum-specific effects after subclassification. We recommend using covariate-adjusted logistic regression models instead because the conditional effect is better defined (i.e., conditional on the specific covariates included in the model) and depends less on the estimand targeted <span class="citation">(<a href="#ref-forbes2008" role="doc-biblioref">Forbes and Shortreed 2008</a>)</span>.</p>
+</div>
+<div id="reporting-results" class="section level3">
+<h3>Reporting Results</h3>
+<p>It is important to be as thorough and complete as possible when describing the methods of estimating the treatment effect and the results of the analysis. This improves transparency and replicability of the analysis. Results should at least include the following:</p>
+<ul>
+<li>a description of the outcome model used (e.g., logistic regression, a linear model with treatment-covariate interactions and mean-centered covariates, a Cox proportional hazards model with the matching weights applied)</li>
+<li>the way the effect was estimated (e.g., as the coefficient on treatment in the outcome model, as the result of a marginal effects procedure)</li>
+<li>the way standard errors and confidence intervals were estimated (e.g., using robust standard errors, using cluster-robust standard errors with pair membership as the cluster, using the BCa bootstrap with 4999 bootstrap replications and the entire process of matching and effect estimation included in each replication)</li>
+<li>R packages and functions used in estimating the effect and its standard error (e.g., <code>glm()</code> in base R, <code>vcovCL()</code> in <code>sandwich</code>, <code>boot</code> and <code>boot.ci</code> in <code>boot</code>)</li>
+<li>The effect and its standard error and confidence interval</li>
+</ul>
+<p>All this is in addition to information about the matching method, propensity score estimation procedure (if used), balance assessment, etc. mentioned in the other vignettes.</p>
+</div>
+</div>
+<div id="common-mistakes" class="section level2">
+<h2>Common Mistakes</h2>
+<p>There are a few common mistakes that should be avoided. It is important not only to avoid these mistakes in one’s own research but also to be able to spot these mistakes in others’ analyses.</p>
+<div id="failing-to-include-weights" class="section level3">
+<h3>1. Failing to include weights</h3>
+<p>Several methods involve weights that are to be used in estimating the treatment effect. With full matching and stratification matching (when analyzed using MMWS), the weights do the entire work of balancing the covariates across the treatment groups. Omitting weights essentially ignores the entire purpose of matching. Some cases are less obvious. When performing matching with replacement and estimating the treatment effect using the <code>match.data()</code> output, weights must be included to ensure control units matched to multiple treated units are weighted accordingly. Similarly, when performing k:1 matching where not all treated units receive k matches, weights are required to account for the differential weight of the matched control units. The only time weights can be omitted after pair matching is when performing 1:1 matching without replacement. Including weights even in this scenario will not affect the analysis and it can be good practice to always include weights to prevent this error from occurring. There are some scenarios where weights are not useful because the conditioning occurs through some other means, such as when using the pooling strategy rather than MMWS for estimating marginal effects after stratification.</p>
+</div>
+<div id="failing-to-use-robust-or-cluster-robust-standard-errors" class="section level3">
+<h3>2. Failing to use robust or cluster-robust standard errors</h3>
+<p>Robust standard errors are required when using weights to estimate the treatment effect. The model-based standard errors resulting from weighted least squares or maximum likelihood are inaccurate when using matching weights because they assume weights are frequency weights rather than probability weights. Cluster-robust standard errors account for both the matching weights and pair membership and should be used when appropriate (i.e., with all matching methods other than stratification matching). Sometimes, researchers use functions in the <code>survey</code> package to estimate robust standard errors, especially with inverse probability weighting; this is a valid way to compute robust standard errors and will give similar results to <code>vcovHC()</code>.</p>
+</div>
+<div id="interpreting-conditional-effects-as-marginal-effects" class="section level3">
+<h3>3. Interpreting conditional effects as marginal effects</h3>
+<p>The distinction between marginal and conditional effects is not always clear both in methodological and applied papers. Some statistical methods are valid only for estimating conditional effects and they should not be used to estimate marginal effects (without further modification). Sometimes conditional effects are desirable, and such methods may be useful for them, but when marginal effects are the target of inference, it is critical not to inappropriately interpret estimates resulting from statistical methods aimed at estimating conditional effects as marginal effects. Although this issue is particularly salient with binary and survival outcomes due to the general noncollapsibility of the OR, RR, and HR, this can also occur with linear models for continuous outcomes or the RD.</p>
+<p>The following methods estimate <strong>conditional effects</strong> for binary or survival outcomes (with noncollapsible effect measures) and should <strong>not</strong> be used to estimate marginal effects:</p>
+<ul>
+<li>Logistic regression or Cox proportional hazards model with covariates and/or the propensity score included, using the coefficient on treatment as the effect estimate</li>
+<li>Conditional logistic regression after matching</li>
+<li>Stratified Cox regression after matching</li>
+<li>Averaging stratum-specific effect estimates after stratification, including using Mantel-Haenszel OR pooling</li>
+<li>Including pair or stratum fixed or random effects in a logistic regression model, using the coefficient on treatment as the effect estimate</li>
+</ul>
+<p>In addition, with continuous outcomes, conditional effects can be mistakenly interpreted as marginal effect estimates when treatment-covariate interactions are present in the outcome model. If the covariates are not centered at their mean in the target population (e.g., the treated group for the ATT, the full sample for the ATE, or the remaining matched sample for an ATM), the coefficient on treatment will not correspond to the marginal effect in the target population; it will correspond to the effect of treatment when the covariate values are equal to zero, which may not be meaningful or plausible. Marginal effects procedures (e.g., using the <code>margins</code> package or manually with bootstrapping as demonstrated above) are always the safest way to include covariates in the outcome model, especially in the presence of treatment-covariate interactions. Appropriately centering the covariates is a shortcut that is required when using the coefficient on treatment as a marginal effect estimate for continuous outcomes (demonstrated previously for full matching).</p>
+</div>
+</div>
+<div id="references" class="section level2">
+<h2>References</h2>
+<div id="refs" class="references csl-bib-body hanging-indent">
+<div id="ref-abadie2008" class="csl-entry">
+Abadie, Alberto, and Guido W. Imbens. 2008. <span>“On the Failure of the Bootstrap for Matching Estimators.”</span> <em>Econometrica</em> 76 (6): 1537–57. <a href="https://www.jstor.org/stable/40056514">https://www.jstor.org/stable/40056514</a>.
+</div>
+<div id="ref-abadie2019" class="csl-entry">
+Abadie, Alberto, and Jann Spiess. 2019. <span>“Robust Post-Matching Inference,”</span> January, 34.
+</div>
+<div id="ref-austin2007a" class="csl-entry">
+Austin, Peter C. 2007. <span>“The Performance of Different Propensity Score Methods for Estimating Marginal Odds Ratios.”</span> <em>Statistics in Medicine</em> 26 (16): 3078–94. <a href="https://doi.org/10.1002/sim.2781">https://doi.org/10.1002/sim.2781</a>.
+</div>
+<div id="ref-austin2009a" class="csl-entry">
+———. 2009. <span>“Type i Error Rates, Coverage of Confidence Intervals, and Variance Estimation in Propensity-Score Matched Analyses.”</span> <em>The International Journal of Biostatistics</em> 5 (1). <a href="https://doi.org/10.2202/1557-4679.1146">https://doi.org/10.2202/1557-4679.1146</a>.
+</div>
+<div id="ref-austin2013" class="csl-entry">
+———. 2013a. <span>“The Performance of Different Propensity Score Methods for Estimating Marginal Hazard Ratios.”</span> <em>Statistics in Medicine</em> 32 (16): 2837–49. <a href="https://doi.org/10.1002/sim.5705">https://doi.org/10.1002/sim.5705</a>.
+</div>
+<div id="ref-austin2013a" class="csl-entry">
+———. 2013b. <span>“The Use of Propensity Score Methods with Survival or Time-to-Event Outcomes: Reporting Measures of Effect Similar to Those Used in Randomized Experiments.”</span> <em>Statistics in Medicine</em> 33 (7): 1242–58. <a href="https://doi.org/10.1002/sim.5984">https://doi.org/10.1002/sim.5984</a>.
+</div>
+<div id="ref-austin2020a" class="csl-entry">
+Austin, Peter C., and Guy Cafri. 2020. <span>“Variance Estimation When Using Propensity<span>-</span>Score Matching with Replacement with Survival or Time<span>-</span>to<span>-</span>Event Outcomes.”</span> <em>Statistics in Medicine</em> 39 (11): 1623–40. <a href="https://doi.org/10.1002/sim.8502">https://doi.org/10.1002/sim.8502</a>.
+</div>
+<div id="ref-austin2014" class="csl-entry">
+Austin, Peter C., and Dylan S. Small. 2014. <span>“The Use of Bootstrapping When Using Propensity-Score Matching Without Replacement: A Simulation Study.”</span> <em>Statistics in Medicine</em> 33 (24): 4306–19. <a href="https://doi.org/10.1002/sim.6276">https://doi.org/10.1002/sim.6276</a>.
+</div>
+<div id="ref-austin2015a" class="csl-entry">
+Austin, Peter C., and Elizabeth A. Stuart. 2015a. <span>“The Performance of Inverse Probability of Treatment Weighting and Full Matching on the Propensity Score in the Presence of Model Misspecification When Estimating the Effect of Treatment on Survival Outcomes.”</span> <em>Statistical Methods in Medical Research</em> 26 (4): 1654–70. <a href="https://doi.org/10.1177/0962280215584401">https://doi.org/10.1177/0962280215584401</a>.
+</div>
+<div id="ref-austin2015b" class="csl-entry">
+———. 2015b. <span>“Optimal Full Matching for Survival Outcomes: A Method That Merits More Widespread Use.”</span> <em>Statistics in Medicine</em> 34 (30): 3949–67. <a href="https://doi.org/10.1002/sim.6602">https://doi.org/10.1002/sim.6602</a>.
+</div>
+<div id="ref-austin2017" class="csl-entry">
+———. 2017. <span>“Estimating the Effect of Treatment on Binary Outcomes Using Full Matching on the Propensity Score.”</span> <em>Statistical Methods in Medical Research</em> 26 (6): 2505–25. <a href="https://doi.org/10.1177/0962280215601134">https://doi.org/10.1177/0962280215601134</a>.
+</div>
+<div id="ref-austin2020" class="csl-entry">
+Austin, Peter C., Neal Thomas, and Donald B. Rubin. 2020. <span>“Covariate-Adjusted Survival Analyses in Propensity-Score Matched Samples: Imputing Potential Time-to-Event Outcomes.”</span> <em>Statistical Methods in Medical Research</em> 29 (3): 728–51. <a href="https://doi.org/10.1177/0962280218817926">https://doi.org/10.1177/0962280218817926</a>.
+</div>
+<div id="ref-bodory2020" class="csl-entry">
+Bodory, Hugo, Lorenzo Camponovo, Martin Huber, and Michael Lechner. 2020. <span>“The Finite Sample Performance of Inference Methods for Propensity Score Matching and Weighting Estimators.”</span> <em>Journal of Business &amp; Economic Statistics</em> 38 (1): 183–200. <a href="https://doi.org/10.1080/07350015.2018.1476247">https://doi.org/10.1080/07350015.2018.1476247</a>.
+</div>
+<div id="ref-cameron2015" class="csl-entry">
+Cameron, A. Colin, and Douglas L. Miller. 2015. <span>“A Practitioner<span>’</span>s Guide to Cluster-Robust Inference.”</span> <em>Journal of Human Resources</em> 50 (2): 317–72. <a href="https://doi.org/10.3368/jhr.50.2.317">https://doi.org/10.3368/jhr.50.2.317</a>.
+</div>
+<div id="ref-carpenter2000" class="csl-entry">
+Carpenter, James, and John Bithell. 2000. <span>“Bootstrap Confidence Intervals: When, Which, What? A Practical Guide for Medical Statisticians.”</span> <em>Statistics in Medicine</em> 19 (9): 1141–64. <a href="https://doi.org/10.1002/(SICI)1097-0258(20000515)19:9&lt;1141::AID-SIM479&gt;3.0.CO;2-F">https://doi.org/10.1002/(SICI)1097-0258(20000515)19:9&lt;1141::AID-SIM479&gt;3.0.CO;2-F</a>.
+</div>
+<div id="ref-desai2017" class="csl-entry">
+Desai, Rishi J., Kenneth J. Rothman, Brian T. Bateman, Sonia Hernandez-Diaz, and Krista F. Huybrechts. 2017. <span>“A Propensity-Score-Based Fine Stratification Approach for Confounding Adjustment When Exposure Is Infrequent:”</span> <em>Epidemiology</em> 28 (2): 249–57. <a href="https://doi.org/10.1097/EDE.0000000000000595">https://doi.org/10.1097/EDE.0000000000000595</a>.
+</div>
+<div id="ref-efron1993" class="csl-entry">
+Efron, Bradley, and Robert J. Tibshirani. 1993. <em>An Introduction to the Bootstrap</em>. Springer US.
+</div>
+<div id="ref-forbes2008" class="csl-entry">
+Forbes, Andrew, and Susan Shortreed. 2008. <span>“Inverse Probability Weighted Estimation of the Marginal Odds Ratio: Correspondence Regarding <span>‘</span>The Performance of Different Propensity Score Methods for Estimating Marginal Odds Ratios<span>’</span> by P. Austin, Statictics in Medicine, 2007; 26:3078<span><span></span></span>3094.”</span> <em>Statistics in Medicine</em> 27 (26): 5556–59. <a href="https://doi.org/10.1002/sim.3362">https://doi.org/10.1002/sim.3362</a>.
+</div>
+<div id="ref-gayat2012" class="csl-entry">
+Gayat, Etienne, Matthieu Resche-Rigon, Jean-Yves Mary, and Raphaël Porcher. 2012. <span>“Propensity Score Applied to Survival Data Analysis Through Proportional Hazards Models: A Monte Carlo Study.”</span> <em>Pharmaceutical Statistics</em> 11 (3): 222–29. <a href="https://doi.org/10.1002/pst.537">https://doi.org/10.1002/pst.537</a>.
+</div>
+<div id="ref-hill2006" class="csl-entry">
+Hill, Jennifer, and Jerome P. Reiter. 2006. <span>“Interval Estimation for Treatment Effects Using Propensity Score Matching.”</span> <em>Statistics in Medicine</em> 25 (13): 2230–56. <a href="https://doi.org/10.1002/sim.2277">https://doi.org/10.1002/sim.2277</a>.
+</div>
+<div id="ref-ho2007" class="csl-entry">
+Ho, Daniel E., Kosuke Imai, Gary King, and Elizabeth A. Stuart. 2007. <span>“Matching as Nonparametric Preprocessing for Reducing Model Dependence in Parametric Causal Inference.”</span> <em>Political Analysis</em> 15 (3): 199–236. <a href="https://doi.org/10.1093/pan/mpl013">https://doi.org/10.1093/pan/mpl013</a>.
+</div>
+<div id="ref-hong2010" class="csl-entry">
+Hong, Guanglei. 2010. <span>“Marginal Mean Weighting Through Stratification: Adjustment for Selection Bias in Multilevel Data.”</span> <em>Journal of Educational and Behavioral Statistics</em> 35 (5): 499–531. <a href="https://doi.org/10.3102/1076998609359785">https://doi.org/10.3102/1076998609359785</a>.
+</div>
+<div id="ref-king2015" class="csl-entry">
+King, Gary, and Margaret E. Roberts. 2015. <span>“How Robust Standard Errors Expose Methodological Problems They Do Not Fix, and What to Do About It.”</span> <em>Political Analysis</em> 23 (2): 159–79. <a href="https://doi.org/10.1093/pan/mpu015">https://doi.org/10.1093/pan/mpu015</a>.
+</div>
+<div id="ref-liang1986" class="csl-entry">
+Liang, Kung-Yee, and Scott L. Zeger. 1986. <span>“Longitudinal Data Analysis Using Generalized Linear Models.”</span> <em>Biometrika</em> 73 (1): 13–22. <a href="https://doi.org/10.1093/biomet/73.1.13">https://doi.org/10.1093/biomet/73.1.13</a>.
+</div>
+<div id="ref-mackinnon2006" class="csl-entry">
+MacKinnon, James G. 2006. <span>“Bootstrap Methods in Econometrics*.”</span> <em>Economic Record</em> 82 (s1): S2–18. <a href="https://doi.org/10.1111/j.1475-4932.2006.00328.x">https://doi.org/10.1111/j.1475-4932.2006.00328.x</a>.
+</div>
+<div id="ref-mackinnon1985" class="csl-entry">
+MacKinnon, James G., and Halbert White. 1985. <span>“Some Heteroskedasticity-Consistent Covariance Matrix Estimators with Improved Finite Sample Properties.”</span> <em>Journal of Econometrics</em> 29 (3): 305–25. <a href="https://doi.org/10.1016/0304-4076(85)90158-7">https://doi.org/10.1016/0304-4076(85)90158-7</a>.
+</div>
+<div id="ref-nguyen2017" class="csl-entry">
+Nguyen, Tri-Long, Gary S. Collins, Jessica Spence, Jean-Pierre Daurès, P. J. Devereaux, Paul Landais, and Yannick Le Manach. 2017. <span>“Double-Adjustment in Propensity Score Matching Analysis: Choosing a Threshold for Considering Residual Imbalance.”</span> <em>BMC Medical Research Methodology</em> 17: 78. <a href="https://doi.org/10.1186/s12874-017-0338-0">https://doi.org/10.1186/s12874-017-0338-0</a>.
+</div>
+<div id="ref-rudolph2016" class="csl-entry">
+Rudolph, Kara E., K. Ellicott Colson, Elizabeth A. Stuart, and Jennifer Ahern. 2016. <span>“Optimally Combining Propensity Score Subclasses.”</span> <em>Statistics in Medicine</em> 35 (27): 4937–47. <a href="https://doi.org/10.1002/sim.7046">https://doi.org/10.1002/sim.7046</a>.
+</div>
+<div id="ref-schafer2008" class="csl-entry">
+Schafer, Joseph L., and Joseph Kang. 2008. <span>“Average Causal Effects from Nonrandomized Studies: A Practical Guide and Simulated Example.”</span> <em>Psychological Methods</em> 13 (4): 279–313. <a href="https://doi.org/10.1037/a0014268">https://doi.org/10.1037/a0014268</a>.
+</div>
+<div id="ref-snowden2011" class="csl-entry">
+Snowden, Jonathan M., Sherri Rose, and Kathleen M. Mortimer. 2011. <span>“Implementation of G-Computation on a Simulated Data Set: Demonstration of a Causal Inference Technique.”</span> <em>American Journal of Epidemiology</em> 173 (7): 731–38. <a href="https://doi.org/10.1093/aje/kwq472">https://doi.org/10.1093/aje/kwq472</a>.
+</div>
+<div id="ref-stampf2010" class="csl-entry">
+Stampf, Susanne, Erika Graf, Claudia Schmoor, and Martin Schumacher. 2010. <span>“Estimators and Confidence Intervals for the Marginal Odds Ratio Using Logistic Regression and Propensity Score Stratification.”</span> <em>Statistics in Medicine</em> 29 (7-8): 760–69. <a href="https://doi.org/10.1002/sim.3811">https://doi.org/10.1002/sim.3811</a>.
+</div>
+<div id="ref-wan2019" class="csl-entry">
+Wan, Fei. 2019. <span>“Matched or Unmatched Analyses with Propensity<span>-</span>Score<span><span></span></span>matched Data?”</span> <em>Statistics in Medicine</em> 38 (2): 289–300. <a href="https://doi.org/10.1002/sim.7976">https://doi.org/10.1002/sim.7976</a>.
+</div>
+<div id="ref-westreich2013" class="csl-entry">
+Westreich, D., and S. Greenland. 2013. <span>“The Table 2 Fallacy: Presenting and Interpreting Confounder and Modifier Coefficients.”</span> <em>American Journal of Epidemiology</em> 177 (4): 292–98. <a href="https://doi.org/10.1093/aje/kws412">https://doi.org/10.1093/aje/kws412</a>.
+</div>
+</div>
+</div>
+<div id="code-to-generate-data-used-in-examples" class="section level2">
+<h2>Code to Generate Data used in Examples</h2>
+<div class="sourceCode" id="cb99"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb99-1"><a href="#cb99-1" aria-hidden="true" tabindex="-1"></a><span class="co">#Generatng data similar to Austin (2009) for demonstrating treatment effect estimation</span></span>
+<span id="cb99-2"><a href="#cb99-2" aria-hidden="true" tabindex="-1"></a>gen_X <span class="ot">&lt;-</span> <span class="cf">function</span>(n) {</span>
+<span id="cb99-3"><a href="#cb99-3" aria-hidden="true" tabindex="-1"></a>  X <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(<span class="dv">9</span> <span class="sc">*</span> n), <span class="at">nrow =</span> n, <span class="at">ncol =</span> <span class="dv">9</span>)</span>
+<span id="cb99-4"><a href="#cb99-4" aria-hidden="true" tabindex="-1"></a>  X[,<span class="dv">5</span>] <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(X[,<span class="dv">5</span>] <span class="sc">&lt;</span> .<span class="dv">5</span>)</span>
+<span id="cb99-5"><a href="#cb99-5" aria-hidden="true" tabindex="-1"></a>  X</span>
+<span id="cb99-6"><a href="#cb99-6" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb99-7"><a href="#cb99-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb99-8"><a href="#cb99-8" aria-hidden="true" tabindex="-1"></a><span class="co">#~20% treated</span></span>
+<span id="cb99-9"><a href="#cb99-9" aria-hidden="true" tabindex="-1"></a>gen_A <span class="ot">&lt;-</span> <span class="cf">function</span>(X) {</span>
+<span id="cb99-10"><a href="#cb99-10" aria-hidden="true" tabindex="-1"></a>  LP_A <span class="ot">&lt;-</span> <span class="sc">-</span> <span class="fl">1.2</span> <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">2</span>)<span class="sc">*</span>X[,<span class="dv">1</span>] <span class="sc">-</span> <span class="fu">log</span>(<span class="fl">1.5</span>)<span class="sc">*</span>X[,<span class="dv">2</span>] <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">2</span>)<span class="sc">*</span>X[,<span class="dv">4</span>] <span class="sc">-</span> <span class="fu">log</span>(<span class="fl">2.4</span>)<span class="sc">*</span>X[,<span class="dv">5</span>] <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">2</span>)<span class="sc">*</span>X[,<span class="dv">7</span>] <span class="sc">-</span> <span class="fu">log</span>(<span class="fl">1.5</span>)<span class="sc">*</span>X[,<span class="dv">8</span>]</span>
+<span id="cb99-11"><a href="#cb99-11" aria-hidden="true" tabindex="-1"></a>  P_A <span class="ot">&lt;-</span> <span class="fu">plogis</span>(LP_A)</span>
+<span id="cb99-12"><a href="#cb99-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rbinom</span>(<span class="fu">nrow</span>(X), <span class="dv">1</span>, P_A)</span>
+<span id="cb99-13"><a href="#cb99-13" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb99-14"><a href="#cb99-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb99-15"><a href="#cb99-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Continuous outcome</span></span>
+<span id="cb99-16"><a href="#cb99-16" aria-hidden="true" tabindex="-1"></a>gen_Y_C <span class="ot">&lt;-</span> <span class="cf">function</span>(A, X) {</span>
+<span id="cb99-17"><a href="#cb99-17" aria-hidden="true" tabindex="-1"></a>  <span class="dv">2</span><span class="sc">*</span>A <span class="sc">+</span> <span class="dv">2</span><span class="sc">*</span>X[,<span class="dv">1</span>] <span class="sc">+</span> <span class="dv">2</span><span class="sc">*</span>X[,<span class="dv">2</span>] <span class="sc">+</span> <span class="dv">2</span><span class="sc">*</span>X[,<span class="dv">3</span>] <span class="sc">+</span> <span class="dv">1</span><span class="sc">*</span>X[,<span class="dv">4</span>] <span class="sc">+</span> <span class="dv">2</span><span class="sc">*</span>X[,<span class="dv">5</span>] <span class="sc">+</span> <span class="dv">1</span><span class="sc">*</span>X[,<span class="dv">6</span>] <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="fu">length</span>(A), <span class="dv">0</span>, <span class="dv">5</span>)</span>
+<span id="cb99-18"><a href="#cb99-18" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb99-19"><a href="#cb99-19" aria-hidden="true" tabindex="-1"></a><span class="co">#Conditional:</span></span>
+<span id="cb99-20"><a href="#cb99-20" aria-hidden="true" tabindex="-1"></a><span class="co">#  MD: 2</span></span>
+<span id="cb99-21"><a href="#cb99-21" aria-hidden="true" tabindex="-1"></a><span class="co">#Marginal:</span></span>
+<span id="cb99-22"><a href="#cb99-22" aria-hidden="true" tabindex="-1"></a><span class="co">#  MD: 2</span></span>
+<span id="cb99-23"><a href="#cb99-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb99-24"><a href="#cb99-24" aria-hidden="true" tabindex="-1"></a><span class="co"># Binary outcome</span></span>
+<span id="cb99-25"><a href="#cb99-25" aria-hidden="true" tabindex="-1"></a>gen_Y_B <span class="ot">&lt;-</span> <span class="cf">function</span>(A, X) {</span>
+<span id="cb99-26"><a href="#cb99-26" aria-hidden="true" tabindex="-1"></a>  LP_B <span class="ot">&lt;-</span> <span class="sc">-</span><span class="dv">2</span> <span class="sc">+</span> <span class="fu">log</span>(<span class="fl">2.4</span>)<span class="sc">*</span>A <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">2</span>)<span class="sc">*</span>X[,<span class="dv">1</span>] <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">2</span>)<span class="sc">*</span>X[,<span class="dv">2</span>] <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">2</span>)<span class="sc">*</span>X[,<span class="dv">3</span>] <span class="sc">+</span> <span class="fu">log</span>(<span class="fl">1.5</span>)<span class="sc">*</span>X[,<span class="dv">4</span>] <span class="sc">+</span> <span class="fu">log</span>(<span class="fl">2.4</span>)<span class="sc">*</span>X[,<span class="dv">5</span>] <span class="sc">+</span> <span class="fu">log</span>(<span class="fl">1.5</span>)<span class="sc">*</span>X[,<span class="dv">6</span>]</span>
+<span id="cb99-27"><a href="#cb99-27" aria-hidden="true" tabindex="-1"></a>  P_B <span class="ot">&lt;-</span> <span class="fu">plogis</span>(LP_B)</span>
+<span id="cb99-28"><a href="#cb99-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rbinom</span>(<span class="fu">length</span>(A), <span class="dv">1</span>, P_B)</span>
+<span id="cb99-29"><a href="#cb99-29" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb99-30"><a href="#cb99-30" aria-hidden="true" tabindex="-1"></a><span class="co">#Conditional:</span></span>
+<span id="cb99-31"><a href="#cb99-31" aria-hidden="true" tabindex="-1"></a><span class="co">#  OR:   2.4</span></span>
+<span id="cb99-32"><a href="#cb99-32" aria-hidden="true" tabindex="-1"></a><span class="co">#  logOR: .875</span></span>
+<span id="cb99-33"><a href="#cb99-33" aria-hidden="true" tabindex="-1"></a><span class="co">#Marginal:</span></span>
+<span id="cb99-34"><a href="#cb99-34" aria-hidden="true" tabindex="-1"></a><span class="co">#  RD:    .144</span></span>
+<span id="cb99-35"><a href="#cb99-35" aria-hidden="true" tabindex="-1"></a><span class="co">#  RR:   1.54</span></span>
+<span id="cb99-36"><a href="#cb99-36" aria-hidden="true" tabindex="-1"></a><span class="co">#  logRR: .433</span></span>
+<span id="cb99-37"><a href="#cb99-37" aria-hidden="true" tabindex="-1"></a><span class="co">#  OR:   1.92</span></span>
+<span id="cb99-38"><a href="#cb99-38" aria-hidden="true" tabindex="-1"></a><span class="co">#  logOR  .655</span></span>
+<span id="cb99-39"><a href="#cb99-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb99-40"><a href="#cb99-40" aria-hidden="true" tabindex="-1"></a><span class="co"># Survival outcome</span></span>
+<span id="cb99-41"><a href="#cb99-41" aria-hidden="true" tabindex="-1"></a>gen_Y_S <span class="ot">&lt;-</span> <span class="cf">function</span>(A, X) {</span>
+<span id="cb99-42"><a href="#cb99-42" aria-hidden="true" tabindex="-1"></a>  LP_S <span class="ot">&lt;-</span> <span class="sc">-</span><span class="dv">2</span> <span class="sc">+</span> <span class="fu">log</span>(<span class="fl">2.4</span>)<span class="sc">*</span>A <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">2</span>)<span class="sc">*</span>X[,<span class="dv">1</span>] <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">2</span>)<span class="sc">*</span>X[,<span class="dv">2</span>] <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">2</span>)<span class="sc">*</span>X[,<span class="dv">3</span>] <span class="sc">+</span> <span class="fu">log</span>(<span class="fl">1.5</span>)<span class="sc">*</span>X[,<span class="dv">4</span>] <span class="sc">+</span> <span class="fu">log</span>(<span class="fl">2.4</span>)<span class="sc">*</span>X[,<span class="dv">5</span>] <span class="sc">+</span> <span class="fu">log</span>(<span class="fl">1.5</span>)<span class="sc">*</span>X[,<span class="dv">6</span>]</span>
+<span id="cb99-43"><a href="#cb99-43" aria-hidden="true" tabindex="-1"></a>  <span class="fu">sqrt</span>(<span class="sc">-</span><span class="fu">log</span>(<span class="fu">runif</span>(<span class="fu">length</span>(A)))<span class="sc">*</span><span class="fl">2e4</span><span class="sc">*</span><span class="fu">exp</span>(<span class="sc">-</span>LP_S))</span>
+<span id="cb99-44"><a href="#cb99-44" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb99-45"><a href="#cb99-45" aria-hidden="true" tabindex="-1"></a><span class="co">#Conditional:</span></span>
+<span id="cb99-46"><a href="#cb99-46" aria-hidden="true" tabindex="-1"></a><span class="co">#  HR:   2.4</span></span>
+<span id="cb99-47"><a href="#cb99-47" aria-hidden="true" tabindex="-1"></a><span class="co">#  logHR: .875</span></span>
+<span id="cb99-48"><a href="#cb99-48" aria-hidden="true" tabindex="-1"></a><span class="co">#Marginal:</span></span>
+<span id="cb99-49"><a href="#cb99-49" aria-hidden="true" tabindex="-1"></a><span class="co">#  HR:   1.57</span></span>
+<span id="cb99-50"><a href="#cb99-50" aria-hidden="true" tabindex="-1"></a><span class="co">#  logHR: .452</span></span>
+<span id="cb99-51"><a href="#cb99-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb99-52"><a href="#cb99-52" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">19599</span>)</span>
+<span id="cb99-53"><a href="#cb99-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb99-54"><a href="#cb99-54" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">2000</span></span>
+<span id="cb99-55"><a href="#cb99-55" aria-hidden="true" tabindex="-1"></a>X <span class="ot">&lt;-</span> <span class="fu">gen_X</span>(n)</span>
+<span id="cb99-56"><a href="#cb99-56" aria-hidden="true" tabindex="-1"></a>A <span class="ot">&lt;-</span> <span class="fu">gen_A</span>(X)</span>
+<span id="cb99-57"><a href="#cb99-57" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb99-58"><a href="#cb99-58" aria-hidden="true" tabindex="-1"></a>Y_C <span class="ot">&lt;-</span> <span class="fu">gen_Y_C</span>(A, X)</span>
+<span id="cb99-59"><a href="#cb99-59" aria-hidden="true" tabindex="-1"></a>Y_B <span class="ot">&lt;-</span> <span class="fu">gen_Y_B</span>(A, X)</span>
+<span id="cb99-60"><a href="#cb99-60" aria-hidden="true" tabindex="-1"></a>Y_S <span class="ot">&lt;-</span> <span class="fu">gen_Y_S</span>(A, X)</span>
+<span id="cb99-61"><a href="#cb99-61" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb99-62"><a href="#cb99-62" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(A, X, Y_C, Y_B, Y_S)</span></code></pre></div>
+</div>
+<div class="footnotes">
+<hr />
+<ol>
+<li id="fn1"><p>Because they are only appropriate with a large number of clusters, cluster-robust standard errors are generally not used with subclassification methods. Regular robust standard errors are valid with these methods when using the subclassification weights to estimate marginal effects.<a href="#fnref1" class="footnote-back">↩︎</a></p></li>
+<li id="fn2"><p>Sometimes, an error will occur with this method, which usually means more bootstrap replications are required. The number of replicates must be greater than the original sample size when using the full bootstrap and greater than the number of pairs/strata when using the block bootstrap.<a href="#fnref2" class="footnote-back">↩︎</a></p></li>
+<li id="fn3"><p>The matching weights are not necessary when performing 1:1 matching, but we include them here for generality. When weights are not necessary, including them does not affect the estimates. Because it may not always be clear when weights are required, we recommend always including them.<a href="#fnref3" class="footnote-back">↩︎</a></p></li>
+<li id="fn4"><p>It is possible to exactly reproduce the <code>match.data()</code> standard error using the <code>get_matches()</code> data, but doing so may require some fiddling due to the defaults in <code>sandwich</code>.<a href="#fnref4" class="footnote-back">↩︎</a></p></li>
+<li id="fn5"><p>It is also known as fine stratification weighting, described by Desai et al. <span class="citation">(<a href="#ref-desai2017" role="doc-biblioref">2017</a>)</span>.<a href="#fnref5" class="footnote-back">↩︎</a></p></li>
+<li id="fn6"><p>Including subclass as a main effect in the MMWS-weighted regression will not change the effect estimate but may slightly decrease its estimated standard error.<a href="#fnref6" class="footnote-back">↩︎</a></p></li>
+</ol>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

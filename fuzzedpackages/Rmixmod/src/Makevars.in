@@ -1,0 +1,39 @@
+#MkInclude = $(R_HOME)/etc${R_ARCH}/Makeconf
+
+# from XmlMakevars.in replacing include XmlMakevars
+LIBXMLXX_CFLAGS=@LIBXMLXX_CFLAGS@
+LIBXMLXX_LIBS=@LIBXMLXX_LIBS@
+RMIXMOD_XML=@RMIXMOD_XML@
+OMPSTATUS=@OMP_STATUS@
+
+
+CXX_STD = CXX11
+
+##
+## MIXMOD AND EIGEN
+##
+MIXMODDIR    = ./mixmod
+IOSTREAMDIR  = ./mixmod_iostream
+#EIGENDIR = ./eigen3
+MIXMODLIB    = mixmod.a
+
+
+## Use the R_HOME indirection to support installations of multiple R version
+PKG_CXXFLAGS = -DRPACKAGE -DXEM_RESOURCES_PATH='"$(R_PACKAGE_DIR)/XML_specs"' $(RMIXMOD_XML) \
+	$(OMPSTATUS) -I. -I./mixmod_iostream $(LIBXMLXX_CFLAGS) #-I$(EIGENDIR) $(SHLIB_OPENMP_CXXFLAGS)
+#PKG_LIBS = `$(R_HOME)/bin/Rscript -e "Rcpp:::LdFlags()"` -L$(MIXMODDIR) $(MIXMODLIB) $(LIBXMLXX_LIBS) #$(SHLIB_OPENMP_CFLAGS)
+PKG_LIBS = -L$(MIXMODDIR) $(MIXMODLIB) $(LIBXMLXX_LIBS) #$(SHLIB_OPENMP_CFLAGS)
+
+##
+## Targets
+##
+.PHONY: all mixmod
+
+all: $(SHLIB)
+
+$(SHLIB): mixmod
+
+mixmod:
+	(cd $(MIXMODDIR) && $(MAKE) -f mixmod_r.mk)
+	(if test ! -z $(RMIXMOD_XML) ; then cd $(IOSTREAMDIR) && $(MAKE) -f mixmod_iostream_r.mk ; fi)
+	$(RANLIB) $(MIXMODLIB)

@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+
+<title>Introduction</title>
+
+<script type="text/javascript">
+window.onload = function() {
+  var imgs = document.getElementsByTagName('img'), i, img;
+  for (i = 0; i < imgs.length; i++) {
+    img = imgs[i];
+    // center an image if it is the only element of its parent
+    if (img.parentElement.childElementCount === 1)
+      img.parentElement.style.textAlign = 'center';
+  }
+};
+</script>
+
+
+
+<!-- MathJax scripts -->
+<script type="text/javascript" src="https://cdn.bootcss.com/mathjax/2.7.0/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+
+
+<style type="text/css">
+body, td {
+   font-family: sans-serif;
+   background-color: white;
+   font-size: 13px;
+}
+
+body {
+  max-width: 800px;
+  margin: auto;
+  padding: 1em;
+  line-height: 20px;
+}
+
+tt, code, pre {
+   font-family: 'DejaVu Sans Mono', 'Droid Sans Mono', 'Lucida Console', Consolas, Monaco, monospace;
+}
+
+h1 {
+   font-size:2.2em;
+}
+
+h2 {
+   font-size:1.8em;
+}
+
+h3 {
+   font-size:1.4em;
+}
+
+h4 {
+   font-size:1.0em;
+}
+
+h5 {
+   font-size:0.9em;
+}
+
+h6 {
+   font-size:0.8em;
+}
+
+a:visited {
+   color: rgb(50%, 0%, 50%);
+}
+
+pre, img {
+  max-width: 100%;
+}
+pre {
+  overflow-x: auto;
+}
+pre code {
+   display: block; padding: 0.5em;
+}
+
+code {
+  font-size: 92%;
+  border: 1px solid #ccc;
+}
+
+code[class] {
+  background-color: #F8F8F8;
+}
+
+table, td, th {
+  border: none;
+}
+
+blockquote {
+   color:#666666;
+   margin:0;
+   padding-left: 1em;
+   border-left: 0.5em #EEE solid;
+}
+
+hr {
+   height: 0px;
+   border-bottom: none;
+   border-top-width: thin;
+   border-top-style: dotted;
+   border-top-color: #999999;
+}
+
+@media print {
+   * {
+      background: transparent !important;
+      color: black !important;
+      filter:none !important;
+      -ms-filter: none !important;
+   }
+
+   body {
+      font-size:12pt;
+      max-width:100%;
+   }
+
+   a, a:visited {
+      text-decoration: underline;
+   }
+
+   hr {
+      visibility: hidden;
+      page-break-before: always;
+   }
+
+   pre, blockquote {
+      padding-right: 1em;
+      page-break-inside: avoid;
+   }
+
+   tr, img {
+      page-break-inside: avoid;
+   }
+
+   img {
+      max-width: 100% !important;
+   }
+
+   @page :left {
+      margin: 15mm 20mm 15mm 10mm;
+   }
+
+   @page :right {
+      margin: 15mm 10mm 15mm 20mm;
+   }
+
+   p, h2, h3 {
+      orphans: 3; widows: 3;
+   }
+
+   h2, h3 {
+      page-break-after: avoid;
+   }
+}
+</style>
+
+
+
+</head>
+
+<body>
+<h2>Introduction</h2>
+
+<p>This vignette provides an overview of Global Trend time series forecasting models. The LGT stands for Local and Global Trend model and is devised to forecast non-seasonal time series. Meanwhile, SGT stands for Seasonal model with Global Trend and is devised to complement the former on seasonal time series. The combination of these models were tested on the 3003 time-series M3-competition dataset, and they have been shown to outperform all of the models originally participating in the competition by a significant margin. It is quite likely that L/SGT is still the most accurate algorithm on the M3 data sets. </p>
+
+<table><thead>
+<tr>
+<th>Model</th>
+<th>sMAPE</th>
+<th>MASE</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>Best M3 Model(Theta)</td>
+<td>12.76</td>
+<td>1.39</td>
+</tr>
+<tr>
+<td>ETS(ZZZ)</td>
+<td>13.13</td>
+<td>1.43</td>
+</tr>
+<tr>
+<td>LGT&amp;SGT</td>
+<td>12.27</td>
+<td>1.30</td>
+</tr>
+</tbody></table>
+
+<p>Additionally, the package provides the S2GT model that extends SGT to deal with two seasonalities, following Taylor (2003).</p>
+
+<p>The models can be seen as extensions of following Exponential Smoothing models: Holt Linear Method (LGT), Holt-Winters model (SGT), and Taylor dual seasonality model (S2GT). The main differences are as follows:</p>
+
+<ul>
+<li>nonlinear global trend, that spans damped, linear, to exponential trends.</li>
+<li>Student-t distribution of error</li>
+<li>function for error size, so the model is heteroscedastic</li>
+<li>possibility to add regression components.</li>
+</ul>
+
+<p>The package also provides some variants of these base algorithms, they are described in later sections.</p>
+
+<p>The models are Bayesian and are fitted using Markov Chain Monte Carlo with the RStan package. The user can &ldquo;nudge&rdquo; the models using many hyperparamters of the parameters&#39; prior distributions, altough this is usually not necessary. While the Hamiltonian Monte Carlo engine of the Stan system is relatively fast, the computation time required for a single time series is typically between a couple to up to 20 minutes. A substantially longer computation time is likely a sign of not a good match of the chosen model to the time series.
+The current version of the models only supports time series data with entirely positive data values. Many time series data fall into this category, while for others, a simple transformation can be performed to obtain the required positive time-series data. </p>
+
+<p>The following sections present the models&#39; formulas:</p>
+
+<h2>LGT(Local and Global Trend)</h2>
+
+<h3>Model formulas</h3>
+
+<p>\[y_{t+1} \sim Student (\nu,\widehat{y}_{t+1}, \sigma _{t+1}) \quad (eq.1.1)\]</p>
+
+<p>\[\widehat{y}_{t+1}=l_{t}+ \gamma l_{t}^{ \rho }+ \lambda b_{t}  \quad  (eq. 1.2)\]</p>
+
+<p>\[l_{t+1}= \alpha y_{t+1}+ \left( 1- \alpha  \right) l_{t} \quad (eq. 1.3)\]</p>
+
+<p>\[b_{t+1}= \beta  \left( l_{t+1}-l_{t} \right) + \left( 1- \beta  \right) b_{t}  \quad  (eq. 1.4)\]</p>
+
+<p>\[\widehat{\sigma}_{t+1}= \sigma \widehat{y}_{t+1}^{ \tau}+ \xi   \quad  (eq. 1.5)\]</p>
+
+<h3>Notations</h3>
+
+<ul>
+<li>\(y_{t}\)  :value of the dependent variable of interest at time t</li>
+<li>\(\widehat{y}_{t+1}\)  :expected value of y at time t+1 given information up to time t</li>
+<li>\(\widehat{\sigma}_{t+1}\)  :expected size of error at time t+1</li>
+<li>\(l_{t}\)  :level at time t</li>
+<li>\(b_{t}\)  :local trend at time t</li>
+</ul>
+
+<h3>Parameters</h3>
+
+<ul>
+<li>\(\nu\)  :degrees of freedom of the t-distribution</li>
+<li>\(\gamma\)  :coefficient of the global trend</li>
+<li>\(\rho\)  :power coefficient of the global trend, b y default between -0.5 and 1</li>
+<li>\(\lambda\)  :damping coefficient of the local trend, between 0 and 1</li>
+<li>\(\alpha\)  :smoothing parameter for the level term, between 0 and 1</li>
+<li>\(\beta\)  :smoothing parameter for the local trend term, between 0 and 1</li>
+<li>\(\sigma\)  :coefficient of the size of error</li>
+<li>\(\tau\)  :power coefficient of the size of error, between 0 and 1</li>
+<li>\(\xi\)  :minimum value of the size of error</li>
+</ul>
+
+<h3>Notes on the model formulas</h3>
+
+<ul>
+<li><p><strong>eq. 1.1. Student&#39;s-t error distribution</strong></p>
+
+<p>We assume that the time series values follow Student&#39;s t-distribution around the expected value with a time-varying size of error. The behavior of Student-t distribution changes smoothly from being similar to Normal distribution (for larger, i.e. above 20, values of degrees of freedom) to being close to Cauchy distribution (for smaller, close to 1 degrees of freedom), therefore accomodating a possible need for a fat-tailed distribution of error. The parameter \(\nu\), degrees of freedom, like all other parameters, is fitted automatically, not user specified.</p></li>
+<li><p><strong>eq. 1.2:  Expected value for next step</strong></p>
+
+<p>The expected value for the next step is modeled as a sum of level \(l_{t}\), global nonlinear trend \(\gamma l_{t}^{ \rho }\), and damped local linear trend \(\lambda b_{t}\). We use the term &ldquo;global&rdquo; in the nonlinear trend description to stress the fact that both \(\gamma\) and \(\rho\) are fitted on the entire time series and do not change over time. Typically the global trend will dominate over the short-term behavior caused by the local linear trend. </p>
+
+<p>Also, note that the simple function of global trend has some interesting properties: if \(\rho\) becomes close to 0, the contribution of the global trend to the expected value of the next step becomes constant, and therefore the trend becomes close to linear; when \(\rho\) becomes close to 1, the contribution of the global trend to the expected value of the next step becomes almost proportional to the level value, therefore together with the level providing the compound interest formula, and the trajectory of a multistep forecast becomes exponential. So, the global trend can model well a typical situation in fast growing businesses: the growth is faster than linear but slower than exponential.</p>
+
+<p>The last term refers to the usual local trend in ETS model. However, there is an addition of the dampening parameter \(\lambda\), constrained such that  \(0<\lambda<1\), to reduce the strength of the local trend model. </p></li>
+<li><p><strong>eq. 1.5. Heteroscedastic error</strong></p>
+
+<p>The size of the error is modelled with a monotonically growing function of the expected value. Typically, the size of the error grows in absolute terms as the level and expected value grow, but due to averaging effects, it gets proportionally smaller - this formula models well such behavior. Please note that in extreme cases: when \(\tau\) is close to 0, the error size is constant, and when \(\tau\) gets cose to 1, the error size is proportional to the expected value, and thus approaches behavior of the multiplicative error.</p></li>
+<li><p><strong>eq. 1.3: Level adjustment formula</strong></p>
+
+<p>This formular is very similar to that of the Holt Linear Method, except that it does not include local nor global trends.</p></li>
+<li><p><strong>eq. 1.4: Local trend adjustment formula</strong></p>
+
+<p>The same as in the Holt Linear Method.</p></li>
+</ul>
+
+<hr/>
+
+<h2>SGT (Seasonal, Global Trend)</h2>
+
+<h3>Model formulas</h3>
+
+<p>\[y_{t+1} \sim Student \left( \nu,\widehat{y}_{t+1}, \sigma _{t+1} \right)  \quad (eq. 2.1) \]</p>
+
+<p>\[\widehat{y}_{t+1}= \left( l_{t}+ \gamma l_{t}^{ \rho } \right)  s_{t+1} \quad (eq. 2.2)\]</p>
+
+<p>\[l_{t+1}= \alpha  \frac{y_{t+1}}{s_{t+1}}+ \left( 1- \alpha  \right) l_{t} \quad (eq. 2.3)\] 
+\[s_{t+m+1}= \zeta  \frac{y_{t+1}}{l_{t+1}}+ \left( 1- \zeta  \right) s_{t+1}  \quad (eq. 2.4)\]</p>
+
+<p>\[\widehat{\sigma}_{t+1}= \sigma \widehat{y}_{t+1}^{ \tau}+ \xi \quad (eq. 2.5)\]</p>
+
+<h3>Additional notations</h3>
+
+<ul>
+<li>\(s_{t}\)  : seasonality coefficient at time t</li>
+<li>\(m\)      : number of seasons in the data (e.g. 12 for monthly, 4 for quarterly)</li>
+</ul>
+
+<h3>Additional parameters</h3>
+
+<ul>
+<li>\(\zeta\)  : smoothing parameter for the seasonality term, between 0 and 1</li>
+</ul>
+
+<h3>Notes on the model formulas</h3>
+
+<p>The model is similar to the non-seasonal LGT model described above. There are a couple of modifications as follows:</p>
+
+<ol>
+<li>Removal of local trend</li>
+<li>Addition of a multiplicative seasonality term</li>
+</ol>
+
+<ul>
+<li><p><strong>eq. 2.3.Level adjustment formula</strong></p>
+
+<p>It is similar to the relevant Holt-Winters formula, but as in the LGT case, the trend is not included.</p></li>
+</ul>
+
+<hr/>
+
+<h2>S2GT (Double Seasonal, Global Trend)</h2>
+
+<p>The S2GT model is an extension of the SGT model to be used on time series with two seasonalities. A classic example of this type of data is hourly electricity consumption which is affected by the time of the day as well as the day of the week. Such series can be modelled with dual 24 and 168 (=7*24) seasonality. We follow here Taylor (2003).
+Work on this algorithm is still ongoing, it is usually better to use the SGT model with seasonality equal to the maximum of a multiple seasonalities of the series, e.g. 168 for hourly data with weekly cycle.   </p>
+
+<h3>Model formulas</h3>
+
+<p>\[y_{t+1} \sim Student \left( \nu,\widehat{y}_{t+1}, \sigma _{t+1} \right)  \quad (eq. 3.1) \]</p>
+
+<p>\[\widehat{y}_{t+1}=\left( l_{t}+ \gamma l_{t}^{ \rho } \right) s_{t+1}w_{t+1} \quad (eq. 3.2)\]</p>
+
+<p>\[l_{t+1}= \alpha  \frac{y_{t+1}}{s_{t+1}w_{t+1}}+ \left( 1- \alpha  \right) l_{t}  \quad (eq. 3.3)\] </p>
+
+<p>\[s_{t+m+1}= \zeta  \frac{y_{t+1}}{l_{t+1}w_{t+1}}+ \left( 1- \zeta  \right) s_{t+1} \quad (eq. 3.4)\] </p>
+
+<p>\[w_{t+d+1}= \delta  \frac{y_{t+1}}{l_{t+1}s_{t+1}}+ \left( 1- \delta  \right) w_{t+1} \quad (eq. 3.5)\] </p>
+
+<p>\[\widehat{\sigma}_{t+1}= \sigma \widehat{y}_{t+1}^{ \tau}+ \xi \quad (eq. 3.6)\]</p>
+
+<h3>Additional notations</h3>
+
+<ul>
+<li>\(w_{t}\)  :second seasonality coefficient at time t</li>
+<li>\(d\)       :number of seasons in a complete period of the second seasonality (e.g. 168 for hourly data with weekly seasonality)</li>
+</ul>
+
+<h3>Additional parameters</h3>
+
+<ul>
+<li>\(\delta\) : smoothing parameters for the second seasonality factors</li>
+</ul>
+
+<h2>Model options</h2>
+
+<p>So far we have described standard models, that are well tested and usually work well. The package provides also some additional variants that can be useful in some situations; they are described in the following sections</p>
+
+<h3>1. &ldquo;Smoothed innovation&rdquo; error size function</h3>
+
+<p>When the error size appears to have its own dynamics that isn&#39;t just a reflection of the current expected value of the series, e.g. during periods of high volatility on stock markets, a better function for the error size may be one that is proportional to an average of absolute values of recent &ldquo;innovations&rdquo; or errors. The formula is:</p>
+
+<p>\[a_{t+1}= \eta \left| y_{t+1}-\widehat{y}_{t+1} \right| + \left( 1- \eta  \right) a_{t} \quad (eq. 4.1)\]</p>
+
+<p>\[\widehat{\sigma}_{t+1}= \sigma a_{t+1}+ \xi \quad (eq. 4.2)\]</p>
+
+<h4>Additional notations</h4>
+
+<ul>
+<li>\(a_{t}\) : smoothed absolute error at time t</li>
+</ul>
+
+<h4>Additional parameters</h4>
+
+<ul>
+<li>\(\eta\) : smoothing parameter for the absolute error, between 0 and 1</li>
+</ul>
+
+<h4>Notes</h4>
+
+<p>This is an interesting option, but more demanding computationally and not advantegous for typical business series.</p>
+
+<h3>2. Generalized seasonality</h3>
+
+<p>By default the models use multiplicative seasonality, as the additive seasonality is no good for series with strong trend. However, the multiplicative seasonality may produce too strong seasonality effects in some cases. The generalized seasonality spans additive to multiplicative seasonality and may be a better choice in situations where the seasonality effect gets proportinally smaller with the series growth.</p>
+
+<h4>Formulas for SGT with generalized seasonality</h4>
+
+<p>\[y_{t+1} \sim Student \left( \nu,\widehat{y}_{t+1}, \sigma _{t+1} \right)  \quad (eq. 2.1) \]
+\[\widehat{y}_{t+1}= l_{t}+ \gamma l_{t}^{\rho} + s_{t+1}l_{t}^{\theta} \quad (eq. 5.2)\]
+\[l_{t+1}= \alpha \left( y_{t+1}-s_{t+1}l_{t}^{\theta} \right) + \left( 1- \alpha  \right) l_{t} \quad (eq. 5.3)\]</p>
+
+<p>\[s_{t+m+1}= \zeta  \frac{y_{t+1}-l_{t+1}}{l_{t+1}^{\theta}}+ \left( 1- \zeta  \right) s_{t+1}  \quad (eq. 5.4)\]</p>
+
+<p>\[\widehat{\sigma}_{t+1}= \sigma \widehat{y}_{t+1}^{ \tau}+ \xi \quad (eq. 2.5)\]</p>
+
+<h4>Additional parameters</h4>
+
+<ul>
+<li>\(\theta\)  : power coefficient of the generalized seasonality, between 0 and 1</li>
+</ul>
+
+<h4>Notes on the model formulas</h4>
+
+<p>Three formulas are different as compared to the SGT model with multiplicative seasonality.</p>
+
+<ul>
+<li><p><strong>eq. 5.2. Expected value formula</strong></p>
+
+<p>Instead of multiplying by \(s_{t+1}\) we are adding \(s_{t+1}l_{t}^{\tau}\). It has interesting consequences: if \({\tau}\) is getting close to 0, \(l_{t}^{\tau}\) gets close to 1 and then the whole term gets close to \(s_{t+1}\) and we get the additive seasonality. However on the opposite end, when \({\tau}\) is getting close to 1, as in the case of the nonlinear trend, we are getting the compound formula and the seasonality similar to the multiplicative one. Therefore the formula provides for the behavior that falls between additive and multiplicative seasonality.</p></li>
+</ul>
+
+<p>Formulas for S2GT are modified along similar lines.</p>
+
+<h3>3. Additonal level calculation methods</h3>
+
+<p>We provide two alternative method for calculating level in the seasonal models (SGT and S2GT), instead of using the Holt-Winters&#39; style way, as in eq.2.3 and 3.3.</p>
+
+<h4>&ldquo;seasAvg&rdquo; - Seasonal average method</h4>
+
+<p>Here the level is calculated as a smoothed moving average of the last SEASONALITY points in case of SGT, and SEASONALITY2 points in case of S2GT. This approach makes sense for series with a stable or steadily changing level, and unimportant occasional flare-ups. The benefits may include faster calculation and better accuracy. Eq. 2.3 becomes:
+\[l_{t+1}= \alpha *movingAvg[t-SEASONALITY+1,t]+ \left( 1- \alpha  \right) l_{t}\]</p>
+
+<h4>&ldquo;HW_sAvg&rdquo; method</h4>
+
+<p>It is an weighted average of the standard (HW) and seasAvg methods. Eq. 2.3 becomes:
+\[k_{t+1}= \alpha  \frac{y_{t+1}}{s_{t+1}}+ \left( 1- \alpha  \right) k_{t}\]
+where k is calculated as the standard level, and the final level</p>
+
+<p>\[l_{t+1}= \alpha *movingAvg[t-SEASONALITY+1,t]+ \left( 1- \alpha  \right) k_{t}\]
+This is an interesting, although a bit slower method, often most accurate one.</p>
+
+<h2>Regression</h2>
+
+<p>All models support additional regressors. The data needs to be passed as a matrix (with number of columns equal to the number of regressors) to both rlgt (for training) and forecast functions. </p>
+
+<h2>Prior Distributions</h2>
+
+<p>The prior distributions of parameters have their hyper-parameters documented and available for tweaking, although most of the time it is not required. Perhaps the most likely hyperparameter to change would be POW_TREND_ALPHA which is the alpha parameter of the Beta distribution of the global trend power coefficient. Occasionally it may be useful to increase it above 1, to say 3-6, to encourage higher curvature of the global trend. </p>
+
+<h2>Additional notes</h2>
+
+<h3>Non-integer seasonalities</h3>
+
+<p>The seasonal models support specifying non-integer seasonalities. Internally this is done through a partial allocation of newly calculated seasonality coefficients.</p>
+
+</body>
+
+</html>

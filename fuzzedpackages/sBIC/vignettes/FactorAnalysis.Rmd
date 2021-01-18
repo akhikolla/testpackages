@@ -1,0 +1,92 @@
+---
+title: "Factor Analysis"
+output: rmarkdown::pdf_document
+vignette:  >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteIndexEntry{Factor Analysis}
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Section 5.2 of Drton and Plummer (2017) considers a factor analysis model applied to the data analysed by Lopes and West (2004) originally published in West and Harrison (1997, pp.610-618). The data concern average monthly exchange rates of six currencies relative to the pound sterling (GBP) from January 1975 to December 1986. 
+
+The data are read in as a data frame then converted to a matrix  `X` containing only the currency values. The data to be passed to the factor analysis model take the form of  a matrix `Y` of lag-1 differences in which each column is standardized to have mean 0 and standard deviation 1.
+
+```{r}
+X = read.table("lopeswest.dat", header = TRUE)
+X = as.matrix(X[, c("U.S.A.", "Canada", "Yen", "Franc", "Lira", "Mark")])
+Y = scale(diff(X))
+```
+
+Under a factor analysis model $\text{Var}(Y) = \Sigma + \beta \beta^T$ where $\Sigma$ is a diagonal matrix (*uniquenesses*) and $\beta$ is a $6 \times i$ matrix (*factor loadings*). Model singularities occur when the rank of $\beta$ is assumed to be $i$, but the true data-generating model has rank $j < i$.
+
+Factor analysis models are fitted with the `stats::factanal()` function. For example, the two-factor model is given by
+
+```{r}
+factanal(Y, factors=2)
+```
+
+The frequentist analysis suggests that 2 factors are sufficient for these data. For Bayesian model choice using sBIC the `FactorAnalyses()` function creates an object representing a collection of factor analysis models with a given number of covariates, up to a maximum number of factors. For the Lopes and West (2004) data, the number of covariates is 6, i.e. the number of columns of `Y`. The maximum number of factors that can be fitted to 6 variables is 3.
+
+```{r}
+library(sBIC)
+factorAnalyses = FactorAnalyses(numCovariates=ncol(Y), maxNumFactors=3)
+```
+
+The learning coefficients $\lambda_{ij}$ can  be extracted from the resulting object. Note that the minimal model is $i=0$ corresponding to independence of the columns of $Y$.
+
+```{r}
+lambda <- matrix("", 4, 4, dimnames=list(paste0("i=",0:3), paste0("j=",0:3)))
+for (i in 1:4) {
+  for (j in 1:i) {
+    lambda[i,j] <- factorAnalyses$learnCoef(i, j)$lambda
+  }
+}
+knitr::kable(lambda, caption="Learning coefficients $\\lambda_{ij}$ for sBIC")
+```
+
+Table 1 reproduces Table 2 of Drton and Plummer (2017) showing learning coefficients for model with $j$ factors embedded in a model with $i \geq j$ factors. The multiplicity is equal to 1 for all models (not shown).
+
+The singular BIC is calculated by passing to the `sBIC()` function the data `Y` and the object `factorAnalysis` representing the model collection.
+
+```{r}
+results = sBIC(Y, factorAnalyses)
+print(results)
+```
+
+If the singular BIC is considered to be an approximation to the log of the marginal likelihood, then it can be converted to an approximate posterior distribution by exponentiating and then normalizing the sBIC values. The convenience function `BICpost` carries out this transformation.
+
+```{r}
+BICpost <- function(BIC) {
+  w = exp((BIC - max(BIC)))
+  zapsmall( w/ sum(w) )
+}
+```
+
+The approximate posterior probabilities according to BIC and sBIC for models $i=0$ up to $i=3$ are as follows. 
+
+```{r}
+BICpost(results$BIC)
+BICpost(results$sBIC)
+```
+
+These values can be compared with the posterior distribution of the number of components derived by Lopes and West (2004) using reversible jump MCMC. They give two posterior distributions based on two different models.
+
+
+|         | i = 1 | i = 2 | i = 3 |
+|:--------|:------|:------|:------|
+| Table 3 | 0.00  | 0.88  | 0.12  |
+| Table 5 | 0.00  | 0.98  | 0.02  |
+
+Table: Posterior distributions for the number of classes (i) from Lopes & West (2004)
+
+The approximate posterior derived from sBIC resembles the posterior from Table 5 of Lopes and West (2004). In contrast, the approximate posterior derived from BIC puts extremely low weight on the model i = 3.
+
+#Bibliography
+
+* Drton M. and Plummer M. (2017), A Bayesian information criterion for singular models. J. R. Statist. Soc. B; 79: 1-38.
+* Lopes, HF and West M (2004). Bayesian model assessment in factor analysis, Statistica Sinica, 14, 41-67.
+* West, M. and Harrison, P.J. (1997). Bayesian Forecasting and Dynamic Model. Springer-Verlag, New York.

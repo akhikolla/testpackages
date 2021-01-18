@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+<meta name="date" content="2020-12-05" />
+
+<title>Text prediction via N-gram Stupid Back-off models</title>
+
+<script>// Hide empty <a> tag within highlighted CodeBlock for screen reader accessibility (see https://github.com/jgm/pandoc/issues/6352#issuecomment-626106786) -->
+// v0.0.1
+// Written by JooYoung Seo (jooyoung@psu.edu) and Atsushi Yasumoto on June 1st, 2020.
+
+document.addEventListener('DOMContentLoaded', function() {
+  const codeList = document.getElementsByClassName("sourceCode");
+  for (var i = 0; i < codeList.length; i++) {
+    var linkList = codeList[i].getElementsByTagName('a');
+    for (var j = 0; j < linkList.length; j++) {
+      if (linkList[j].innerHTML === "") {
+        linkList[j].setAttribute('aria-hidden', 'true');
+      }
+    }
+  }
+});
+</script>
+<style type="text/css">
+a.anchor-section {margin-left: 10px; visibility: hidden; color: inherit;}
+a.anchor-section::before {content: '#';}
+.hasAnchor:hover a.anchor-section {visibility: visible;}
+</style>
+<script>// Anchor sections v1.0 written by Atsushi Yasumoto on Oct 3rd, 2020.
+document.addEventListener('DOMContentLoaded', function() {
+  // Do nothing if AnchorJS is used
+  if (typeof window.anchors === 'object' && anchors.hasOwnProperty('hasAnchorJSLink')) {
+    return;
+  }
+
+  const h = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+
+  // Do nothing if sections are already anchored
+  if (Array.from(h).some(x => x.classList.contains('hasAnchor'))) {
+    return null;
+  }
+
+  // Use section id when pandoc runs with --section-divs
+  const section_id = function(x) {
+    return ((x.classList.contains('section') || (x.tagName === 'SECTION'))
+            ? x.id : '');
+  };
+
+  // Add anchors
+  h.forEach(function(x) {
+    const id = x.id || section_id(x.parentElement);
+    if (id === '') {
+      return null;
+    }
+    let anchor = document.createElement('a');
+    anchor.href = '#' + id;
+    anchor.classList = ['anchor-section'];
+    x.classList.add('hasAnchor');
+    x.appendChild(anchor);
+  });
+});
+</script>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css" data-origin="pandoc">
+code.sourceCode > span { display: inline-block; line-height: 1.25; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode { white-space: pre; position: relative; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+code.sourceCode { white-space: pre-wrap; }
+code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    for (var j = 0; j < rules.length; j++) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") continue;
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') continue;
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Text prediction via N-gram Stupid Back-off models</h1>
+<h4 class="author">Valerio Gherardi</h4>
+<a class="author_email" href="mailto:#"><a href="mailto:vgherard@sissa.it" class="email">vgherard@sissa.it</a></a>
+</address>
+<h4 class="date">2020-12-05</h4>
+
+
+
+<div id="introduction" class="section level2">
+<h2>Introduction</h2>
+<p>The <code>sbo</code> package provides utilities for building and evaluating next-word prediction functions based on <a href="https://www.aclweb.org/anthology/D07-1090.pdf">Stupid Back-off</a> N-gram models in R. In this vignette, I illustrate the main features of <code>sbo</code>, including in particular:</p>
+<ul>
+<li>the typical workflow for building a text predictor from a given training corpus, and</li>
+<li>the evaluation of next-word predictions through a test corpus.</li>
+</ul>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">library</span>(sbo)</span></code></pre></div>
+</div>
+<div id="building-text-predictors-with-sbo" class="section level2">
+<h2>Building text predictors with <code>sbo</code></h2>
+<div id="building-a-text-predictor" class="section level3">
+<h3>Building a text predictor</h3>
+<p>In this and the next section we will employ the <code>sbo::twitter_train</code> example dataset<a href="#fn1" class="footnote-ref" id="fnref1"><sup>1</sup></a>, each entry of which consists in a single tweet in English, <em>e.g.</em>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1"></a><span class="kw">head</span>(sbo<span class="op">::</span>twitter_train, <span class="dv">3</span>)</span>
+<span id="cb2-2"><a href="#cb2-2"></a><span class="co">#&gt; [1] &quot;FOX NEWS TODAY: \&quot;Energizer Bunny Arrested, Charged With Battery!\&quot;&quot;                 </span></span>
+<span id="cb2-3"><a href="#cb2-3"></a><span class="co">#&gt; [2] &quot;Today is a good day! Excluding today, I only have 9 days of class left. Awww yeaaahh&quot;</span></span>
+<span id="cb2-4"><a href="#cb2-4"></a><span class="co">#&gt; [3] &quot;I will be at broadway bar tonight&quot;</span></span></code></pre></div>
+<p>Given the training corpus, the typical workflow for building a text-predictor consists of the following steps:</p>
+<ol style="list-style-type: decimal">
+<li><em>Preprocessing</em>. Apply some transformations to the training corpus before <span class="math inline">\(k\)</span>-gram extraction.</li>
+<li><em>Sentence tokenization</em>. Split the training corpus into sentences.</li>
+<li><em>Extract <span class="math inline">\(k\)</span>-gram frequencies</em>. These are the building blocks for any <span class="math inline">\(N\)</span>-gram language model.</li>
+<li><em>Train a text predictor</em>. Build a prediction function <span class="math inline">\(f\)</span>, which takes some text input and returns as output a next-word prediction (or more than one, ordered by decreasing probability).</li>
+</ol>
+<p>Also, implicit in the previous steps is the <em>choice of a model dictionary</em>, which can be done a priori, or during the training process.</p>
+<p>All these steps (including building a dictionary) can be performed in <code>sbo</code> as follows:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1"></a>p &lt;-<span class="st"> </span><span class="kw">sbo_predictor</span>(<span class="dt">object =</span> sbo<span class="op">::</span>twitter_train, <span class="co"># preloaded example dataset</span></span>
+<span id="cb3-2"><a href="#cb3-2"></a>                   <span class="dt">N =</span> <span class="dv">3</span>, <span class="co"># Train a 3-gram model</span></span>
+<span id="cb3-3"><a href="#cb3-3"></a>                   <span class="dt">dict =</span> target <span class="op">~</span><span class="st"> </span><span class="fl">0.75</span>, <span class="co"># cover 75% of training corpus</span></span>
+<span id="cb3-4"><a href="#cb3-4"></a>                   <span class="dt">.preprocess =</span> sbo<span class="op">::</span>preprocess, <span class="co"># Preprocessing transformation </span></span>
+<span id="cb3-5"><a href="#cb3-5"></a>                   <span class="dt">EOS =</span> <span class="st">&quot;.?!:;&quot;</span>, <span class="co"># End-Of-Sentence tokens</span></span>
+<span id="cb3-6"><a href="#cb3-6"></a>                   <span class="dt">lambda =</span> <span class="fl">0.4</span>, <span class="co"># Back-off penalization in SBO algorithm</span></span>
+<span id="cb3-7"><a href="#cb3-7"></a>                   <span class="dt">L =</span> 3L, <span class="co"># Number of predictions for input</span></span>
+<span id="cb3-8"><a href="#cb3-8"></a>                   <span class="dt">filtered =</span> <span class="st">&quot;&lt;UNK&gt;&quot;</span> <span class="co"># Exclude the &lt;UNK&gt; token from predictions</span></span>
+<span id="cb3-9"><a href="#cb3-9"></a>                   )</span></code></pre></div>
+<p>This creates an object <code>p</code> of class <code>sbo_predictor</code>, which can be used to generate text predictions as follows:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1"></a><span class="kw">predict</span>(p, <span class="st">&quot;i love&quot;</span>)</span>
+<span id="cb4-2"><a href="#cb4-2"></a><span class="co">#&gt; [1] &quot;you&quot; &quot;it&quot;  &quot;my&quot;</span></span></code></pre></div>
+<p>Let us comment the various arguments in the previous call to <code>sbo_predictor()</code>:</p>
+<ul>
+<li><code>object</code>. The training corpus used to train the text predictor.</li>
+<li><code>N</code>. The order <span class="math inline">\(N\)</span> of the <span class="math inline">\(N\)</span>-gram model.</li>
+<li><code>dict</code>. This argument specifies the model dictionary. In this case, we build our dictionary directly from the training corpus, using the most frequent words which cover a fraction <code>target = 0.75</code> of the corpus. In alternative, one can prune the corpus word set to a fixed vocabulary size, or use a predefined dictionary.</li>
+<li><code>.preprocess</code>. The function used in corpus preprocessing. Here we leverage on the minimal <code>sbo::preprocess</code>, but this can be in principle any function taking a character input and returning a character output.</li>
+<li><code>EOS</code>. This argument lists, in a single string, all End-Of-Sentence characters, employed for sentence tokenization (moreover, text belonging to different entries of the preprocessed input vector are understood to belong to different sentences).</li>
+<li><code>lambda</code>. The penalization <span class="math inline">\(\lambda\)</span> employed in the Stupid Back-Off algorithm. Here <span class="math inline">\(\lambda = 0.4\)</span> is the benchmark value given in the original work by Brants <em>et al.</em>.</li>
+<li><code>L</code>. Number of predictions to return for any given input. This needs to be specified a priori, because the object <code>p</code> does not store the full <span class="math inline">\(k\)</span>-gram frequency tables, but only a fixed number (i.e. <span class="math inline">\(L\)</span>) of predictions for any <span class="math inline">\(k\)</span>-gram prefix (<span class="math inline">\(k\leq N -1\)</span>) observed in the training corpus. This is commented more at length below.</li>
+<li><code>filtered</code>. Words to exclude from next-word predictions. Here the reserved string <code>&lt;UNK&gt;</code> excludes the Unknown-Word token (similarly, one can use the reserved string <code>&lt;EOS&gt;</code> to exclude End-Of-Sentence tokens).</li>
+</ul>
+<p>Before proceeding, let us take a little break and introduce the most important function of <code>sbo</code>:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1"></a><span class="kw">set.seed</span>(<span class="dv">840</span>)</span>
+<span id="cb5-2"><a href="#cb5-2"></a><span class="kw">babble</span>(p)</span>
+<span id="cb5-3"><a href="#cb5-3"></a><span class="co">#&gt; [1] &quot;mine too many.&quot;</span></span>
+<span id="cb5-4"><a href="#cb5-4"></a><span class="kw">babble</span>(p)</span>
+<span id="cb5-5"><a href="#cb5-5"></a><span class="co">#&gt; [1] &quot;anyone have a new book and do it.&quot;</span></span>
+<span id="cb5-6"><a href="#cb5-6"></a><span class="kw">babble</span>(p)</span>
+<span id="cb5-7"><a href="#cb5-7"></a><span class="co">#&gt; [1] &quot;easy for the rt love your work.&quot;</span></span></code></pre></div>
+</div>
+<div id="out-of-memory-use" class="section level3">
+<h3>Out of memory use</h3>
+<p>The example in the previous Section illustrates how to use a text predictor in interactive mode. If the training process is computationally expensive, one may want to save the text predictor object (i.e. <code>p</code> in the example above) out of physical memory (e.g. through <code>save()</code>). For this purpose<a href="#fn2" class="footnote-ref" id="fnref2"><sup>2</sup></a>, <code>sbo</code> provides the class <code>sbo_predtable</code> (“Stupid Back-Off prediction tables”).</p>
+<p>These objects are a “raw” equivalent of a text predictor, and can be created with <code>sbo_predtable()</code>, which has the same user interface of <code>sbo_predictor()</code>. For example, the definition of <code>p</code> above would be replaced by:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1"></a>t &lt;-<span class="st"> </span><span class="kw">sbo_predtable</span>(<span class="dt">object =</span> sbo<span class="op">::</span>twitter_train, <span class="co"># preloaded example dataset</span></span>
+<span id="cb6-2"><a href="#cb6-2"></a>                   <span class="dt">N =</span> <span class="dv">3</span>, <span class="co"># Train a 3-gram model</span></span>
+<span id="cb6-3"><a href="#cb6-3"></a>                   <span class="dt">dict =</span> target <span class="op">~</span><span class="st"> </span><span class="fl">0.75</span>, <span class="co"># cover 75% of training corpus</span></span>
+<span id="cb6-4"><a href="#cb6-4"></a>                   <span class="dt">.preprocess =</span> sbo<span class="op">::</span>preprocess, <span class="co"># Preprocessing transformation </span></span>
+<span id="cb6-5"><a href="#cb6-5"></a>                   <span class="dt">EOS =</span> <span class="st">&quot;.?!:;&quot;</span>, <span class="co"># End-Of-Sentence tokens</span></span>
+<span id="cb6-6"><a href="#cb6-6"></a>                   <span class="dt">lambda =</span> <span class="fl">0.4</span>, <span class="co"># Back-off penalization in SBO algorithm</span></span>
+<span id="cb6-7"><a href="#cb6-7"></a>                   <span class="dt">L =</span> 3L, <span class="co"># Number of predictions for input</span></span>
+<span id="cb6-8"><a href="#cb6-8"></a>                   <span class="dt">filtered =</span> <span class="st">&quot;&lt;UNK&gt;&quot;</span> <span class="co"># Exclude the &lt;UNK&gt; token from predictions</span></span>
+<span id="cb6-9"><a href="#cb6-9"></a>                   )</span></code></pre></div>
+<p>From <code>t</code>, one can rapidly recover the corrisponding text predictor, using <code>sbo_predictor()</code><a href="#fn3" class="footnote-ref" id="fnref3"><sup>3</sup></a>:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1"></a>p &lt;-<span class="st"> </span><span class="kw">sbo_predictor</span>(t) <span class="co"># This is the same as &#39;p&#39; created above</span></span></code></pre></div>
+<p>Objects of class <code>sbo_predtable</code> can be safely stored out of memory and loaded in other R sessions:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1"></a><span class="kw">save</span>(t)</span>
+<span id="cb8-2"><a href="#cb8-2"></a><span class="co"># ... and, in another session:</span></span>
+<span id="cb8-3"><a href="#cb8-3"></a><span class="kw">load</span>(<span class="st">&quot;t.rda&quot;</span>)</span></code></pre></div>
+</div>
+<div id="some-details-on-sbo_predictor-and-sbo_predtable-class-objects" class="section level3">
+<h3>Some details on <code>sbo_predictor</code> and <code>sbo_predtable</code> class objects</h3>
+<p><code>sbo_predictor</code> and <code>sbo_predtable</code> objects directly store next-word predictions for each <span class="math inline">\(k\)</span>-gram prefix (<span class="math inline">\(k=1,\,2,\dots,\,N-1\)</span>) observed in the training corpus, allowing for memory compression and fast query.</p>
+<p>Both objects store, through attributes, information about the training process. This can be conveniently obtained through the corresponding <code>summary()</code> methods, e.g.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1"></a><span class="kw">summary</span>(p)</span>
+<span id="cb9-2"><a href="#cb9-2"></a><span class="co">#&gt; Next-word text predictor from Stupid Back-off N-gram model</span></span>
+<span id="cb9-3"><a href="#cb9-3"></a><span class="co">#&gt; </span></span>
+<span id="cb9-4"><a href="#cb9-4"></a><span class="co">#&gt; Order (N): 3 </span></span>
+<span id="cb9-5"><a href="#cb9-5"></a><span class="co">#&gt; Dictionary size: 1008  words</span></span>
+<span id="cb9-6"><a href="#cb9-6"></a><span class="co">#&gt; Back-off penalization (lambda): 0.4 </span></span>
+<span id="cb9-7"><a href="#cb9-7"></a><span class="co">#&gt; Maximum number of predictions (L): 3 </span></span>
+<span id="cb9-8"><a href="#cb9-8"></a><span class="co">#&gt; </span></span>
+<span id="cb9-9"><a href="#cb9-9"></a><span class="co">#&gt; See ?predict.sbo_predictor for usage help.</span></span></code></pre></div>
+<div id="internal-structure-of-sbo_predictor-and-sbo_predtable-objects" class="section level4">
+<h4>Internal structure of <code>sbo_predictor</code> and <code>sbo_predtable</code> objects</h4>
+<p>Here are some details on the current (still under development) implementation of <code>sbo_predictor</code> and <code>sbo_predtable</code> objects. For clarity, I will refer to the <code>sbo_predtable</code> instance <code>t</code> created above:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1"></a><span class="kw">head</span>(t[[<span class="dv">3</span>]])</span>
+<span id="cb10-2"><a href="#cb10-2"></a><span class="co">#&gt;       w1  w2 prediction1 prediction2 prediction3</span></span>
+<span id="cb10-3"><a href="#cb10-3"></a><span class="co">#&gt; [1,]   4 749           1          68          33</span></span>
+<span id="cb10-4"><a href="#cb10-4"></a><span class="co">#&gt; [2,] 472  62           1           4          28</span></span>
+<span id="cb10-5"><a href="#cb10-5"></a><span class="co">#&gt; [3,]  98 288           1           4           5</span></span>
+<span id="cb10-6"><a href="#cb10-6"></a><span class="co">#&gt; [4,] 428 262           1          13           4</span></span>
+<span id="cb10-7"><a href="#cb10-7"></a><span class="co">#&gt; [5,] 193  17           1         415        1009</span></span>
+<span id="cb10-8"><a href="#cb10-8"></a><span class="co">#&gt; [6,] 333 738           1        1009          16</span></span></code></pre></div>
+<p>The first two columns correspond to the word codes<a href="#fn4" class="footnote-ref" id="fnref4"><sup>4</sup></a> of <span class="math inline">\(2\)</span>-gram prefixes observed in the training corpus, and the other columns code the top <span class="math inline">\(L=3\)</span> predictions for these <span class="math inline">\(2\)</span>-grams. When a <span class="math inline">\(2\)</span>-gram <span class="math inline">\(w_1 w_2\)</span> is given as input for text prediction, it is first looked for in the prefix columns of <code>t[[3]]</code>. If not found, <span class="math inline">\(w_2\)</span> is looked for in the prefix column of <code>t[[2]]</code>. If this also fails, the prediction is performed without any prefix, that is, we simply predict the <code>L</code> most frequent words, stored in:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1"></a>t[[<span class="dv">1</span>]]</span>
+<span id="cb11-2"><a href="#cb11-2"></a><span class="co">#&gt;      prediction1 prediction2 prediction3</span></span>
+<span id="cb11-3"><a href="#cb11-3"></a><span class="co">#&gt; [1,]        1009           1           2</span></span></code></pre></div>
+</div>
+</div>
+</div>
+<div id="evaluating-next-word-predictions" class="section level2">
+<h2>Evaluating next-word predictions</h2>
+<p>This Section leverages, for convenience, on:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1"></a><span class="kw">library</span>(dplyr) <span class="co"># installed with `sbo`</span></span></code></pre></div>
+<p>Once we have built our next-word predictor, we may want to directly test its predictions on an independent corpus. For this purpose, <code>sbo</code> offers the function <code>eval_sbo_predictor()</code>, which samples <span class="math inline">\(N\)</span>-grams from a test corpus and compares the predictions from the <span class="math inline">\((N-1)\)</span>-gram prefixes with the true completions.</p>
+<p>More in detail, given a character vector <code>test</code>, where each entry of <code>test</code> represents a single document, <code>eval_sbo_predictor()</code> performs the following steps:</p>
+<ol style="list-style-type: decimal">
+<li>Sample a single sentence from each entry of <code>test</code>, i.e. from each document.</li>
+<li>Sample a single <span class="math inline">\(N\)</span>-gram from each sentence obtained in the previous step.</li>
+<li>Predict next words from the <span class="math inline">\((N-1)\)</span>-gram prefix.</li>
+<li>Return all predictions, together with the true word completions.</li>
+</ol>
+<p>For a reasonable estimate of prediction accuracy, the various entries of <code>test</code> should be independent documents, e.g. single tweets as in the <code>sbo::twitter_test</code> example dataset, which we use below to test the previously trained predictor <code>p</code>.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1"></a><span class="kw">set.seed</span>(<span class="dv">840</span>)</span>
+<span id="cb13-2"><a href="#cb13-2"></a>(evaluation &lt;-<span class="st"> </span><span class="kw">eval_sbo_predictor</span>(p, <span class="dt">test =</span> sbo<span class="op">::</span>twitter_test))</span>
+<span id="cb13-3"><a href="#cb13-3"></a><span class="co">#&gt; # A tibble: 10,000 x 4</span></span>
+<span id="cb13-4"><a href="#cb13-4"></a><span class="co">#&gt;    input             true      preds[,1] [,2]   [,3]  correct</span></span>
+<span id="cb13-5"><a href="#cb13-5"></a><span class="co">#&gt;    &lt;chr&gt;             &lt;chr&gt;     &lt;chr&gt;     &lt;chr&gt;  &lt;chr&gt; &lt;lgl&gt;  </span></span>
+<span id="cb13-6"><a href="#cb13-6"></a><span class="co">#&gt;  1 &quot;come back&quot;       to        to        &lt;EOS&gt;  and   TRUE   </span></span>
+<span id="cb13-7"><a href="#cb13-7"></a><span class="co">#&gt;  2 &quot;amazing should&quot;  have      post      be     have  TRUE   </span></span>
+<span id="cb13-8"><a href="#cb13-8"></a><span class="co">#&gt;  3 &quot;u at&quot;            &lt;EOS&gt;     &lt;EOS&gt;     the    next  TRUE   </span></span>
+<span id="cb13-9"><a href="#cb13-9"></a><span class="co">#&gt;  4 &quot;they&#39;ll be&quot;      respected a         with   in    FALSE  </span></span>
+<span id="cb13-10"><a href="#cb13-10"></a><span class="co">#&gt;  5 &quot; everyone&quot;       follow    is        should loves FALSE  </span></span>
+<span id="cb13-11"><a href="#cb13-11"></a><span class="co">#&gt;  6 &quot;luck this&quot;       weekend   weekend   season is    TRUE   </span></span>
+<span id="cb13-12"><a href="#cb13-12"></a><span class="co">#&gt;  7 &quot;atlanta weather&quot; is        &lt;EOS&gt;     in     to    FALSE  </span></span>
+<span id="cb13-13"><a href="#cb13-13"></a><span class="co">#&gt;  8 &quot;iphone 4s&quot;       just      &lt;EOS&gt;     the    me    FALSE  </span></span>
+<span id="cb13-14"><a href="#cb13-14"></a><span class="co">#&gt;  9 &quot;is it&quot;           working   &lt;EOS&gt;     that   just  FALSE  </span></span>
+<span id="cb13-15"><a href="#cb13-15"></a><span class="co">#&gt; 10 &quot;did you&quot;         listen    know      get    see   FALSE  </span></span>
+<span id="cb13-16"><a href="#cb13-16"></a><span class="co">#&gt; # … with 9,990 more rows</span></span></code></pre></div>
+<p>As it is seen, <code>eval_sbo_predictor()</code> returns a tibble containing the input <span class="math inline">\((N-1)\)</span>-grams, the true completions, the predicted completions and a column indicating whether one of the predictions were correct or not.</p>
+<p>We can estimate predictive accuracy as follows (the uncertainty in the estimate is approximated by the binomial formula <span class="math inline">\(\sigma = \sqrt{\frac{p(1-p)}{M}}\)</span>, where <span class="math inline">\(M\)</span> is the number of trials):</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1"></a>evaluation <span class="op">%&gt;%</span><span class="st"> </span><span class="kw">summarise</span>(<span class="dt">accuracy =</span> <span class="kw">sum</span>(correct)<span class="op">/</span><span class="kw">n</span>(), </span>
+<span id="cb14-2"><a href="#cb14-2"></a>                   <span class="dt">uncertainty =</span> <span class="kw">sqrt</span>(accuracy <span class="op">*</span><span class="st"> </span>(<span class="dv">1</span> <span class="op">-</span><span class="st"> </span>accuracy) <span class="op">/</span><span class="st"> </span><span class="kw">n</span>())</span>
+<span id="cb14-3"><a href="#cb14-3"></a>                   )</span>
+<span id="cb14-4"><a href="#cb14-4"></a><span class="co">#&gt; # A tibble: 1 x 2</span></span>
+<span id="cb14-5"><a href="#cb14-5"></a><span class="co">#&gt;   accuracy uncertainty</span></span>
+<span id="cb14-6"><a href="#cb14-6"></a><span class="co">#&gt;      &lt;dbl&gt;       &lt;dbl&gt;</span></span>
+<span id="cb14-7"><a href="#cb14-7"></a><span class="co">#&gt; 1    0.316     0.00465</span></span></code></pre></div>
+<p>We may want to exclude from the test <span class="math inline">\(N\)</span>-grams ending by the End-Of-Sentence token (here represented by <code>&quot;&lt;EOS&gt;&quot;</code>):</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1"></a>evaluation <span class="op">%&gt;%</span><span class="st"> </span><span class="co"># Accuracy for in-sentence predictions</span></span>
+<span id="cb15-2"><a href="#cb15-2"></a><span class="st">        </span><span class="kw">filter</span>(true <span class="op">!=</span><span class="st"> &quot;&lt;EOS&gt;&quot;</span>) <span class="op">%&gt;%</span></span>
+<span id="cb15-3"><a href="#cb15-3"></a><span class="st">        </span><span class="kw">summarise</span>(<span class="dt">accuracy =</span> <span class="kw">sum</span>(correct) <span class="op">/</span><span class="st"> </span><span class="kw">n</span>(),</span>
+<span id="cb15-4"><a href="#cb15-4"></a>                  <span class="dt">uncertainty =</span> <span class="kw">sqrt</span>(accuracy <span class="op">*</span><span class="st"> </span>(<span class="dv">1</span> <span class="op">-</span><span class="st"> </span>accuracy) <span class="op">/</span><span class="st"> </span><span class="kw">n</span>())</span>
+<span id="cb15-5"><a href="#cb15-5"></a>                  )</span>
+<span id="cb15-6"><a href="#cb15-6"></a><span class="co">#&gt; # A tibble: 1 x 2</span></span>
+<span id="cb15-7"><a href="#cb15-7"></a><span class="co">#&gt;   accuracy uncertainty</span></span>
+<span id="cb15-8"><a href="#cb15-8"></a><span class="co">#&gt;      &lt;dbl&gt;       &lt;dbl&gt;</span></span>
+<span id="cb15-9"><a href="#cb15-9"></a><span class="co">#&gt; 1    0.184     0.00427</span></span></code></pre></div>
+<p>In trying to reduce the size (in physical memory) of your text-predictor, it might be useful to prune the model dictionary. The following command plots an histogram of the distribution of correct predictions in our test.</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1"></a><span class="cf">if</span> (<span class="kw">require</span>(ggplot2)) {</span>
+<span id="cb16-2"><a href="#cb16-2"></a>        evaluation <span class="op">%&gt;%</span></span>
+<span id="cb16-3"><a href="#cb16-3"></a><span class="st">                </span><span class="kw">filter</span>(correct, true <span class="op">!=</span><span class="st"> &quot;&lt;EOS&gt;&quot;</span>) <span class="op">%&gt;%</span></span>
+<span id="cb16-4"><a href="#cb16-4"></a><span class="st">                </span><span class="kw">select</span>(true) <span class="op">%&gt;%</span></span>
+<span id="cb16-5"><a href="#cb16-5"></a><span class="st">                </span><span class="kw">transmute</span>(<span class="dt">rank =</span> <span class="kw">match</span>(true, <span class="dt">table =</span> <span class="kw">attr</span>(p, <span class="st">&quot;dict&quot;</span>))) <span class="op">%&gt;%</span></span>
+<span id="cb16-6"><a href="#cb16-6"></a><span class="st">                </span><span class="kw">ggplot</span>(<span class="kw">aes</span>(<span class="dt">x =</span> rank)) <span class="op">+</span><span class="st"> </span><span class="kw">geom_histogram</span>(<span class="dt">binwidth =</span> <span class="dv">25</span>)</span>
+<span id="cb16-7"><a href="#cb16-7"></a>}</span>
+<span id="cb16-8"><a href="#cb16-8"></a><span class="co">#&gt; Loading required package: ggplot2</span></span></code></pre></div>
+<p><img src="data:image/png;base64,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" style="display: block; margin: auto;" /></p>
+<p>Apparently, the large majority of correct predictions come from the first ~ 300 words of the dictionary, so that if we prune the dictionary excluding words with rank greater than, <em>e.g.</em>, 500 we can reduce the size of our model without seriously affecting its prediction accuracy.</p>
+</div>
+<div id="other-functionalities" class="section level2">
+<h2>Other functionalities</h2>
+<p>In this Section, I briefly survey other functionalities provided by <code>sbo</code>. See the corresponding help pages for more details.</p>
+<div id="dictionaries" class="section level3">
+<h3>Dictionaries</h3>
+<p>Dictionaries can be directly built using <code>sbo_dictionary()</code>. For example, the command:</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1"></a>dict &lt;-<span class="st"> </span><span class="kw">sbo_dictionary</span>(<span class="dt">corpus =</span> sbo<span class="op">::</span>twitter_train, </span>
+<span id="cb17-2"><a href="#cb17-2"></a>                       <span class="dt">max_size =</span> <span class="dv">100</span>, </span>
+<span id="cb17-3"><a href="#cb17-3"></a>                       <span class="dt">target =</span> <span class="fl">0.5</span>, </span>
+<span id="cb17-4"><a href="#cb17-4"></a>                       <span class="dt">.preprocess =</span> sbo<span class="op">::</span>preprocess,</span>
+<span id="cb17-5"><a href="#cb17-5"></a>                       <span class="dt">EOS =</span> <span class="st">&quot;.?!:;&quot;</span>)</span></code></pre></div>
+<p>constructs a dictionary applying the most restrictive of the two constraint <code>max_size = 100</code> or <code>target = 0.5</code>, where <code>target</code> denotes the coverage fraction of <code>corpus</code>. The arguments <code>.preprocess</code> and <code>EOS</code> work as described above.</p>
+<p>The output is an object of class <code>sbo_dictionary</code>, which stores, along with a vector of words (sorted by decreasing frequency), also the original values of <code>.preprocess</code> and <code>EOS</code>.</p>
+</div>
+<div id="word-coverage" class="section level3">
+<h3>Word coverage</h3>
+<p>The word coverage fraction of a dictionary can be computed through the generic function <code>word_coverage()</code>. This accepts as argument any object containing a dictionary, along with a preprocessing function and a list of End-Of-Sentence characters. This includes all <code>sbo</code> main classes: <code>sbo_dictionary</code>, <code>sbo_kgram_freqs</code>, <code>sbo_predtable</code> and <code>sbo_predictor</code>. For instance:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1"></a>(c &lt;-<span class="st"> </span><span class="kw">word_coverage</span>(p, sbo<span class="op">::</span>twitter_train))</span>
+<span id="cb18-2"><a href="#cb18-2"></a><span class="co">#&gt; A &#39;word_coverage&#39; object.</span></span>
+<span id="cb18-3"><a href="#cb18-3"></a><span class="co">#&gt; </span></span>
+<span id="cb18-4"><a href="#cb18-4"></a><span class="co">#&gt; See summary() for more details.</span></span></code></pre></div>
+<p>Computes the coverage fraction of the dictionary used by the predictor <code>p</code>, on the original training corpus.</p>
+<p>This can be conveniently summarized with:</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1"></a><span class="kw">summary</span>(c)</span>
+<span id="cb19-2"><a href="#cb19-2"></a><span class="co">#&gt; Word coverage fraction</span></span>
+<span id="cb19-3"><a href="#cb19-3"></a><span class="co">#&gt; </span></span>
+<span id="cb19-4"><a href="#cb19-4"></a><span class="co">#&gt; Dictionary length: 1008 </span></span>
+<span id="cb19-5"><a href="#cb19-5"></a><span class="co">#&gt; Coverage fraction (w/ EOS): 78.2 %</span></span>
+<span id="cb19-6"><a href="#cb19-6"></a><span class="co">#&gt; Coverage fraction (w/o EOS): 75 %</span></span></code></pre></div>
+<p>or visualized with:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1"></a><span class="kw">plot</span>(c)</span></code></pre></div>
+<p><img src="data:image/png;base64,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" style="display: block; margin: auto;" /></p>
+</div>
+<div id="k-gram-tokenization" class="section level3">
+<h3><span class="math inline">\(k\)</span>-gram tokenization</h3>
+<p><span class="math inline">\(k\)</span>-gram frequency tables form the building blocks of <em>any</em> <span class="math inline">\(N\)</span>-gram based language model. The function <code>sbo::kgram_freqs()</code> extracts frequency tables from a training corpus and stores them into a class <code>sbo_kgram_freq</code> object. For example:</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1"></a>f &lt;-<span class="st"> </span><span class="kw">kgram_freqs</span>(<span class="dt">corpus =</span> sbo<span class="op">::</span>twitter_train, </span>
+<span id="cb21-2"><a href="#cb21-2"></a>                 <span class="dt">N =</span> <span class="dv">3</span>, </span>
+<span id="cb21-3"><a href="#cb21-3"></a>                 <span class="dt">dict =</span> target <span class="op">~</span><span class="st"> </span><span class="fl">0.75</span>,</span>
+<span id="cb21-4"><a href="#cb21-4"></a>                 <span class="dt">.preprocess =</span> sbo<span class="op">::</span>preprocess,</span>
+<span id="cb21-5"><a href="#cb21-5"></a>                 <span class="dt">EOS =</span> <span class="st">&quot;.?!:;&quot;</span></span>
+<span id="cb21-6"><a href="#cb21-6"></a>                 )</span></code></pre></div>
+<p>stores <span class="math inline">\(k\)</span>-gram frequency tables into <code>f</code>. This object can itself be used for text prediction:</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1"></a><span class="kw">predict</span>(f, <span class="st">&quot;i love&quot;</span>)</span>
+<span id="cb22-2"><a href="#cb22-2"></a><span class="co">#&gt; # A tibble: 1,009 x 2</span></span>
+<span id="cb22-3"><a href="#cb22-3"></a><span class="co">#&gt;    completion probability</span></span>
+<span id="cb22-4"><a href="#cb22-4"></a><span class="co">#&gt;    &lt;chr&gt;            &lt;dbl&gt;</span></span>
+<span id="cb22-5"><a href="#cb22-5"></a><span class="co">#&gt;  1 you             0.222 </span></span>
+<span id="cb22-6"><a href="#cb22-6"></a><span class="co">#&gt;  2 it              0.0573</span></span>
+<span id="cb22-7"><a href="#cb22-7"></a><span class="co">#&gt;  3 my              0.0549</span></span>
+<span id="cb22-8"><a href="#cb22-8"></a><span class="co">#&gt;  4 the             0.0524</span></span>
+<span id="cb22-9"><a href="#cb22-9"></a><span class="co">#&gt;  5 your            0.0312</span></span>
+<span id="cb22-10"><a href="#cb22-10"></a><span class="co">#&gt;  6 this            0.0312</span></span>
+<span id="cb22-11"><a href="#cb22-11"></a><span class="co">#&gt;  7 that            0.0287</span></span>
+<span id="cb22-12"><a href="#cb22-12"></a><span class="co">#&gt;  8 how             0.0249</span></span>
+<span id="cb22-13"><a href="#cb22-13"></a><span class="co">#&gt;  9 u               0.0175</span></span>
+<span id="cb22-14"><a href="#cb22-14"></a><span class="co">#&gt; 10 when            0.0150</span></span>
+<span id="cb22-15"><a href="#cb22-15"></a><span class="co">#&gt; # … with 999 more rows</span></span></code></pre></div>
+<p>The output contains the full language model information, i.e. the probabilities<a href="#fn5" class="footnote-ref" id="fnref5"><sup>5</sup></a> for each possible word completion. Compare this with:</p>
+<div class="sourceCode" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1"></a><span class="kw">predict</span>(p, <span class="st">&quot;i love&quot;</span>)</span>
+<span id="cb23-2"><a href="#cb23-2"></a><span class="co">#&gt; [1] &quot;you&quot; &quot;it&quot;  &quot;my&quot;</span></span></code></pre></div>
+<p>The extra information contained in <code>f</code> comes at a price. In fact, the advantage provided by <code>sbo_predictor</code>/<code>sbo_predtable</code> objects for simple text prediction is two-fold:</p>
+<ol style="list-style-type: decimal">
+<li>Memory compression:</li>
+</ol>
+<div class="sourceCode" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1"></a>size_in_MB &lt;-<span class="st"> </span><span class="cf">function</span>(x) <span class="kw">format</span>(utils<span class="op">::</span><span class="kw">object.size</span>(x), <span class="dt">units =</span> <span class="st">&quot;MB&quot;</span>)</span>
+<span id="cb24-2"><a href="#cb24-2"></a><span class="kw">sapply</span>(<span class="kw">list</span>(<span class="dt">sbo_predtable =</span> t, <span class="dt">kgram_freqs =</span> f), size_in_MB)</span>
+<span id="cb24-3"><a href="#cb24-3"></a><span class="co">#&gt; sbo_predtable   kgram_freqs </span></span>
+<span id="cb24-4"><a href="#cb24-4"></a><span class="co">#&gt;      &quot;1.4 Mb&quot;      &quot;4.7 Mb&quot;</span></span></code></pre></div>
+<ol start="2" style="list-style-type: decimal">
+<li>Fast query:</li>
+</ol>
+<div class="sourceCode" id="cb25"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1"></a>chrono_predict &lt;-<span class="st"> </span><span class="cf">function</span>(x) <span class="kw">system.time</span>(<span class="kw">predict</span>(x, <span class="st">&quot;i love&quot;</span>), <span class="dt">gcFirst =</span> <span class="ot">TRUE</span>)</span>
+<span id="cb25-2"><a href="#cb25-2"></a><span class="kw">lapply</span>(<span class="kw">list</span>(<span class="dt">sbo_predictor =</span> p, <span class="dt">kgram_freqs =</span> f), chrono_predict)</span>
+<span id="cb25-3"><a href="#cb25-3"></a><span class="co">#&gt; $sbo_predictor</span></span>
+<span id="cb25-4"><a href="#cb25-4"></a><span class="co">#&gt;    user  system elapsed </span></span>
+<span id="cb25-5"><a href="#cb25-5"></a><span class="co">#&gt;   0.001   0.000   0.001 </span></span>
+<span id="cb25-6"><a href="#cb25-6"></a><span class="co">#&gt; </span></span>
+<span id="cb25-7"><a href="#cb25-7"></a><span class="co">#&gt; $kgram_freqs</span></span>
+<span id="cb25-8"><a href="#cb25-8"></a><span class="co">#&gt;    user  system elapsed </span></span>
+<span id="cb25-9"><a href="#cb25-9"></a><span class="co">#&gt;   0.141   0.000   0.142</span></span></code></pre></div>
+</div>
+<div id="text-preprocessing" class="section level3">
+<h3>Text preprocessing</h3>
+<p>Usually text corpora require preprocessing before word and <span class="math inline">\(k\)</span>-gram tokenization can take place. The <code>.preprocess</code> argument of <code>kgram_freqs()</code> allows for an user specified preprocessing function. The default is the minimal <code>sbo::preprocess()</code>, and the optimized <code>kgram_freqs_fast(erase = x, EOS = y)</code> is equivalent to <code>kgram_freqs(.preprocess = sbo::preprocess(erase = x, EOS = y))</code> (but more efficient).</p>
+</div>
+<div id="sentence-tokenization" class="section level3">
+<h3>Sentence tokenization</h3>
+<p>Tokenization at the sentence level is required to obtain terminal <span class="math inline">\(k\)</span>-grams (i.e. <span class="math inline">\(k\)</span>-grams containing Begin-Of-Sentence or End-Of-Sentence tokens). In the training process, sentence tokenization takes place after text preprocessing.</p>
+<p>End-Of-Sentence (single character) tokens are specified by the <code>EOS</code> argument of <code>kgram_freqs()</code> and <code>kgram_freqs_fast()</code>; empty sentences are always skipped. Also, if the input vector <code>text</code> has <code>length(text) &gt; 1</code>, the various elements of <code>text</code> belong to different entries.</p>
+<p>The process of sentence tokenization can also be performed directly, through <code>sbo::tokenize_sentences()</code>, but this is not required for use with <code>kgram_freqs*()</code>.</p>
+</div>
+</div>
+<div class="footnotes">
+<hr />
+<ol>
+<li id="fn1"><p>This is a small samples of <span class="math inline">\(5·10^4\)</span> entries from the “Tweets” Swiftkey dataset fully available <a href="https://www.kaggle.com/crmercado/tweets-blogs-news-swiftkey-dataset-4million">here</a>.<a href="#fnref1" class="footnote-back">↩︎</a></p></li>
+<li id="fn2"><p>At the present stage of development, this cannot be done directly for the <code>sbo_predictor</code> object created above. Technically, this is because <code>sbo_predictor</code> objects are external pointers to a convenient C++ class, optimized for fast <code>predict()</code>ions. Such a class instance exists only during a single R session.<a href="#fnref2" class="footnote-back">↩︎</a></p></li>
+<li id="fn3"><p>As this example makes clear, both <code>sbo_predictor()</code> and <code>sbo_predtable()</code> are S3 generics. The corresponding available methods are listed under <code>?sbo_predictions</code>.<a href="#fnref3" class="footnote-back">↩︎</a></p></li>
+<li id="fn4"><p>Coded with respect to the rank sorted dictionary <code>dict</code> (the codes <code>0</code>, <code>length(dict) + 1</code> and <code>length(dict) + 2</code> correspond to the Begin-Of-Sentence, End-Of-Sentence and Unknown-Word tokens, respectively).<a href="#fnref4" class="footnote-back">↩︎</a></p></li>
+<li id="fn5"><p>More precisely, these are the normalized (to unity) scores resulting from the Stupid Back-Off smoothing method.<a href="#fnref5" class="footnote-back">↩︎</a></p></li>
+</ol>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

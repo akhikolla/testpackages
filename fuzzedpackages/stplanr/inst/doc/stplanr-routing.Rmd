@@ -1,0 +1,110 @@
+---
+title: "Transport routing with stplanr"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Transport routing with stplanr}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(stplanr)
+```
+
+# Introduction
+
+Routing is the process of identifying routes that enable movement between two geographic locations along the shortest path (based on mode-specific routing profiles) or in some other 'optimal' way, based on route network data.
+Most open routing engines rely on OpenStreetMap (OSM) data.
+
+We will use the example of the Isle of Wight to demonstrate routing engines.
+To get OSM data for the Isle of Wight you can run the following commands:
+
+```{r, eval=FALSE}
+remotes::install_github("itsleeds/geofabrik")
+library(geofabrik)
+roads_iow = get_geofabrik(name = "Isle of Wight")
+f = gf_filename("Isle of Wight")
+file.copy(f, "iow.pbf")
+options(osrm.server = "https://0.0.0.0:5000/", osrm.profile = "driving")
+```
+
+
+# OSRM
+
+Routing services such as OpenStreetMap Routing Machine (OSRM) require an input network, usually from OSM.
+
+We will use the `osrm` package:
+
+```{r}
+library(osrm)
+```
+
+In the system terminal run the following commands to make the [OSRM docker image](https://hub.docker.com/r/osrm/osrm-backend/) work for you.
+
+```{r, engine='bash', eval=FALSE}
+docker run -t -v "${PWD}:/data" osrm/osrm-backend osrm-extract -p /opt/car.lua /data/iow.pbf
+docker run -t -v "${PWD}:/data" osrm/osrm-backend osrm-partition /data/iow.osrm
+docker run -t -v "${PWD}:/data" osrm/osrm-backend osrm-customize /data/iow.osrm
+docker run -t -i -p 5000:5000 -v "${PWD}:/data" osrm/osrm-backend osrm-routed --algorithm mld /data/iow.osrm
+curl "https://127.0.0.1:5000/route/v1/driving/13.388860,52.517037;13.385983,52.496891?steps=true"
+```
+
+Now we can do routing in R!
+
+On a single route:
+
+```{r, eval=FALSE}
+l = pct::wight_lines_30
+p = line2points(l)
+r = osrm::osrmRoute(src = p[1, ], dst = p[2, ], returnclass = "sf", overview = "full")
+plot(r)
+```
+
+```{r, echo=FALSE}
+knitr::include_graphics("https://user-images.githubusercontent.com/1825120/86902789-577d1080-c106-11ea-91df-8d0180931562.png")
+```
+
+And to find many routes via the `route()` function, resulting in something like the figure below.
+
+```{r, eval=FALSE}
+routes_osrm = route(l = l, route_fun = osrmRoute, returnclass = "sf", overview = "full")
+rnet_osrm = overline(routes_osrm, attrib = "bicycle")
+mapview::mapview(rnet_osrm, lwd = rnet_osrm$bicycle / 10)
+```
+
+```{r, eval=FALSE, echo=FALSE}
+system.time({
+  routes_osrm = route(l = l, route_fun = osrmRoute, returnclass = "sf", overview = "full")
+})
+30 / 0.9 # around 30 routes per second
+saveRDS(routes_osrm, "routes_osrm.Rds")
+piggyback::pb_upload("routes_osrm.Rds")
+```
+
+
+```{r, echo=FALSE}
+knitr::include_graphics("https://user-images.githubusercontent.com/1825120/86858225-2970df80-c0b8-11ea-8394-07f98f1c8e8a.png")
+```
+
+```{r, eval=FALSE}
+# tidy up
+f = list.files(pattern = "iow")
+unlink(x = f, recursive = TRUE)
+```
+
+Shut down the docker container.
+
+
+```{r, eval=FALSE, engine='zsh'}
+docker ps
+docker stop stupefied_hopper
+```
+
+

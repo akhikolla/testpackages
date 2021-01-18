@@ -1,0 +1,1 @@
+This option provides a multilocus estimate of the effective number of migrants ($Nm$)by Barton and Slatkin's (1986) method. Three estimates of $Nm$ are provided, using the three regression lines published in that reference, and a corrected estimate is provided using the values from the closest regression line. Results are stored in the file *yourdata*`.PRI`.

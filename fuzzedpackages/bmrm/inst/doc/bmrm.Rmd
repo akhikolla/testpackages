@@ -1,0 +1,89 @@
+---
+title: "`bmrm` User Guide"
+author: "Julien Prados, University of Geneva"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+bibliography: bmrm.bib
+vignette: >
+  %\VignetteIndexEntry{bmrm User Guide}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+## Table of Contents
+1. [Introduction](#introduction)
+2. [Quick start](#quick-start)
+3. [Choosing the Optimization Algorithms](#choosing-the-optimization-algorithms)
+
+
+## Introduction
+Many advanced machine learning algorithms can be cast under the same framework that minimize the empirical risk ($R_{emp}(w)$) under the control of a regularization term ($\Omega(w)$):
+$$\min_{w} J(w) := \lambda \Omega(w) + R_{emp}(w),$$
+where
+$$R_{emp} := \frac{1}{m}\sum{l(x_i,y_i,w)}, \lambda > 0.$$
+@Teo_JMLR_2010 and @Do_JMLR_2012 have proposed efficient algorithms to solve this minimization problem. The `bmrm` package implements there solution together with several adapter functions that implement popular classification, regression and structure prediction algorithms. The adapter functions take the form of loss functions $l(w,x_i,y_i)$ that compute a loss value on each training example $(x_i,y_i)$. The algorithms currenty implemented are listed in the table below:
+
+| Learning Algorithm Description      | Type                       | Loss Function                        |  Loss Value                  |
+|-------------------------------------|----------------------------|--------------------------------------|------------------------------|
+| Support Vector Machine (SVM)        | Linear Binary Classifier   | `hingeLoss()`                        | $\max(0,1-ywx)$              |
+| Maximizing ROC area                 | Linear Binary Classifier   | `rocLoss()`                          | @Teo_JMLR_2010, &sect;A.3.1  |
+| Maximizing fbeta score              | Linear Binary Classifier   | `fbetaLoss()`                        | @Teo_JMLR_2010, &sect;A.3.5  |
+| Logistic Regression                 | Linear Binary Classifier   | `logisticLoss()`                     | $\log(1+e^{-ywx})$           |
+| Least mean square regression        | Linear Regressor           | `lmsRegressionLoss()`                | $(wx-y)^2/2$                 |
+| Least absolute deviation regression | Linear Regressor           | `ladRegressionLoss()`                | $abs(wx-y)$                  |
+| $\epsilon$-insensitive regression   | Linear Regressor           | `epsilonInsensitiveRegressionLoss()` | $\max(0,abs(wx-y)-\epsilon)$ |
+| Quantile regression                 | Linear Regressor           | `quantileRegressionLoss()`           | @Teo_JMLR_2010, Table 5      |
+| Multiclass SVM                      | Structure Predictor        | `softMarginVectorLoss()`             | @Teo_JMLR_2010, Table 6      |
+| Ontology classification             | Structure Predictor        | `ontologyLoss()`                     | @Teo_JMLR_2010, &sect;A.4.2  |
+| Ordinal regression                  | Structure Predictor        | `ordinalRegressionLoss()`            | @Teo_JMLR_2010, &sect;A.3.2  |
+
+Table: List of learning algorithms implemented in `bmrm` package. \label{tab:bmrm_learning_algorithms}
+
+In addition to this implemented algorithms, the package is flexible enought to allow easy implementation of custom methods adapted to your learning problem.
+
+Regarding regularization, `bmrm` package can handle both L1 and L2 regularization of the parameter vector $w$. L1 regularization is obtained by computing the L1-norm of the parameter vector ($\Omega(w)=|w|$); while L2 regularization is computed by using the L2-norm of the parameter vector ($\Omega(w)=||w||$). In theory, L1 regularization yield better model sparsity and may be prefered. However, the implementation available for L2-regularizer is much more memory efficient and can handle non-convex loss functions. The parameter $\lambda$ control the tradeoff between model fitting and model simplicity, and should be tuned to account for overfitting.
+
+Most of the time, the loss functions are convex and all the ones implemented in the package are. However, non-convex losses can also be handle by the package if necessary. See section [Choosing the Optimization Algorithms](#choosing-the-optimization-algorithms) for more details.
+
+
+## Quick start
+
+In this quick start guide, we show how to train a multiclass-SVM on iris dataset with an intercept.
+
+```{r, echo=TRUE, results='hide'}
+    library(bmrm)
+    x <- cbind(intercept=100,data.matrix(iris[c("Sepal.Length","Sepal.Width","Petal.Length","Petal.Width")]))
+    w <- nrbm(softMarginVectorLoss(x,iris$Species))
+    table(target=iris$Species,prediction=predict(w,x))
+```
+    
+    
+## Models Intercept
+
+
+
+## Choosing the Optimization Algorithms
+`bmrm` package implement the algorithm proposed by @Do_JMLR_2012 to solve the above minimization problem and a L1-regularized verion of the algorithm as well. The methods are respectively called `nrbm()` and `nrbmL1()`. `nrbm()` is memory optimized version and can handle non-convex risk when parameter `convexRisk=FALSE`. In contrast, `nrbmL1()` can handle L1-regularization, but doesn't support non-convex losses. In addition, by default `nrbmL1()` doesn't provide memory optimization to guaranty convergence of the algorithm. Memory optimization is however possible by setting parameter `maxCP` to a value typically below 100, but in this case convergence of the algorithm is not guaranty.
+
+
+| Regularizer | Convex Loss  | Optimization method |
+|-------------|--------------|---------------------|
+| L1          | Yes          | `nrbmL1()`            |
+| L2          | Yes or No    | `nrbm()`            |
+
+Table: Recommended optimization method in the different use cases.
+
+ 
+
+## Loss function
+
+The loss functions has to accept a point estimate w (or 0) and return it with attributes `lvalue` and `gradient` set. `lvalue` contains the estimated loss value at the estimated point `w`; `gradient` contains the estimated gradient vector at the estimated point `w`.
+
+### Custom loss
+
+
+## References
+
+
+

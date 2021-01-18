@@ -1,0 +1,217 @@
+---
+title: "Getting started with ClustVarLV"
+author: "Evelyne Vigneau"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+
+vignette: >
+  %\VignetteIndexEntry{Getting started with ClustVarLV}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\usepackage[utf8]{inputenc}
+--- 
+#
+#
+
+
+# beginners with ClustVarLV
+
+The ClustVarLV package is dedicated to the CLV method for the Clustering of Variables Around Latent Variables (Vigneau & Qannari,2003; Vigneau, Chen & Qannari, 2015). 
+
+```{r}
+library(ClustVarLV)
+```
+
+
+For illustration, we consider the "apples\_sh" dataset which includes the sensory characterization and consumers preference for 12 varieties of apples (Daillant-Spinnler et al.,1996). 
+
+```{r}
+data(apples_sh)
+# 43 sensory attributes of 12 varieties of apple from southern hemisphere
+senso<-apples_sh$senso
+# Scores of liking given fy 60 consumers for each of the 12 varieties of apple
+pref<-apples_sh$pref
+```
+
+
+## Clustering of the sensory attributes 
+
+The aim is to find groups of sensory attributes correlated, or anti-correlated, to each others. Herein "directional" groups are sought.
+Each group is associated with a latent component which makes it possible to identify the underlying sensory dimensions.
+
+```{r, results="hide"}
+resclv_senso <- CLV(X = senso, method = "directional", sX = TRUE)
+# option sX=TRUE means that each attribute will be auto-scaled (standard deviation =1)
+
+# Print of the 'clv' object 
+print(resclv_senso)
+```
+
+```{r, fig.width=3, fig.height=3}
+# Dendrogram of the CLV hierarchical clustering algorithm :
+plot(resclv_senso,"dendrogram")
+# Graph of the variation of the clustering criterion
+plot(resclv_senso,"delta")
+```
+
+The graph of the variation of the clustering criterion between a partition into K clusters and a partition into (K-1) clusters (after consolidation) is useful for determining the number of clusters to be retained.
+Because the criterion clearly jumps when passing from 4 to 3 groups,  a partition into 4 groups is retained.
+
+
+```{r}
+# Summary the CLV results for a partition into 4 groups
+summary(resclv_senso,K=4)
+```
+
+The function plot\_var() allows us to describe the groups of variables into a two dimensional space obtained by Principal Components Analysis. 
+Several options are available for the choice of the axes, for adding labels, producing a plot without colours but symbols, having only one plot or a plot by groups of variables.
+
+```{r, fig.width=4, fig.height=4}
+# Representation of the group membership for a partition into 4 groups
+plot_var(resclv_senso,K=4,label=T,cex.lab=0.8)
+```
+or
+```{r, fig.width=6, fig.height=6}
+plot_var(resclv_senso,K=4,beside=T)
+```
+
+Additional functions :
+```{r, results="hide"}
+# Extract the group membership of each variable
+get_partition(resclv_senso,K=4,type="vector")
+# or 
+get_partition(resclv_senso,K=4,type="matrix")
+
+# Extract the group latent variables 
+get_comp(resclv_senso,K=4)
+```
+
+
+## Clustering of the consumers' preference data  
+
+The aim is to find segments of consumers. Herein "local" groups are sought.
+Each group latent variable represents a synthetic direction of preference.
+If, simultaneously, the aim is to explain these directions of preference by means of the sensory attributes of the products, the sensory data has to be included as external data.
+
+
+
+```{r, results="hide"}
+res.segext<- CLV(X = pref, Xr = senso, method = "local", sX=TRUE, sXr = TRUE)
+
+print(res.segext)
+```
+
+```{r, fig.width=3, fig.height=3}
+plot(res.segext,"dendrogram")
+plot(res.segext,"delta") 
+```
+
+Two or three segments may be explored. 
+To Compare the partitions into two or three segments :
+```{r}
+table(get_partition(res.segext,K=2),get_partition(res.segext,K=3))
+```
+
+Each latent variable being a linear combination of the external variables (sensory), it is possible to extract the associated loadings
+```{r}
+get_loading(res.segext,K=3)
+```
+
+
+## Using the CLV_kmeans function
+
+This procedure is less time consuming when the number of variables is large.
+The number of clusters needs to be fixed (e.g.3). 
+
+The initialization of the algorithm  can be made at random, "nstart" times :
+```{r}
+res.clvkm.rd<-CLV_kmeans(X = pref, Xr = senso, method = "local", sX=TRUE,
+                         sXr = TRUE, clust=3, nstart=100)
+```
+or the initialization can be defined by the user, for instance on the basis of the clusters obtained by cutting the CLV dendrogram to get 3 clusters
+```{r}
+res.clvkm.hc<-CLV_kmeans(X = pref, Xr = senso, method = "local", sX=TRUE,
+                        sXr = TRUE, clust=res.segext[[3]]$clusters[1,])
+```
+
+It is possible to compare the partitions according to the procedure used :
+```{r}
+table(get_partition(res.segext,K=3),get_partition(res.clvkm.hc,K=3)) 
+```
+In this case, the CLV solution is the same that the CLV_kmeans solution with an initialization based on the partition obtained by cutting the dendrogram.
+
+```{r}
+table(get_partition(res.segext,K=3),get_partition(res.clvkm.rd,K=3)) 
+```
+Partitions are very close.
+
+
+## Clustering wile setting aside atypical or noisy variables
+
+This functionnality is available with the CLV_kmeans procedure. You can refer to Vigneau, Qannari, Navez & Cottet (2016) and Vigneau & Chen (2015) for theoretical details.
+
+By considering the sensory data, applying (as shown below) the strategy "kplusone" makes it possible to identify and put aside (in a group "G0") a spurious attribute.  
+```{r}
+clvkm_senso_kpone<-CLV_kmeans(X = senso, method = "directional",sX=TRUE, clust=4, strategy="kplusone",rho=0.5)
+get_partition(clvkm_senso_kpone,type="matrix")
+```
+
+
+For the consumers liking data, by varying the parameter "rho" associated with the strategy "kplusone" , a more or less large proportion of consumers will be set aside : 
+```{r}
+sizG0<-NULL
+for (r in seq(0,1,0.1)) {
+  res<-CLV_kmeans(X = pref, method = "local", sX=TRUE, clust=3, nstart=20, strategy="kplusone",rho=r)
+  sizG0<-c(sizG0,sum(get_partition(res)==0))
+}
+plot(seq(0,1,0.1),sizG0,type="b",xlab="rho",ylab="# var in noise cluster")
+```
+
+By choosing rho=0.4, 8 out 60 consumers are assigned to the noise cluster. They are highlighted in gray when using the "plot_var" function.
+
+```{r}
+plot_var(CLV_kmeans(X = pref, method = "local", sX=TRUE, clust=3, nstart=20, strategy="kplusone",rho=0.4))
+```
+
+
+## Warning : Changes with respect to the versions 1.1, 1.2 and 1.3 of the ClustVarLV package
+
+The changes are illustrated on the basis of the examples given above.
+
+------------------------------------------------------------------------------------------------
+from version 1.4.0                                   for earlier versions
+--------------------------------------------         --------------------------------------------  
+resclv\_senso <- CLV(X = senso,method =              resclv\_senso <- CLV(X = senso,method=1,  
+"directional", sX = TRUE)                                           sX = TRUE, graph=TRUE)
+
+plot(resclv\_senso,"dendrogram");        
+      plot(resclv\_senso,"delta")	                                                                           
+
+summary(resclv\_senso,K=4)                           descript\_gp(resclv\_senso,X=senso,K=4)
+
+plot\_var(resclv\_senso,K=4)                         gpmb\_on\_pc(resclv\_senso,X=senso,K=4)
+
+get\_partition(resclv\_senso,K=4,type="vector")	     resclv\_senso[[4]]$clusters[2,]
+
+get\_comp(resclv\_senso,K=4)	                       resclv\_senso[[4]]$comp
+
+get\_loading(res.segext,K=3)	                       res.segext[[3]]$loading
+
+res.clvkm.rd<-CLV\_kmeans(X = pref, Xr = senso,      res.clvkm.rd<-CLV\_kmeans(X = pref, Xr = senso, 
+     method = "local", sX=TRUE, sXr = TRUE,                         method = 2, sX=TRUE, sXr = TRUE, 
+     clust=3, nstart=100)	                                           init=3, nstart=100)
+--------------------------------------------         ----------------------------------------------
+
+#
+#
+#
+## References
+
+Daillant-Spinnler B., MacFie H.J.H, Beyts P., Hedderley D. (1996). Relationships"Relationships between perceived sensory properties and major preference directions of 12 varieties of apples from the southern hemisphere. _Food Quality and Preference_, 7(2), 113-126.
+
+Vigneau E., Qannari E.M. (2003). Clustering of variables around latents components. _Comm. Stat_, 32(4), 1131-1150.
+
+Vigneau E., Chen M., Qannari E.M. (2015). ClustVarLV:  An R Package for the clustering of Variables around Latent Variables. _The R Journal_, 7(2), 134-148.
+
+Vigneau E., Qannari E. M., Navez B., Cottet V. (2016). Segmentation of consumers in preference studies while setting aside atypical or irrelevant consumers. _Food Quality and Preference_, 47, 54-63.
+
+Vigneau E., Chen M. (2016). Dimensionality reduction by clustering of variables while setting aside atypical variables. _Electronic Journal of Applied Statistical Analysis_, 9(1), 134-153

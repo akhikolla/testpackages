@@ -1,0 +1,1533 @@
+\documentclass[nojss,shortnames,article]{jss}
+
+%\VignetteIndexEntry{LocalControl-jss-2018}
+%\VignetteDepends{colorspace, RColorBrewer, TeachingDemos, data.table, ggplot2, gridExtra, rpart, rpart.plot, xtable}
+%% -- LaTeX packages and custom commands ---------------------------------------
+
+%% recommended packages
+\usepackage{thumbpdf, lmodern}
+
+%% another package (only for this demo article)
+\usepackage{framed}
+\usepackage{amsmath}
+
+%% new custom commands
+\newcommand{\class}[1]{`\code{#1}'}
+\newcommand{\fct}[1]{\code{#1()}}
+
+%% For Sweave-based articles about R packages:
+%% need no \usepackage{Sweave}
+\SweaveOpts{engine=R, eps=FALSE, keep.source = TRUE}
+<<preliminaries, echo=FALSE, results=hide>>=
+options(prompt = "R> ", continue = "+  ", width = 70, useFancyQuotes = FALSE)
+@
+
+%% -- Article metainformation (author, title, ...) -----------------------------
+
+%% - \author{} with primary affiliation
+%% - \Plainauthor{} without affiliations
+%% - Separate authors by \And or \AND (in \author) or by comma (in \Plainauthor).
+%% - \AND starts a new line, \And does not.
+\author{Nicolas R. Lauve\\University of New Mexico \\Department of Computer Science \And
+        Stuart J. Nelson\\University of New Mexico \\Health Sciences Center \AND
+        S. Stanley Young\\CGStat, LLC \And
+        Robert L. Obenchain\\Risk Benefit Statistics, LLC \AND
+        Christophe G. Lambert\\University of New Mexico Health Sciences Center \\Corresponding Author}
+
+\Plainauthor{N. R. Lauve, S. J. Nelson, S. S. Young, R. L. Obenchain, C.G. Lambert}
+
+%% - \title{} in title case
+%% - \Plaintitle{} without LaTeX markup (if any)
+%% - \Shorttitle{} with LaTeX markup (if any), used as running title
+\title{\pkg{LocalControl}: An \proglang{R} Package for Comparative Safety and Effectiveness Research}
+\Plaintitle{LocalControl: An R Package for Comparative Safety and Effectiveness Research}
+\Shorttitle{\pkg{LocalControl}: An \proglang{R} package for CSER}
+
+%% - \Abstract{} almost as usual
+\Abstract{The \pkg{LocalControl} \proglang{R} package implements novel approaches to address biases and confounding when comparing treatments or exposures in observational studies of outcomes. While designed and appropriate for use in comparative safety and effectiveness research involving medicine and the life sciences, the package can be used in other situations involving outcomes with multiple confounders. \pkg{LocalControl} is an open-source tool for researchers whose aim is to generate high quality evidence using observational data. The package implements a family of methods for non-parametric bias correction when comparing treatments in observational studies, including survival analysis settings, where competing risks and/or censoring may be present. The approach extends to bias-corrected personalized predictions of treatment outcome differences, and analysis of heterogeneity of treatment effect-sizes across patient subgroups.
+}
+%% - \Keywords{} with LaTeX markup, at least one required
+%% - \Plainkeywords{} without LaTeX markup (if necessary)
+%% - Should be comma-separated and in sentence case.
+\Keywords{bias, \proglang{R}, survival, Kaplan-Meier, competing risks}
+\Plainkeywords{bias, R, survival, Kaplan-Meier, competing risks}
+
+%% - \Address{} of at least one author
+%% - May contain multiple affiliations for each author
+%%   (in extra lines, separated by \emph{and}\\).
+%% - May contain multiple authors for the same affiliation
+%%   (in the same first line, separated by comma).
+
+\Address{
+  Nicolas R. Lauve\\
+  University of New Mexico\\
+  Department of Computer Science\\
+  MSC01-1130\\
+  1 University of New Mexico\\
+  Albuquerque, NM 87131, USA\\
+  E-mail: \email{nlauve[at]unm.edu}\\
+
+  Stuart J. Nelson\\
+  University of New Mexico\\
+  Health Sciences Library and Informatics Center\\
+  Division of Translational Informatics\\
+  Department of Internal Medicine\\
+  University of New Mexico Health Sciences Center\\
+  MSC09-5100\\
+  1 University of New Mexico\\
+  Albuquerque, NM 87131, USA\\
+  E-mail: \email{stnelson[at]salud.unm.edu}\\
+
+  S. Stanley Young\\
+  CGStat, LLC\\
+  Raleigh, NC, USA\\
+  E-mail: \email{genetree[at]bellsouth.net}\\
+
+  Robert L. Obenchain\\
+  Risk Benefit Statistics, LLC\\
+  Indianapolis, IN, USA\\
+  E-mail: \email{wizbob[at]att.net}\\
+
+  Christophe G. Lambert\\
+  Center for Global Health\\
+  Division of Translational Informatics\\
+  Department of Internal Medicine\\
+  University of New Mexico Health Sciences Center\\
+  MSC10-5550\\
+  1 University of New Mexico\\
+  Albuquerque, NM 87131, USA\\
+  E-mail: \email{cglambert[at]unm.edu}\\
+  URL: \url{http://christophelambert.org}
+}
+<<init_libs_vars_calcs, echo = F, eval = T>>=
+# toggle long computations for fast pdf building
+doCalcs = F
+
+# load packages
+if(!require("data.table")){
+   install.packages("data.table")
+   library("data.table")
+}
+if(!require("colorspace")){
+   install.packages("colorspace")
+   library("colorspace")
+}
+if(!require("RColorBrewer")){
+   install.packages("RColorBrewer")
+   library("RColorBrewer")
+}
+if(!require("gridExtra")){
+   install.packages("gridExtra")
+   library("gridExtra")
+}
+if(!require("ggplot2")){
+   install.packages("ggplot2")
+   library("ggplot2")
+}
+if(!require("rpart")){
+   install.packages("rpart")
+   library("rpart")
+}
+if(!require("rpart.plot")){
+   install.packages("rpart.plot")
+   library("rpart.plot")
+}
+if(!require("LocalControl")){
+   install.packages("LocalControl")
+   library("LocalControl")
+}
+if(!require("xtable")){
+   install.packages("xtable")
+   library("xtable")
+}
+if(!require("TeachingDemos")){
+   install.packages("TeachingDemos")
+   library("TeachingDemos")
+}
+
+# frequently used variables
+data(lindner)
+all7Vars <- c("stent", "height", "female", "diabetic", "acutemi", "ejecfrac", "ves1proc")
+numClusters <- c(1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50)
+t0Red = "#E41A1C"
+t0Fill = rgb(red = 228, green = 26, blue = 28, alpha = 127, maxColorValue = 255)
+t1Blue = "#377EB8"
+t1Fill = rgb(red = 55, green = 126, blue = 184, alpha = 127, maxColorValue = 255)
+t2Green = "#4DAF4A"
+
+if (doCalcs) {
+  linResults = LocalControlClassic( data = lindner,
+                                    clusterVars = all7Vars,
+                                    treatmentColName = "abcix",
+                                    outcomeColName = "cardbill",
+                                    clusterCounts = numClusters)
+  linRes = LocalControl(data = lindner,
+                        clusterVars = all7Vars,
+                        treatmentColName = "abcix",
+                        outcomeColName = "cardbill",
+                        treatmentCode = 1)
+  
+  linSults = LocalControl(data = lindner,
+                           treatmentColName = "abcix",
+                           outcomeColName = "cardbill", treatmentCode = 1,
+                           clusterVars = all7Vars, radDecayRate = .95, radMinFract = .01  )
+  
+  sdata = lindner
+  
+  linSummary = summary(linSults)
+  linSummary$male_stent     = 0
+  linSummary$female_stent   = 0
+  linSummary$male_without   = 0
+  linSummary$female_without = 0
+  linSummary$maleAverage    = 0
+  linSummary$femaleAverage  = 0
+  linSummary$medianLTD      = 0
+  
+  stentMales   = which(sdata$female == 0 & sdata$stent == 1)
+  stentFemales = which(sdata$female == 1 & sdata$stent == 1)
+  nosMales     = which(sdata$female == 0 & sdata$stent == 0)
+  nosFemales   = which(sdata$female == 1 & sdata$stent == 0)
+  allMen       = which(sdata$female == 0)
+  allWomen     = which(sdata$female == 1)
+  
+  for (i in 1:nrow(linSummary)) {
+    linSummary$male_stent[i]     = mean(linSults$ltds[stentMales,i], na.rm = T)
+    linSummary$female_stent[i]   = mean(linSults$ltds[stentFemales,i], na.rm = T)
+    linSummary$male_without[i]   = mean(linSults$ltds[nosMales,i], na.rm = T)
+    linSummary$female_without[i] = mean(linSults$ltds[nosFemales,i], na.rm = T)
+    linSummary$maleAverage[i]    = mean(linSults$ltds[allMen,i], na.rm = T)
+    linSummary$femaleAverage[i]  = mean(linSults$ltds[allWomen,i], na.rm = T)
+    linSummary$medianLTD[i]      = median(linSults$ltds[,i], na.rm = T)
+  }
+  
+  linRad33 = linSults$ltds$rad_33
+  
+  saveRDS(linRes, 'calcs/linRes.rds')
+  saveRDS(linSummary, 'calcs/linSummary.rds')
+  saveRDS(linRad33, 'calcs/linRad33.rds')
+  
+  lindnerResults = list()
+  ltdds = list()
+  for (cc in numClusters) {
+      objName = paste0("UPSnnltd", cc)
+      nnObj = linResults[[objName]]
+      ltdds[[objName]] = nnObj$pbindif[nnObj$nnhbindf[,1]]
+  }
+
+  lindnerResults[["summary"]] = linResults[["summary"]]
+  lindnerResults[["ltdds"]] = ltdds
+  lindnerResults[["yname"]] = linResults[["UPSaccum.pars"]][,"yvar"]
+  saveRDS(lindnerResults, 'calcs/lindnerResults.rds')
+} else{
+  lindnerResults = readRDS('calcs/lindnerResults.rds')
+  linSummary = readRDS('calcs/linSummary.rds')
+  linRad33 = readRDS('calcs/linRad33.rds')
+  linRes = readRDS('calcs/linRes.rds')
+}
+
+set.seed(253748)
+N = 10000
+weight = c(rnorm(N/2, 75, 15), rnorm(N/2, 75, 15))
+dosage = weight + c(rnorm(N/2, 0, 15), rnorm(N/2, 0,  5))
+trmt = c(rep(1, N/2), rep(0, N/2))
+ADR = abs(weight - dosage)
+noise1 = rnorm(n = N, 0, 1)
+noise2 = rnorm(n = N, 0, 1)
+simData = data.frame(weight, trmt, dosage, ADR, noise1, noise2)
+
+if (doCalcs) {
+  xSults = LocalControl(data = simData,
+                        treatmentColName = "trmt",
+                        treatmentCode = 1,
+                        outcomeColName = "ADR",
+                        clusterVars = c("weight", "dosage"),
+                        radMinFract = .01,
+                        radDecayRate = 0.95,
+                        numThreads = 4)
+  
+  xSultsT1 = xSults$outcomes$T1[,"rad_91"]
+  xSultsT0 = xSults$outcomes$T0[,"rad_91"]
+  saveRDS(xSultsT1, 'calcs/xSultsT1.rds')
+  saveRDS(xSultsT0, 'calcs/xSultsT0.rds')
+
+} else{
+  xSultsT1 = readRDS( 'calcs/xSultsT1.rds')
+  xSultsT0 = readRDS( 'calcs/xSultsT0.rds')
+}
+
+if (doCalcs) {
+  noisyVars = c("weight", "dosage", "noise1", "noise2")
+  noisySults =  LocalControl( simData,
+                              treatmentCode = 1,
+                              treatmentColName = "trmt",
+                              outcomeColName = "ADR",
+                              clusterVars = noisyVars,
+                              radMinFract = .01,
+                              radDecayRate = 0.95 , numThreads = 4)
+  fixedRads = summary(noisySults)$radius
+  varCombinations = expand.grid(0:1, 0:1, 0:1, 0:1)
+  ltext = apply(X = varCombinations, MARGIN = 1,
+                FUN = function(x) paste0(x, collapse = ''))
+  ltdVecs = list()
+  ltdVecs[[1]] = rep(summary(noisySults)$ltd[1], nrow(summary(noisySults)))
+  for (i in 2:16) {
+    varSS = noisyVars[which(varCombinations[i,] == 1)]
+    scaleFactor = sqrt(length(varSS)) / sqrt(length(noisyVars))
+    scaleRads = fixedRads * scaleFactor
+    sults = LocalControl( simData,
+                          treatmentCode = 1,
+                          treatmentColName = "trmt",
+                          outcomeColName = "ADR",
+                          clusterVars = varSS,
+                          radiusLevels = scaleRads, numThreads = 4)
+    ltdVecs[[i]] = summary(sults)$ltd
+  }
+  ltdFrame = data.frame(ltdVecs)
+  names(ltdFrame) = ltext
+  saveRDS(object = varCombinations, file = "calcs/ffvc.rds")
+  resultSummary = summary(sults)
+  saveRDS(object = resultSummary, file = "calcs/resultSummary.rds")
+  saveRDS(object = ltdVecs, file = "calcs/ffltdv.rds")
+  saveRDS(object = ltdFrame, file = "calcs/ffltdf.rds")
+} else{
+  varCombinations = readRDS(file = "calcs/ffvc.rds")
+  resultSummary = readRDS(file = "calcs/resultSummary.rds")
+  ltdVecs = readRDS(file = "calcs/ffltdv.rds")
+  ltdFrame = readRDS(file = "calcs/ffltdf.rds")
+}
+
+if (doCalcs) {
+  linCI = LocalControlNearestNeighborsConfidence(data = lindner,
+                                           clusterVars = all7Vars,
+                                           treatmentColName = "abcix",
+                                           outcomeColName = "cardbill",
+                                           treatmentCode = 1,
+                                           nBootstrap = 250)
+  saveRDS(object = linCI, file = "calcs/linCI.rds")
+} else{
+  linCI = readRDS(file = "calcs/linCI.rds")
+}
+
+# generate survival simulation
+weibullSim = function(N, lambda, rho, betaage, betabmi) {
+  bmi = rnorm(N, mean = 26, sd = 4)       
+  age = runif(N) * 47 + 18                  
+  pbmi = (bmi - min(bmi)) / (max(bmi) - min(bmi)) * 0.8 + 0.1
+  page = (age - min(age)) / (max(age) - min(age)) * 0.8 + 0.1
+  drug = 1 - rbinom(N, 1, (pbmi + page) / 2) 
+  et = exp(bmi * betabmi + age * betaage)
+
+  Tlat = (-log(runif(n = N)) / (lambda * et))^(1 / rho)
+  C = runif(N) * 30
+  time = pmin(Tlat, C)                       
+  status = as.numeric(Tlat <= C)
+  data.frame(id = 1:N, drug, age, bmi, time, status)
+}
+set.seed(24563568)
+survSimData = weibullSim(10000, 1e-10, 2.6, log(1.2), log(1.45))
+
+if (doCalcs) {
+  sSults = LocalControl(survSimData, treatmentColName = "drug", timeColName = "time", outcomeType = "survival",
+                                    outcomeColName = "status",treatmentCode = 1, clusterVars = c("age", "bmi"),
+                                    radMinFract = .01)
+
+  sSimFTs = sSults$Failtimes
+  sSimT1R1 = sSults$KM$T1$rad_1
+  sSimT0R1 = sSults$KM$T0$rad_1
+  sSimT1R21 = sSults$KM$T1$rad_21
+  sSimT0R21 = sSults$KM$T0$rad_21
+  
+  saveRDS(object = sSimFTs, file = "calcs/sSimFTs.rds")
+  saveRDS(object = sSimT1R1, file = "calcs/sSimT1R1.rds")
+  saveRDS(object = sSimT0R1, file = "calcs/sSimT0R1.rds")
+  saveRDS(object = sSimT1R21, file = "calcs/sSimT1R21.rds")
+  saveRDS(object = sSimT0R21, file = "calcs/sSimT0R21.rds")
+
+} else{
+  sSimFTs = readRDS(file = "calcs/sSimFTs.rds")
+  sSimT1R1 = readRDS(file = "calcs/sSimT1R1.rds")
+  sSimT0R1 = readRDS(file = "calcs/sSimT0R1.rds")
+  sSimT1R21 = readRDS(file = "calcs/sSimT1R21.rds")
+  sSimT0R21 = readRDS(file = "calcs/sSimT0R21.rds")
+}
+
+data(framingham)
+shadeVect = c("Nonsmoker" = "#80000055", "Smoker" = "#0000FF55")
+colVect = c("Smoker" = "red", "Nonsmoker" = "blue")
+ltyVect = c("Hypertension" = "dashed", "Death" = "solid")
+
+if (doCalcs) {
+  FHSResults = LocalControl( data = framingham, outcomeType = "survival",
+                                        treatmentColName = "cursmoke",
+                                        treatmentCode = 1,
+                                        timeColName = "time_outcome",
+                                        outcomeColName = "outcome",
+                                        clusterVars = c("female", "totchol", "age", "bmi", "BPVar", "heartrte", "glucose"))
+  
+  FHSConfidence = LocalControlCompetingRisksConfidence(LCCompRisk = FHSResults, confLevel = "90%")
+  
+    
+  getLines2Plot <- function(sult, conf, rad, fc, tr) {
+    outFrame = data.frame(TIMES = sult$Failtimes,
+                          UPPER = conf[[tr]][[fc]]$UPPER_CONF[,rad],
+                          LOWER = conf[[tr]][[fc]]$LOWER_CONF[,rad],
+                          CIF = sult$CIF[[fc]][[tr]][,rad])
+    outFrame
+  }
+  
+  FHSPlotLines = list()
+  for (radLim in c("rad_1","rad_11")) {
+      plotLines = list()
+      
+      t1lines2plot = getLines2Plot(FHSResults, FHSConfidence, radLim, "Failcode_1", "T1")
+      t1lines2plot$CLASS = "Smoker"
+      t1lines2plot$FAIL = "Hypertension"
+      t1lines2plot$NG = paste(t1lines2plot$CLASS, t1lines2plot$FAIL)
+      plotLines[["t1HT"]] = t1lines2plot
+      
+      t0lines2plot = getLines2Plot(FHSResults, FHSConfidence, radLim, "Failcode_1", "T0") 
+      t0lines2plot$CLASS = "Nonsmoker"
+      t0lines2plot$FAIL = "Hypertension"
+      t0lines2plot$NG = paste(t0lines2plot$CLASS, t0lines2plot$FAIL)
+      plotLines[["t0HT"]] = t0lines2plot
+      
+      t1DeathLines = getLines2Plot(FHSResults, FHSConfidence, radLim, "Failcode_2", "T1")
+      t1DeathLines$CLASS = "Smoker"
+      t1DeathLines$FAIL = "Death"
+      t1DeathLines$NG = paste(t1DeathLines$CLASS, t1DeathLines$FAIL)
+      plotLines[["t1Death"]] = t1DeathLines
+      
+      t0DeathLines = getLines2Plot(FHSResults, FHSConfidence, radLim, "Failcode_2", "T0")
+      t0DeathLines$CLASS = "Nonsmoker"
+      t0DeathLines$FAIL = "Death"
+      t0DeathLines$NG = paste(t0DeathLines$CLASS, t0DeathLines$FAIL)
+      plotLines[["t0Death"]] = t0DeathLines
+      
+      FHSPlotLines[[radLim]] = plotLines
+  }
+  
+  FHSSummary = summary(FHSResults)
+  saveRDS(object = FHSSummary, file = "calcs/FHSSummary.rds")
+  saveRDS(object = FHSPlotLines, file = "calcs/FHSPlotLines.rds")
+  
+} else{
+  FHSPlotLines = readRDS(file = "calcs/FHSPlotLines.rds") 
+  FHSSummary = readRDS(file = "calcs/FHSSummary.rds")
+
+}
+
+
+avgDif <- function(uncorrected, corrected) {
+  return(sum(uncorrected - corrected, na.rm = TRUE)/
+        length(which(!is.na(corrected))))
+}
+
+setColAlpha = function(col, intensity) {
+  iint = 1 - as.double(intensity)
+  cc = col2rgb(col)/255
+  nc = rgb(red = cc[1], green = cc[2], blue = cc[3], alpha = iint)
+  nc
+}
+if (doCalcs) {
+  
+  lind = data.table(lindner)
+  lindavgs = lind[, .(mean(cardbill)), by = .(abcix)]
+  
+  lindLC = LocalControlClassic( data = lindner,  clusterVars =  c("stent", "female", "acutemi"),
+                                treatmentColName = "abcix", outcomeColName = "cardbill",  clusterCounts = c(30))
+  
+  lind$c = lindLC$UPSnnltd30$nnhbindf
+  localOutcomes = data.table(lindLC$UPSnnltd30$binmean)
+  localOutcomes$LTDobs = localOutcomes$`abcix = 1` - localOutcomes$`abcix = 0`
+
+  setkey(lind, c)        
+  setkey(localOutcomes, BIN) 
+  lind = lind[localOutcomes, nomatch = NA] 
+  
+  
+  set.seed(1772)
+  
+  randomData = lind # copy for randomizing 
+  randomLTDs = data.table(cluster = 1:30, artltd = rep(0.0, 30)) #aggregate df
+  setkey(randomLTDs, cluster) 
+  for (i in 1:100) {
+    randomData[, "c"] = sample(x = lind$c, replace = F)           # random 2000 clusters w/ same sizes
+    randomAverages = randomData[, .(mean(cardbill)), by = .(abcix, c)]   # avg outcome per trt in cluster
+    randomAverages[abcix == 0, "V1"] = -randomAverages[ abcix == 0, "V1"]   # flip sign on t0s before sum 
+    rltds = randomAverages[, .(sum(V1)), by = .(c)]                     # (t1 - t0) per cluster
+    setkey(rltds, c)
+    randomLTDs = randomLTDs[ rltds, nomatch = NA]
+  }
+
+  ccc = lind
+  setkey(ccc, c)         # keys are used to join data.tables
+  setkey(randomLTDs, cluster) # next line joins randomized cluster values back with main table based on cluster value.
+  ccc = ccc[randomLTDs, nomatch = NA]            # set artltd value for each patient based on original clustering 
+  ccc[ which(is.na(ccc$LTDobs)), "artltd"] = NA  # remove same number of noninformative clusters/patients 
+  
+  # above uses means (11 values for 100 resamplings)
+  # this uses all 1100, rather than the average
+  randomLTDs[which(is.na(localOutcomes$LTDobs)), 3:ncol(randomLTDs)] = NA
+  allrands = as.vector(as.matrix(randomLTDs[, 3:ncol(randomLTDs)]))
+
+  saveRDS(object = allrands, file = "calcs/allRands.rds")
+  saveRDS(object = ccc, file = "calcs/ccc.rds")
+  saveRDS(object = localOutcomes, file = "calcs/localoutcomes.rds")
+} else{
+  ccc = readRDS(file = "calcs/ccc.rds") 
+  allrands = readRDS(file = "calcs/allRands.rds") 
+  localOutcomes = readRDS(file = "calcs/localoutcomes.rds")
+}
+
+if (doCalcs) {
+
+  dflindner = lindner
+  dflindner$c = lindLC$UPSnnltd30$nnhbindf$HclusBin
+  dflindner$t = dflindner$abcix
+  dflindner$y = dflindner$cardbill
+  #
+# [2] Compute observed Local Treatment Differences (within clusters) = 
+#                      Local Differences in Mean y-outcomes between Treatment Groups.
+# 
+
+dfLTD <- do.call( rbind, lapply( split(dflindner, dflindner$c),
+		function(x) {
+			n1 = sum(x$t)
+			n0 = length(x$t) - n1
+			if (n1 == 0 || n0 == 0) LTD = NA else LTD = sum(x$y * x$t)/n1 - sum(x$y * (1 - x$t))/n0
+			data.frame(c = x$c[1], LTD = LTD, w = length(x$c))
+		} ) )
+
+# Create data.frame to hold full replicates of Local Treatment Effect-Size Estimates (many within-cluster ties)
+dfLreps = as.data.frame(cbind(dflindner$c, dflindner$y))
+colnames(dfLreps) = c("c","LTD")   # Here, Local Treatment Effect-Size Estimates are LTDs...
+for (i in 1:length(dfLreps[,1])) {
+	dfLreps$LTD[i] = dfLTD$LTD[dflindner$c[i]]  # insert observed LTD values
+	}
+dfLTDobs = dfLreps  # Save Observed LTD Distribution from lindner data...
+#hist(dfLTDobs[,2])
+
+#############################################
+
+# Calculate random permutation (NULL) distribution of LTDs for N full Replications of given Clusters / Subgroups...
+N = 100           # Number of Random Permutation Replications in LC Confirm Phase Calculations...
+nobs = nrow(lindner)
+set.seed(12345)   # Set seed for Monte Carlo pseudo random sequence...
+
+for (i in 1:N) {
+       crand <- as.vector(rnorm(nobs))      # next vector of Random numbers...
+       srand <- dflindner$c[order(crand)]		# corresponding vector of Permuted cluster numbers
+	   pdf <- as.data.frame(cbind(srand, dflindner$y, dflindner$t))  # pdf = PERMUTED, 3 variable data.frame
+	   colnames(pdf) <- c("c","y","t")
+	   pdfc <- do.call( rbind, lapply( split(pdf, pdf$c),
+		   function(x) {
+			   n1 = sum(x$t)
+			   n0 = length(x$t) - n1
+			   if (n1 == 0 || n0 == 0) LTD = NA else LTD = sum(x$y * x$t)/n1 - sum(x$y * (1 - x$t))/n0
+			   data.frame(c = x$c[1], LTD = LTD, w = length(x$c))
+		   } ) )           
+       colnames(pdfc) <- c("c","LTD","w")
+	   
+	   for (j in 1:length(dfLreps[,1])) {
+	          dfLreps$LTD[j] = pdfc$LTD[dflindner$c[j]]  # insert permuted LTD values
+			  }
+	   if ( i == 1 ) dfconfirm = dfLreps else dfconfirm = rbind(dfconfirm, dfLreps)   
+	   }
+
+#str(dfconfirm)  # full random permutation distribution of NULL LTD estimates...
+permLTDs = dfconfirm$LTD
+
+ksobserved = ks.test(dfLTDobs$LTD, dfconfirm$LTD)
+# Warning message:
+# In ks.test(dfLTDobs$LTD, dfconfirm$LTD) :
+#   p-value will be approximate in the presence of ties
+#length(dfLTDobs$LTD)		# 996
+#length(dfconfirm$LTD)		# 99600
+#ksobserved             # Observed KS D = 0.42208
+#ksobserved$p.value	    # = 0
+
+#####################################################################
+
+NKS = 1000        
+set.seed(54321)    
+ksDperm <- as.vector(rnorm(NKS))
+for (i in 1:NKS) {
+       crand <- as.vector(rnorm(nobs))      
+       srand <- dflindner$c[order(crand)]	
+	   pdf <- as.data.frame(cbind(srand, dflindner$y, dflindner$t))  
+	   colnames(pdf) <- c("c","y","t")
+	   pdfc <- do.call( rbind, lapply( split(pdf, pdf$c),
+	   	   function(x) {
+			   n1 = sum(x$t)
+			   n0 = length(x$t) - n1
+			   if(n1 == 0 || n0 == 0) LTD = NA else LTD = sum(x$y * x$t)/n1 - sum(x$y * (1 - x$t))/n0
+			   data.frame(c = x$c[1], LTD = LTD, w = length(x$c))
+		   } ) )       
+       colnames(pdfc) <- c("c","LTD","w")
+	   
+	   for (j in 1:length(dfLreps[,1])) {
+	          dfLreps$LTD[j] = pdfc$LTD[dflindner$c[j]]  # insert permuted LTD values
+			  }
+	   ksobserved <- ks.test(dfLreps$LTD, dfconfirm$LTD)	  
+	   ksDperm[i] <- ksobserved$statistic  
+	   }
+	   
+#ksDperm[order(ksDperm)]    # Max of 100 NULL KS D stats = 0.4122992
+
+}
+@
+
+\begin{document}
+\SweaveOpts{concordance=FALSE}
+
+%% -- Introduction -------------------------------------------------------------
+
+%% - In principle "as usual".
+%% - But should typically have some discussion of both _software_ and _methods_.
+%% - Use \proglang{}, \pkg{}, and \code{} markup throughout the manuscript.
+%% - If such markup is in (sub)section titles, a plain text version has to be
+%%   added as well.
+%% - All software mentioned should be properly \cite-d.
+%% - All abbreviations should be introduced.
+%% - Unless the expansions of abbreviations are proper names (like "Journal
+%%   of Statistical Software" above) they should be in sentence case (like
+%%   "generalized linear models" below).
+
+\clearpage
+\section{Introduction}\label{sec:intro}
+Envision a day when high-quality comparative safety and effectiveness research (CSER) is performed, scrutinized, and updated within a culture of reproducibility, then deployed at point-of-care to improve patient outcomes. While the gold standard of evidence is considered to be randomized controlled trials (RCTs), such trials have limitations. RCTs can approach many questions, using randomization and subject selection criteria to reduce the likelihood of confounders affecting study results, but such studies are expensive, limited in generalizability by their exclusions, and provide little information about long-term outcomes due to short duration. The advent of large observational data sets has created new opportunities to generate comparative safety and effectiveness evidence that would not be feasible with randomized trials. While biases and confounders can create major challenges in making robust treatment comparisons with observational data, we sugguest ways to mitigate these issues.
+
+The traditional approach to addressing biases in observational studies is to model confounder effects as covariates in linear models. While widely accepted and useful, regression methods have difficulty modeling nonlinearity, have convergence problems when analyzing correlated covariates, and are problematic when multiple mechanisms drive the outcome. Propensity scoring approaches have gained wide use in correcting treatment biases \citep{rosenbaum1983, rosenbaum1985}. On average, they outperform alternative methods, including regression in large scale patient records analyses \citep{stang2010, ryan2012}. A weakness of propensity scoring is that there is no assurance of patient similarity on confounders. Patients being compared simply have similar probability of treatment \citep{iacus2012}. Thus, if an elderly female has the same propensity for treatment as young male, they might be grouped for comparison, even though this makes very little biological sense.
+
+Often it is more appropriate in observational studies to employ survival analysis to model time to events of interest \citep{kaplanmeier}. While visually intuitive, Kaplan-Meier curves do not address biases. Methods that do, include linear survival models like Cox regression \citep{cox1972}, and competing risks regression \citep{gray1988, fine1999}. In recent years, propensity scoring has also been extended to a survival framework and evaluated \citep{gayat2012, austin2014_1, austin2014_2}. However, parametric methods such as Cox and competing risk regression suffer from the limitations of linear models, as well as making the assumption of proportional hazards; propensity scoring has the same weakness in survival settings as those described earlier.
+
+The Local Control (LC) method \citep{obenchain2005, obenchain2010, obenchain2013, lopiano2014} provides a powerful and conceptually intuitive approach to adjustment for biases and confounders in large-scale observational data. LC can overcome the limitations above. It enables the non-parametric estimation of overall treatment effects and provides a framework for investigating heterogeneity of treatment effects across subpopulations. LC has been successfully used to compare treatments for major depressive disorder \citep{obenchain2013, faries2013}, and to evaluate the effect of air quality on mortality \citep{young2015, young2016}. However, until this publication, LC methodology did not support survival analysis.
+
+This article introduces the \proglang{R} \citep{R} package \pkg{LocalControl} which implements novel approaches to address biases and confounding when comparing treatments or exposures in observational studies. The key idea behind Local Control is to form many homogeneous clusters of observations within which one can compare alternate treatments, statistically correcting for measured biases and confounders, analogous to a randomized block design within an RCT \citep{gosset1911, fisher1926, addelman1969}. The \pkg{LocalControl} package implements:
+\begin{itemize}
+  \item{\fct{LocalControlClassic}: }{The Local Control approach was originally introduced by Robert Obenchain. \code{LocalControlClassic} compares treatment outcomes in observational data, employing hierarchical clustering on confounders to reveal and correct for treatment selection bias. Local treatment effect-size estimates from individual clusters are bias-corrected estimates of the difference in expected outcomes between two treatments. This function provides no support for survival analysis.}
+  \item{\fct{LocalControl}: }{New forms of Local Control adjustment for observational studies, including those modeled through survival analyses are introduced here. Rather than using hierarchical clustering without replacement, these new adjustments match observations with all neighboring points that fall within a radius of similarity in covariate space. Selecting neighbors with replacement means that some observations may reside within multiple clusters. With \fct{LocalControl}, each observation becomes the centroid of its own neighborhood of similar observations, maximizing informative samples. The outcomeType parameter allows us to extend this methodology to enable bias-corrected comparison of treatments in survival/time-to-event settings, including support for competing risks analysis.}
+\end{itemize}
+Local Control enables the comparison of outcomes for two different treatments. The variants of Local Control included with this package can analyze both real-valued outcomes, as well as time-to-event data. The survival-based Local Control can create bias-corrected Kaplan-Meier curves, as well as competing risk estimates of cumulative incidence, along with corresponding estimates of the confidence intervals. In the remainder of this paper, the methodology behind the functions listed above is described, along with one or more examples for each. The classic Local Control, developed by Obenchain is described in Section \ref{sec:classicLC}. In Section \ref{sec:nnLC} extensions are introduced which are necessary to make the transition from the classic implementation, to the nearest-neighbor variant. Section \ref{sec:survLC} describes how Local Control is adapted to support survival-based treatment comparisons. Section \ref{sec:FHS} contains a detailed case study using Local Control to examine the effects of smoking on the competing risks of death and hypertension in patients from the Framingham Heart Study. Section \ref{sec:plp} discusses bias-corrected subgroup analysis to address questions of heterogeneity of treatment effect. The data required to perform all of the following examples, and case study, are included with the \pkg{LocalControl} package. The package, along with further documentation and instruction, can be found on the Comprehensive \proglang{R} Archive Network (CRAN) at \url{https://CRAN.R-project.org/package=LocalControl}.
+
+
+%% -- Manuscript ---------------------------------------------------------------
+
+%% - In principle "as usual" again.
+%% - When using equations (e.g., {equation}, {eqnarray}, {align}, etc.
+%%   avoid empty lines before and after the equation (which would signal a new
+%%   paragraph.
+%% - When describing longer chunks of code that are _not_ meant for execution
+%%   (e.g., a function synopsis or list of arguments), the environment {Code}
+%%   is recommended. Alternatively, a plain {verbatim} can also be used.
+%%   (For executed code see the next section.)
+\clearpage
+\section{Classic Local Control}\label{sec:classicLC}
+\subsection{Methodology}\label{sec:classicmeth}
+Local Control (LC) analysis concepts were originally introduced to the \proglang{R} community in 2005, as a suite of functions in the package, ``Unsupervised and Supervised Propensity Scoring in '\proglang{R}' '', or \pkg{USPS} \citep{obenchain2005}. LC is an unsupervised non-parametric approach to adjust for bias in confounder space when comparing a pair of alternative treatments \citep{obenchain2010, obenchain2013}. LC focuses on making ``fair'' comparisons \citep{lopiano2014} using experimental units with confounding characteristics that are as well-matched as possible. Furthermore, LC does not restrict the attention to only treatment ``main-effect'' comparisons; distributions of local effect-sizes are estimated and displayed. Rather than estimating treatment main-effects, LC estimates local effect-sizes within subgroups (clusters) of relatively well-matched observations.
+
+Local Control uses clustering of observations in much the same way that Design-of-Experiments uses blocking \citep{box2005}. Clustering hierarchies are built using confounders believed to be sources of treatment selection bias. \fct{localControlClassic} allows users to select between different algorithms for clustering observations. Choice of clustering algorithm can affect both runtime and the properties of the resulting clusters. After forming a similarity hierarchy, the clustering tree is cut, dividing observations into small or large subgroups, depending on the location of the cut. After cutting the tree, each of the resulting clusters is tested for informativeness. Informative clusters contain at least one member of both treatment groups. The local treatment difference (LTD) is the difference in average outcome between the two treatment groups within a cluster.
+
+One of the major exploratory features of Local Control is its interest in controlling the level similarity within clusters. This is done within \fct{LocalControlClassic} by adjusting the height at which the hierarchical clustering trees are cut. Cutting towards the top of a tree results in a small number of large clusters, each containing a relatively broad distribution of confounder values. Cutting toward the bottom of the tree results in more clusters that are smaller in the sense of containing only patients with more similar confounder values. As the number of clusters increases and the size of clusters is reduced, the probability that a cluster will not contain observations from both treatment groups, and hence be uninformative, also increases. This represents a variance-bias trade-off where variability definitely increases as bias is possibly reduced. In the remainder of Section \ref{sec:classicLC}, \fct{LocalControlClassic} is applied to the cardiology data set analyzed in \cite{kereiakes2000}.
+%table_1
+\subsection{Non-survival data format}\label{sec:csccdata}
+\begin{table}[t!]
+  \centering
+    \begin{tabular}{cccccc}
+      \hline
+      Outcome & Treatment & $X_1$ & $X_2$ & \ldots & $X_k$\\ \hline
+      9.6      & A        & red      & 0        & $\ldots$ & 98.6     \\
+      3.4      & B        & green    & 1        & $\ldots$ & 99.2     \\
+      $\vdots$ & $\vdots$ & $\vdots$ & $\vdots$ & $\ddots$ & $\vdots$ \\
+      2.8      & A        & blue     & 0        & $\ldots$ & 86.4     \\ \hline
+    \end{tabular}
+    \caption{\label{tab:csccData}Non-survival data format. A data frame where one column contains a numerical observed outcome. The treatment column contains a discrete variable with two unique values. At least one of the remaining columns contains pre-treatment covariates used for grouping similar observations.}
+\end{table}
+Each of the Local Control functions described in this paper require that users provide valid \proglang{R} data frames in order to execute. The data frames must exist in the user's global \proglang{R} environment, prior to calling any of the Local Control functions. While the input requirements vary slightly between survival and non-survival analyses, both forms require data frames where the rows contain individual records, while the columns correspond to various patient attributes. The two non-survival analysis functions, \fct{LocalControlClassic}, and \code{LocalControl(outcomeType = "default")}, require that the input data frame has column vectors corresponding to the following variables:
+\begin{itemize}
+  \item{Treatment - }{Factor column with two unique values indicating the treatment for each observation.}
+  \item{Outcome - }{Discrete or continuous outcome variable which will be compared between treatment groups.}
+  \item{Covariates - }{The baseline (pre-treatment) X-Confounder variables used to determine patient similarity.}
+\end{itemize}
+The Local Control functions require the outcome variable column name, \code{outcomeColName}, the treatment variable column name, \code{treatmentColName}, and a list of one or more covariate column names, \code{clusterVars}. The values of the covariates may be logical, categorical, or continuous. Each of the covariate columns must have a standard deviation greater than zero and cannot contain missing values. When missing values exist in a data frame, the base \proglang{R} function, \code{complete.cases}, can be used to remove incomplete records entirely. If removal is not an option, imputation of missing values would be required. An example dataset is displayed in Table~\ref{tab:csccData}.
+
+The \pkg{LocalControl} package includes two data sets which adhere to the to the format described in Table \ref{tab:csccData}, \code{cardSim} and \code{lindner}. These data sets are used throughout to demonstrate the capabilites of Local Control, starting with an analysis of \code{lindner} using \code{LocalControlClassic}. 
+\subsection[Example: LocalControlClassic]{Example: \code{LocalControlClassic}}\label{sec:classicExample}
+The following example uses data from a study conducted at the Ohio Heart Health Center in 1997, known as the Lindner study \citep{kereiakes2000}. The study examines post-procedure effects of the treatment, Abciximab, a glycoprotein IIb/IIIa receptor antagonist, plus usual care compared with outcomes from patients who received usual care alone. The data contain two possible outcome measures: a binary estimate of life years preserved, and the total cardiac-related cost incurred in the twelve months following treatment.
+\subsubsection[Data: lindner]{Data: \code{lindner}}\label{sec:lindner}
+Variables in the \code{lindner} data:
+\begin{itemize}
+\item{\code{lifepres - }}{Life years preserved post treatment: 0 (died within 1 year) vs. 11.6 (survived at least 1 year).}
+\item{\code{cardbill - }}{Cardiac related billing within 12 months.}
+\item{\code{abcix - }}{Did the patient receive Abciximab augmentation of usual care? 1 = yes, 0 = no.}
+\item{\code{stent - }}{Was a stent deployed? 1 = yes, 0 = no.}
+\item{\code{height - }}{Patient height in centimeters.}
+\item{\code{female - }}{Patient sex: 1 = female, 0 = male.}
+\item{\code{diabetic - }}{Was the patient diabetic? 1 = yes, 0 = no.}
+\item{\code{acutemi - }}{Had the patient suffered an acute myocardial infarction within the last seven days? 1 = yes, 0 = no.}
+\item{\code{ejecfrac - }}{Left ventricular ejection fraction.}
+\item{\code{ves1proc - }}{Number of vessels involved in the first Percutaneous Coronary Intervention (PCI) procedure. 1 = yes, 0 = no.}
+\end{itemize}
+\subsubsection{Walkthrough}
+From within \proglang{R}, \pkg{LocalControl} can be installed and loaded with the following commands:
+<<echo_install_lc, echo=TRUE, eval=FALSE>>=
+install.packages("LocalControl")
+library("LocalControl")
+data("lindner")
+@
+When calling \pkg{LocalControl} functions, users must specify relevant columns in the given data frame. The \code{treatmentColName}, and \code{outcomeColName} parameters each take a single string which is the name of their respective column in the data frame. The \code{clusterVars} parameter takes a list of strings where each element corresponds to the name of a column containing a clustering  variable. Note that clustering high-dimensional data is problematic because in high dimensions, every point is likely different from every other point, the curse of high dimensions. Selection of a relatively low dimensional space is important.  Researchers should explore the possibility of using only a subset of the available X-covariates in clustering. This can have a substantial effect when a large variety of partially redundant covariates are available. In Section \ref{sec:plp}, a method is described for identifying critical clustering variables. The \code{clusterCounts} parameter takes a list of integers representing the desired numbers of clusters to form. For each unique element in this list, a different set of clusters is generated, analyzed, and returned.
+
+In the example considered here, a list of variable names is passed via the \code{clusterVars} parameter which comprises seven of the \code{lindner} covariates that may drive treatment bias. Eleven different cluster sizes are specified in a second list, ranging from 1 to 50.
+<<echo_lcc_covars, echo=TRUE, eval=FALSE>>=
+all7Vars = c("stent", "height", "female", "diabetic", 
+  "acutemi", "ejecfrac", "ves1proc")
+numClusters = c(1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50)
+@
+For some parameters, \code{LocalControlClassic} only accepts columns with a specific data type. For example, the column containing the outcome variable must be a numeric type. The treatment column can be of any type, however, it must have exactly two levels ("treated" and "control") when converted to a factor. 
+<<echo_lcc_execution, echo=TRUE, eval=FALSE>>=
+linResults = LocalControlClassic( data = lindner,
+  clusterVars = all7Vars, treatmentColName = "abcix",
+  outcomeColName = "cardbill", clusterCounts = numClusters)
+@
+Calling \code{LocalControlClassic} returns an \proglang{R} environment containing one \code{UPSnnltd} object for each value in the list passed as an argument to \code{clusterCounts}, as well a summary of the entire analysis. In this example, the \code{linResults} object is an environment containing eleven \code{UPSnnltd} objects. Each \code{UPSnnltd} object is a list containing 34 unique elements, each of which are described on the \code{LocalControlClassic} help page. After calling \code{LocalControlClassic}, a useful first impression of the output can be created by plotting statistics describing the distribution of local outcome differences as a function of the number of clusters and fraction of informative patients (Figure \ref{fig:lindLTDs}). This plot is created by passing the returned environment to the \code{LocalControlClassic} plotting function:
+<<echo_lindner_plot, echo=TRUE, eval=FALSE>>=
+UPSLTDdist(linResults, ylim = c(-2500, 5000))
+@
+\begin{figure}[ht]
+\centering
+<<figure_2, echo=FALSE, eval=TRUE, fig = TRUE, height=6, width=9.6>>=
+
+  ltdds = lindnerResults[["ltdds"]]
+  infPatFrac = lindnerResults[["summary"]]$Informative_fraction
+  actClusterCounts = lindnerResults[["summary"]]$Clusters_created
+  
+  ltdm = sapply(ltdds, function(x) mean(x,na.rm=T))
+  boxes = lapply(ltdds, FUN = function(x) boxplot(x, plot=FALSE))
+  bStats = sapply(boxes, FUN = function(x) x$stats)
+
+  yname = lindnerResults[["yname"]]
+  
+  globMean = ltdm[1]
+  par(mar = c(5,5,2,5))
+    plot(x = actClusterCounts, y = ltdm, ylim = c(-3000,5000),
+  	lwd = 3, type = "l", col = "black",
+  	xlab = "Number of Clusters",
+  	ylab = paste0(yname," LTD Distribution"),
+  	main = paste0(yname," Local Treatment Differences vs. Number of Clusters"))
+  grid()
+
+  lines(actClusterCounts, bStats[2,], col = "black", lty = 3, lwd = 2)#lower hinge
+  lines(actClusterCounts, bStats[4,], col = "black", lty = 3, lwd = 2)#upper hinge
+  abline(h = globMean, col = "purple", lty = 2, lwd = 2)
+
+  par(new = T)
+  plot( x = actClusterCounts, y = infPatFrac,
+      	type = "l", lwd = 3, lty = 3,
+      	axes=F, xlab=NA, ylab=NA,
+      	cex=1.2, col = "green", ylim = c(0,1))
+
+  axis(side = 4)
+  mtext(side = 4, line = 3, 'Fraction of Patients Informative')
+  legend( "bottomright",
+      	col = c("purple", "black", "black",  "green"),
+      	lty = c(2, 1, 3, 3), lwd = c(2, 3, 2, 2), bg = "white",
+      	legend = c( "Global Treatment Difference", "Mean of the LTD distribution",
+                		"Lower and upper quartile",	"Fraction of Patients Informative"))
+@
+\caption{\label{fig:lindLTDs}\fct{LocalControlClassic} analysis describing the distribution of LTD estimates for the Lindner data set. As the number of clusters is increased, within-cluster patient similarity increases, and the estimated treatment outcomes trend towards the results found in the \citeauthor{kereiakes2000} study. The green line shows the percentage of the patients that fall within informative clusters, which decreases as much smaller clusters are created. Along the spectrum of cluster counts from 15 to 50, the average treatment difference across all clusters is lower than the \$1512 uncorrected estimate. }
+\end{figure}
+In the original analysis of \citeauthor{kereiakes2000}, the uncorrected \$1,512 treatment difference between the patients with and without Abciximab is reduced to \$950 after accounting for biases. In Figure \ref{fig:lindLTDs}, the estimated local treatment difference main-effect drops beneath the global average as the number of clusters exceeds 10. Classic Local Control provides a host of other features which are not mentioned in this article. Further information about the \pkg{USPS} package and Obenchain's classic method can be found in the \proglang{R} help pages, or the package documentation \citep{obenchain2005}.
+
+
+Figure \ref{fig:bobecdf} provides an additional diagnostic for confirming that adjustment for treatment selection bias has occurred. The observed distribution of LTDs is compared with an artificial NULL distribution based upon the assumption that the available X-confounders are ignorable. In this case, the observed clusters were formed randomly. Thus, when there is strong evidence that the observed and NULL distributions are different, adjustment for treatment selection bias has been confirmed. The \code{ecdf} function from \pkg{stats} \citep{R} is used to generate the curves for both distributions. A Kolmogorov-Smirnoff test comparing the two distributions results in a $D$~statistic = 0.42208, with an approximate $p< 2.2 \times 10^{-16}$. Because the test expects a continuous distribution, but the artificial and observed distributions contain many exact ties in LTD estimates, resampling without replacement is again employed to generate an empirical $p$~value. To accomplish this, NULL $D$~statistics are calculated which compare the artificial distribution to another 10,000 random permutations of cluster assignments. Of the 10,000 NULL $D$~statistics computed, only 21 exceed 0.42208 ($p$~value=0.0021). The significant difference between the observed and artificial distributions indicates that X-confounders are not ignorable and that LTDs with reduced bias are adjusting for local imbalances.
+\setkeys{Gin}{width=.6\textwidth}
+\begin{figure}[hb]
+\centering
+<<figure_2_6, echo=FALSE, eval=TRUE, fig = TRUE, height=4, width=7, out.width = 4, out.height = '1.4in'>>=
+par(mfrow = c(1,1), mar = c(4.1, 4.1, .2, .2))
+plxmin = min(allrands, na.rm =T)
+plxmax = max(allrands, na.rm =T)
+plot(ecdf(allrands), verticals=TRUE, do.points=FALSE, ann=FALSE, col="green3", lwd=2, pch=46, xlim=c(plxmin,plxmax), xaxt="n")
+grid()
+lines(ecdf(localOutcomes$LTDobs), verticals=TRUE, do.points=FALSE, ann=FALSE, col="red", pch=46)
+axis(1, at=axTicks(1), labels=sprintf(ifelse(axTicks(1) >= 0, "$%s","-$%s"), abs(axTicks(1))), las=1)
+abline(v=0, lty="dashed")
+legend("topleft", legend = c("Observed", "Artifical"), col = c("red", "green3"), lty = 1, bg = "white")
+title(main=" ", ylab="Cumulative Probability", xlab="Local Treatment Differences")
+@
+\caption{\label{fig:bobecdf}Observed (red) vs. artificial (green) LTD empirical Cumulative Distribution Functions (eCDFs) generated using 30 clusters.}
+\end{figure}
+\setkeys{Gin}{width=.8\textwidth}
+In Section \ref{sec:plp} this dataset will be revisited in the context of subgroup analysis, where a patient subgroup accounts for a large portion of bias in the global estimate of treatment difference.
+
+\clearpage
+\section{Nearest neighbors Local Control}\label{sec:nnLC}
+\subsection{Methodology}
+\subsubsection{Nearest neighbors clustering}
+Independently two methods have been developed that share some similarities in addressing how to match patients with covariates in observational studies to correct for biases and confounders: (1) coarsened exact matching, developed by \cite{iacus2011, iacus2012}, and (2) the approach developed by members of our team, namely, Local Control \citep{obenchain2005, obenchain2010, obenchain2013, lopiano2014, faries2013, young2015}. \citeauthor{iacus2011} made a key observation: if one has perfectly comparable patients with respect to the variables that matter for a given question, then one can make a model-free treatment comparison. But as the patients compared become more dissimilar, the (often unarticulated) assumptions behind the implied model that assigns a relative importance to different variables become ever more influential on the estimation process. For instance, is the difference between being male or female as important as a difference of 50 years in age, or a difference in genotype, when grouping patients for comparison? A pharmacogenomic genotype might have a huge bearing on a drug comparison question, but little impact on a surgical comparative effectiveness question. Selecting the correct variables for measurement and decisions about the relative importance of different dimensions creates a need for subject matter experts and leads to uncertainty when trying to defend assumptions that may not be knowable. An innovation of \citeauthor{iacus2011} was to explicitly divide the analysis between perfect or near-perfect matches where no assumptions are required, and imperfect matches where one makes assumptions that the patients are "close enough" for the question at hand.
+
+Rather than assessing patient similarity as perfect vs. imperfect matches, Local Control matches along a continuum. Patients are clustered for similarity on variables that are thought to be sources of bias and confounding. An easily interpretable graph can be created to illustrate how the estimated difference in outcome between two treatments change, on average, across all clusters, as a function of using smaller and more homogenous clusters (Figures~\ref{fig:xSimFullFact}, \ref{fig:lcnnConf},  and \ref{fig:subgroupPlot}). This is analogous to combining a host of smaller studies that are each homogeneous within themselves, but represent the spectrum of variability of people across diverse subpopulations. As the clusters get smaller, some of them can become noninformative, whereby all cluster members contain only one treatment, and there is no basis for comparison. This is actually a feature of the method: for example, if treatment A is given to people of all ages, and treatment B is only given to adults, there is no basis for comparing the drugs for pediatric use. The power of these methods becomes apparent as the sample size increases. For example, treatment A might be commonly used, whereas treatment B is rarely performed on people with the same characteristics. However, when larger sample sizes become available for analysis, it is possible to find close matches for the two treatment groups, with dependence on model assumptions diminishing.
+
+An open issue with classic Local Control is how the choice of clustering methodology affects treatment comparisons. Because optimal clustering is NP-hard \citep{dasgupta2008}, numerous "greedy" algorithms exist to create clusters according to different criteria. Even with optimal clustering, a patient that may be quite close to another one, and useful for treatment comparison, could end up in a different cluster. Outlier patients that may still have a few near neighbors with both treatments are frequently separated when one clusters without replacement, preventing their inclusion in comparing treatment outcomes.
+
+To address this limitation of hierarchical clustering, the nearest neighbors to a given patient are used to estimate treatment differences, instead of clustering without replacement, where patients reside in only a single cluster. Each patient has a unique set of near-neighbors, and the approach becomes more akin to a non-parametric density estimate using similar patients within a covariate hypersphere of a given radius. The local treatment difference is taken as the average of the treatment differences from the neighborhood around each point.
+
+While \code{LocalControlClassic} uses the number of clusters as a varying parameter to visualize treatment differences as a function of patient similarity, this function uses a varying radius. The maximum radius enclosing all patients corresponds to the biased estimate which compares the outcome of all patients with treatment A versus all patients with treatment B. It is useful to plot both the treatment difference and the fraction of the patients who have an informative neighborhood as a function of decreasing radius, delineating a zone bounded by the smallest radius that includes 100\% of the data, along with the radius that retains 80\% of the data. While these boundaries fit the behavior in our example, it is not always the case that these are critical points in a dataset.
+
+One of the largest differences to consider with the new Local Control functions is that the observations are now sampled with replacement. As a result, the outcome of an individual observation can potentially contribute to the local treatment difference in multiple clusters. With the new method of clustering, each observation becomes the centroid of a cluster, meaning that the number of clusters created is always N. The number of neighbors in clusters, along with the "level" of patient similarity, becomes a function of the clustering radius, r. This is to say, for all N patients, a cluster C$_i$ centered around patient i, has k$_i$ nearest neighbors where k$_i$ is the number of patients that are within r units of X-space distance to patient i.
+
+By default, Local Control generates a set of radii whose lengths range inclusively from 0, to the largest distance between any two points in the provided data. The maximum distance is calculated using an open-source implementation (\url{https://github.com/hbf/miniball}) of the fast smallest-enclosing-ball algorithm \citep{fischer2003}. It is important to consider the significance of the minimal and maximal enclosing radius. At the maximal radius which encloses all samples, every cluster is identical. This means that the within-cluster treatment difference, as well as the average across all clusters, will always be equal to the uncorrected global treatment difference. Conversely, when the radius has length 0, the clusters are formed using only patients whose covariates match perfectly. This opens several avenues, such as the coarsening of variables \citep{iacus2011, iacus2012}, which can be used in conjunction with Local Control to embed model assumptions about ranges of variables within which treatment outcomes are not expected to vary.
+\subsubsection{Nearest neighbors confidence estimates}
+Nearest neighbors Local Control uses bootstrapping to generate confidence estimates for treatment comparisons. The \code{LocalControlNearestNeighborsConfidence} function repeatedly resamples rows of the provided data frame with replacement to generate an empirical distribution of the treatment difference. The 50\% and 95\% quantiles are drawn from the distribution of results to produce confidence intervals for the LTD at each radius. The number of bootstrapping iterations can be set using the \code{nBootstrap} parameter.
+\subsection{Simulated example}
+\subsubsection{Data: Case-control simulation}
+\begin{figure}[h]
+\centering
+<<figure_3, echo=FALSE, eval=TRUE, fig = TRUE, height=5, width=8>>=
+xSim = simData[order(simData$ADR),]
+xSim$colIntensity = seq(1 , 240 , length.out = nrow(xSim))/255
+
+xSim$pc = ifelse(xSim$trmt == 1, t1Blue, t0Red)
+xSim$pca = apply(X = xSim, MARGIN = 1, FUN = function(x) {setColAlpha(col = x["pc"], intensity = x["colIntensity"])})
+
+par(mar = c(2.1,2.5,1.1,1), xaxs = "i",yaxs = "r")
+plot( NA,
+      xlab="", ylab="", xaxt = "n", yaxt = "n",
+      xlim = c(35,115), ylim = c(35,115),
+      pch = 16, lwd=7,
+      cex.lab = 1.75,
+      cex.axis = 1.4)
+title(ylab = "Dosage (40-110 mcg/kg)", line=0.3, cex.lab = 1.5)
+title(xlab = "Weight (40-110 kg)", line=0.3, cex.lab = 1.5)
+grid()
+box()
+points(xSim$weight, xSim$dosage, col = xSim$pca, pch = 16)
+legend("bottomright", legend = c("Treatment 0", "Treatment 1"), col = c(t0Red, t1Blue), pch = 16)
+@
+\caption{\label{fig:nnCovars}ADR as a function of weight and dosage. The ideal treatment for the simulated data should lie on diagonal where weight (kg) = dosage (mg). The blue treatment has a higher variance than the red treatment. The pale points indicate patients with a greater adverse reaction to the treatment, while the dark points represent those with smaller reactions.}
+\end{figure}
+<<table_3, echo=F, eval=F>>=
+  t1t0 = xSim
+  t1s = xSim[which(xSim$trmt == 1),]
+  t0s = xSim[which(xSim$trmt == 0),]
+
+  npats = c(nrow(t1t0), nrow(t0s), nrow(t1s), NA)
+  wmean = c(mean(t1t0$weight), mean(t0s$weight), mean(t1s$weight), t.test(t1s$weight, t0s$weight)$p.value)
+  wvars = c(sqrt(var(t1t0$weight)), sqrt(var(t0s$weight)), sqrt(var(t1s$weight)), var.test(t1s$weight, t0s$weight)$p.value)
+  dmean = c(mean(t1t0$dosage), mean(t0s$dosage), mean(t1s$dosage), t.test(t1s$dosage, t0s$dosage)$p.value)
+  dvars = c(sqrt(var(t1t0$dosage)), sqrt(var(t0s$dosage)), sqrt(var(t1s$dosage)), var.test(t1s$dosage, t0s$dosage)$p.value)
+  amean = c(mean(t1t0$ADR), mean(t0s$ADR), mean(t1s$ADR), t.test(t1s$ADR, t0s$ADR)$p.value)
+  avars = c(sqrt(var(t1t0$ADR)), sqrt(var(t0s$ADR)), sqrt(var(t1s$ADR)), var.test(t1s$ADR, t0s$ADR)$p.value)
+
+  tabOut = t(data.frame(n = npats, weightmean = wmean, weightvar = wvars, dosagemean = dmean, dosagevar = dvars, adrmean = amean, adrvar = avars))
+@
+\begin{table}[h]
+  \centering
+    \begin{tabular}{p{21mm}p{2mm}p{14mm}p{9mm}p{9mm}p{15mm}}
+      \hline
+      \multicolumn{2}{c}{}&{T1+T0}&{T0}&{T1}&$p$~{value}\\
+      \hline
+      \multicolumn{2}{l}{n (patients)}&10000&5000&5000&\\
+      \hline
+      weight(kg)&$\mu$&74.76&74.72&74.8&0.804\\
+      \cline{2-6}
+      &$\sigma$&14.97&14.99&14.94&0.8\\
+      \hline
+      dosage(mg)&$\mu$&74.77&74.7&74.84&0.701\\
+      \cline{2-6}
+      &$\sigma$&18.69&15.82&21.18&2.20E-16\\
+      \hline
+      ADR(mg)&$\mu$&8.03&4.01&12.06&2.20E-16\\
+      \cline{2-6}
+      &$\sigma$&7.86&2.99&9.07&2.20E-16\\
+      \hline
+    \end{tabular}
+    \caption{\label{tab:xSimStats}Case-control simulation cohort summary. A t-test shows that there is no statistically significant difference in weight or dosage between the two treatment groups. However, with an F-Test, there is a highly significant difference in dosage variance between treatments.}
+\end{table}
+This data demonstrates the effects of Local Control on correcting a treatment dosage bias. In this simulation, a cohort of N patients is generated with weights drawn from a normal distribution. The population is divided into two treatment groups, 1 and 0, and a bias is introduced where treatment 1 is dosed with a higher variance, $\sigma^2$, than treatment 0. The outcome variable, adverse drug reaction (ADR), for both treatments is assigned using the same function: ADR = |target\_dose - actual\_dose|mg. In this simulation, the optimal dosage is equal to one mg per kg of the patient's weight. Using an absolute value function to generate the outcome makes the data difficult to fit linearly. Glancing at this data without correction makes it appear as though the adverse drug reaction is greater among those who received the first treatment. Table \ref{tab:xSimStats} shows the distribution of observations in this dataset, Figure \ref{fig:nnCovars} graphs the ADR, weight, and dosage, and Figure \ref{fig:xSimHists} displays a histogram of the ADR colored by treatment group before and after correction.
+The simulated data can be created using the \proglang{R} code below:
+<<echo_sim_generation, echo=TRUE, eval=FALSE>>=
+set.seed(253748)
+N = 10000
+weight = c(rnorm(N/2, 75, 15), rnorm(N/2, 75, 15))
+dosage = weight + c(rnorm(N/2, 0, 15), rnorm(N/2, 0,  5))
+trmt = c(rep(1, N/2), rep(0, N/2))
+ADR = abs(weight - dosage)
+noise1 = rnorm(n = N, 0, 1)
+noise2 = rnorm(n = N, 0, 1)
+xSim = data.frame(weight, trmt, dosage, ADR, noise1, noise2)
+@
+\begin{figure}[!ht]
+\centering
+<<figure_4, fig = TRUE, eval = TRUE, echo = FALSE, height=5, width=12>>=
+t1UVals = xSim[which(xSim$trmt == 1),"ADR"]
+t0UVals = xSim[which(xSim$trmt == 0),"ADR"]
+ulegtxt = c("Treatment 0", "Treatment 1" ,
+            paste0("T0 mean outcome = ", round(mean(t0UVals, na.rm = T),digits = 2)),
+            paste0("T1 mean outcome = ", round(mean(t1UVals, na.rm = T),digits = 3)))
+
+t1CVals = xSultsT1
+t0CVals = xSultsT0
+clegtxt = c("Treatment 0", "Treatment 1" ,
+             paste0("T0 mean outcome = ", round(mean(t0CVals, na.rm = T),digits = 2)),
+             paste0("T1 mean outcome = ", round(mean(t1CVals, na.rm = T),digits = 3)))
+
+par(mar = c(3.1,2.1,1.1,1.1), mfrow = c(1,2))
+hist(t1UVals,breaks = seq(0, 60, by = 2), ylim = c(0,2500), xlim = c(0,30), yaxt = "n", panel.first = {grid(); box()},
+     xaxs="i", yaxs="i", xlab="", col = t1Fill, lwd = 1, main = "", ylab = "",mgp=c(1.2,0.5,0))
+hist(t0UVals, col = t0Fill, lwd = 5, add = T,breaks = seq(0,60, by = 2))
+legend("topright", legend = ulegtxt, ncol = 1,cex = 1.1,x.intersp = c(-1, -1, 1, 1),
+       fill = c(t0Fill, t1Fill, NA,  NA), bty = "n",
+       border = c("black", "black", NA, NA), lty = c(NA,NA,3,3), lwd = c(NA,NA,5,5), col = c(NA,NA,t0Red,t1Blue))
+abline(v = mean(t1UVals, na.rm = TRUE), col = t1Blue, lty = 3, lwd = 5)
+abline(v = mean(t0UVals, na.rm = TRUE), col = t0Red, lty = 3, lwd = 5)
+title(ylab = "Frequency", line=0.3, cex.lab = 1.5)
+title(xlab = "ADR", line = 2, cex.lab = 1.5)
+
+hist(t1CVals,breaks = seq(0, 60, by = 2), ylim = c(0,2500), xlim = c(0,30), yaxt = "n", panel.first = {grid(); box()},
+     xaxs="i", yaxs="i", xlab="", col = t1Fill, lwd = 1, main = "", ylab = "",mgp=c(1.2,0.5,0))
+hist(t0CVals, col = t0Fill, lwd = 5, add = T,breaks = seq(0,60, by = 2))
+legend("topright", legend = clegtxt, ncol = 1,cex = 1.1,x.intersp = c(-1, -1, 1, 1),
+       fill = c(t0Fill, t1Fill, NA,  NA), bty = "n",
+       border = c("black", "black", NA, NA), lty = c(NA,NA,3,3), lwd = c(NA,NA,5,5), col = c(NA,NA,t0Red,t1Blue))
+abline(v = mean(t1CVals, na.rm = TRUE), col = t1Blue, lty = 3, lwd = 5)
+abline(v = mean(t0CVals, na.rm = TRUE), col = t0Red, lty = 3, lwd = 5)
+title(ylab = "Frequency", line=0.3, cex.lab = 1.5)
+title(xlab = "ADR", line = 2, cex.lab = 1.5)
+@
+\caption{\label{fig:xSimHists}(Left) Histogram of adverse drug reaction outcome in the simulated data. The simulated data has the two drugs affect patients equally, however, it appears that the patients in the 'Treatment 0' group have a much better average outcome due to the lower variance in dosing. (Right) Corrected histogram of adverse drug reaction outcome in the simulated data. In this histogram, the estimated outcomes of T0 and T1 are not appreciably different after accounting for the bias of T1 having a higher variance in dosages. That is, when patients are clustered to have similar weight and dosage, the treatment difference approaches the true value of zero on average across all clusters.}
+\end{figure}
+Due to the differences in the two clustering schemes, the parameters for calling the nearest neighbors function differ slightly from the classic method. This function does not require users to supply the \code{clusterCounts} parameter. Instead, it automatically generates a set of radii to fit the covariates if one is not provided. Additionally, these are three optional parameters which control the generation of cluster radii. \code{radStepType} determines if the rate of decay between radii will be uniform or exponential. \code{radDecayRate} determines the stepsize between radii, which can be a fixed value removed each iteration if \code{radStepType} is uniform, or a fraction of the previous radius if step type is exponential. Last, users can specify the size of the second smallest radius (after zero) as a fraction of the maximum radius with \code{radMinFract}.
+
+By default, the radii generated by \code{LocalControl} decay exponentially by 80\% each iteration, with a minimum of 1\% the length of the maximum. As with the classic method, the column containing the outcome variable must be a numeric type. The treatment column can be of any type, however, if the treatment variable contains more than two values, users must provide the \code{treatmentCode} parameter to specify the "primary" treatment group, T1. All remaining values are considered the alternate group, T0. The following code chunk performs the \code{LocalControl} analysis on the simulated data, saving the resulting object to a variable in the global environment:
+<<echo_nnsim_execution, echo=TRUE, eval=F>>=
+xSults = LocalControl(data = xSim,
+  treatmentColName = "trmt",
+  treatmentCode = 1,
+  outcomeColName = "ADR",
+  clusterVars = c("weight", "dosage"),
+  radMinFract = .01,
+  radDecayRate = 0.95,
+  numThreads = 4)
+@
+When working with a large set of data, or a large number of covariates, it may be beneficial to increase the number of threads used in the Local Control calculations. This can be done by assigning the \code{numThreads} parameter a value greater than one. A performance increase is only possible if the running computer is capable of multicore processing.
+
+After calling the function, a histogram is produced using the corrected outcome data produced from Local Control (Figure \ref{fig:xSimHists} (Right)). In the corrected histogram, the two treatment outcomes are nearly identical.
+\subsection{Choice of clustering variables (feature selection)}
+\begin{table}[h]
+\centering
+<<table_4, echo=FALSE, results=tex>>=
+#ltdFrame = readRDS('calcs/ffltds.rds')
+noisyVars = c("weight", "dosage", "noise1", "noise2")
+
+difs = numeric()
+difs[1] = 0
+for(i in 2:ncol(ltdFrame)){
+   difs[i] = avgDif(ltdFrame[1:92,1], ltdFrame[1:92,i])
+}
+outmat = expand.grid(c(-1,1),c(-1,1),c(-1,1),c(-1,1))
+outmat = data.frame(outmat)
+names(outmat) = noisyVars
+outmat$difs = difs
+
+dm = matrix(data = 0, nrow = 16, ncol = 6)
+dm[,6] = 2
+
+print(xtable(outmat, digits = dm), include.rownames = F, sanitize.text.function = function(x){x}, floating=FALSE)
+@
+\caption{\label{tab:xSimRegIn}Regression input for full factorial analysis. The difs column shows the average difference in the corrected LTD from the global treatment difference for each of the 16 combinations. A value of -1 for a clustering variable means that it is excluded, while a value of 1 represents including it in the model.}
+\end{table}
+One of the open areas for research in Local Control is how to choose the relevant covariates for bias correction. One approach that is viable for a modest number of covariates is a full factorial regression analysis of how significant each covariate is in modeling the treatment difference. The full factorial approach is illustrated, but note that for more variables, a fractional factorial approach could be employed for greater efficiency \citep{box2005}. A full factorial design of experiments approach first runs all $2^k$ combinations of including or excluding each of the k covariates in the Local Control model. One can then model with linear regression the outcomes as a function of the binary variables (main effects and interactions) that designate which cluster variables were employed in the Local Control runs. To account for the change in dimensionality during the factorial analysis, the radius length is scaled according to the number of variables in use. Two dummy 'noise' variables are included to show the effects of using uncorrelated variables with \code{LocalControl}. These outcomes are compared by calculating the average difference from the global estimate for each of the curves. 
+
+Table \ref{tab:xSimRegIn} shows the 16 combinations of cluster variables, along with their average differences. Positive values in the difs column indicate that the combination of variables used in bias correction leads to an increase over the global biased estimate, and negative values show the opposite. In this case, inclusion of weight and dosage leads to a large negative change in the estimate, indicating that the global estimate without covariate correction is high relative to the ground truth of zero embedded in the simulation.
+
+This analysis begins with a call to \fct{LocalControl}:
+
+\begin{minipage}{\textwidth}
+<<echo_ff_step1, echo=TRUE, eval=FALSE>>=
+noisyVars = c("weight", "dosage", "noise1", "noise2")
+noisySults =  LocalControl( xSim,
+  treatmentColName = "trmt",
+  outcomeColName = "ADR",
+  clusterVars = noisyVars,
+  radMinFract = .01,
+  radDecayRate = 0.95 )
+fixedRads = summary(noisySults)$limits
+@
+\end{minipage}
+
+The radius lengths are saved to be scaled and reused in the coming step. A matrix is created to store all of the different combinations of clustering variables, followed by a call to Local Control with each combination.\\
+\begin{minipage}{\textwidth}
+<<echo_ff_step2, echo=TRUE, eval=FALSE>>=
+varCombinations = expand.grid(0:1, 0:1, 0:1, 0:1)
+ltext = apply(X = varCombinations, MARGIN = 1,
+  FUN = function(x) paste0(x, collapse = ''))
+ltdVecs = list()
+ltdVecs[[1]] = rep(summary(noisySults)$ltd[1], nrow(summary(noisySults)))
+for(i in 2:16){
+  varSS = noisyVars[which(varCombinations[i, ] == 1)]
+  scaleFactor = sqrt(length(varSS)) / sqrt(length(noisyVars))
+  scaleRads = fixedRads * scaleFactor
+  sults = LocalControl( xSim,
+    treatmentColName = "trmt",
+    outcomeColName = "ADR",
+    clusterVars = varSS,
+    radiusLevels = scaleRads )
+  ltdVecs[[i]] = summary(sults)$ltd
+}
+ltdFrame = data.frame(ltdVecs)
+names(ltdFrame) = ltext
+@
+\end{minipage}
+
+
+The \code{avgDif} function compares the LTD vectors to the global average. Using the results from the previous steps, the average difference is calculated for each combination to produce Table~\ref{tab:xSimRegIn}.
+<<echo_ff_step3, echo=TRUE, eval=FALSE>>=
+avgDif = function(uncorrected, corrected){
+  return(sum(uncorrected - corrected, na.rm = TRUE)/
+    length(which(!is.na(corrected))))
+}
+difs = numeric()
+difs[1] = 0
+for(i in 2:ncol(ltdFrame)){
+  difs[i] = avgDif(ltdFrame[1:92, 1], ltdFrame[1:92, i])
+}
+outmat = data.frame(expand.grid(c(-1,1), c(-1,1), c(-1,1), c(-1,1)))
+names(outmat) = noisyVars
+outmat$difs = difs
+@
+Table \ref{tab:xSimRegIn} shows that regardless of inclusion of the noise terms, if both weight and dosage are included in Local Control bias correction, that the treatment difference estimate converges to the true difference, namely zero. Conversely, if either weight or dosage are not included in the model, a biased incorrect estimate remains. Figure \ref{fig:xSimFullFact} presents this data graphically.
+\begin{figure}[ht]
+\centering
+<<figure_5, fig = TRUE, eval = TRUE, echo = FALSE, png = FALSE, height=7, width=11, out.width = 9>>=
+  ltext = apply(varCombinations, 1, function(x) paste0(x, collapse = ""))
+  ltys = apply(varCombinations[,3:4], 1, function(x) ifelse(sum(x) == 1, 5, ifelse(sum(x) == 2, 2, 1)))
+  cols = apply(varCombinations, 1, function(x) ifelse(x[1] == 1, ifelse(x[2] == 1, "purple", "red"), ifelse(x[2] == 1, "blue", "green")))
+  cols[1] = "black"
+  prads = resultSummary$pct_radius[1:(nrow(resultSummary) - 1)]
+  
+  xl = c(1,min(prads))
+  par(mar=c(4.1,4.1,2.1,0.5))
+  plot(NA, xlim = xl, ylim = c(0,9),
+       xlab = "Fraction of maximum radius",
+       ylab = "ADR treatment difference", log = "x", panel.first = grid(equilogs=FALSE),main = "Full-factorial simulation analysis")
+
+  for(i in 16:1){
+    ltdz = ltdVecs[[i]]
+    lines(x = prads, y = ltdz[1:(length(ltdz)-1)], xlim = xl, ylim = c(0, 9), col = cols[i], lty = ltys[i],  pch = 16, lwd = 3)
+  }
+
+  lt = c("Uncorrected", "Weight and noise only", "Dosage and noise only", "Both weight and dosage", "Noise only")
+  box()
+  legend("bottomleft",col = cols, lwd = 2, lty = ltys, legend = ltext)
+  legend(x = .702, y = 1.66,cex = 1, legend = lt, col = c("black", "red", "blue", "purple", "green"), lwd = NA, pch = 15)
+@
+\caption{\label{fig:xSimFullFact}Full factorial Local Control on the simulated data. This presents a graphical representation of the different covariate configurations. Each of the curves on the plot corresponds to one of the rows in Table \ref{tab:xSimRegIn}. When both weight and dosage are included in the model (purple), the corrected treatment difference converges to the correct answer of zero. When only one of weight or dosage is used in the model (red or blue), or neither (green), then the biases remain, and the treatment difference estimate is non-zero. Because this simulated data contains no perfect matches, the corresponding section is excluded from this plot.}
+\end{figure}
+\begin{minipage}{\textwidth}
+<<echo_nnlc_regression, echo=F, eval=T>>=
+model <- formula("difs ~ (weight + dosage + noise1 + noise2)^4")
+fit <- glm( difs ~ 1, data = outmat, family = gaussian)
+fit.AIC <- step( fit, model, k = 2, trace = 0, direction = "both")
+regTable = summary.glm( fit.AIC )$coef
+@
+\end{minipage}
+\begin{table}
+\centering
+<<table_5, echo=FALSE, results=tex>>=
+dm = matrix(data = 2, nrow = 4, ncol = 5)
+dm[,5] = -2
+print(xtable(regTable, digits = dm), include.rownames = T, floating=FALSE)
+@
+\caption{\label{tab:xSimRegOut}Regression output from the full factorial analysis. A regression is performed to explore the effects of having each variable combination in the model. While weight and dosage are significant, the noise variables are not. This indicates that they should be dropped from the model.}
+\end{table}
+Using the values from Table \ref{tab:xSimRegIn}, a stepwise full factorial linear model is built to evaluate the significance of each variable with respect to the treatment difference. Table \ref{tab:xSimRegOut} shows that the noise terms are not significant using stepwise regression, either alone or in combination in affecting the treatment estimate, and thus should be removed as covariates from the Local Control model. Table \ref{tab:xSimRegOut} can be created as follows:
+
+\begin{minipage}{\textwidth}
+<<echo_nnlc_regression, echo=TRUE, eval=F>>=
+model = formula("difs ~ (weight + dosage + noise1 + noise2)^4")
+fit = glm( difs ~ 1, data = outmat, family = gaussian)
+fit.AIC = step( fit, model, direction = "both", k = 2, trace = 0)
+regTable = summary.glm( fit.AIC )$coef
+@
+\end{minipage}
+While the full factorial can be performed for quick results in this small example, the number of runs doubles with the inclusion of each additional covariate. One approach to reducing the dimensionality of Local Control analysis, while accounting for many sources of bias, is to employ a propensity score as one of the clustering variables to collapse information from many covariates related to treatment bias.
+\subsection[Lindner analysis with LocalControl]{Lindner analysis with \code{LocalControl}}\label{sec:nnLindner}
+In Section \ref{sec:classicLC}, \fct{LocalControlClassic} was used to analyze the data from the Lindner Abciximab study. Here an analogous analysis is performed using \fct{LocalControl} to provide a comparison of the methods and results. The \fct{LocalControl} function is called using the Lindner dataframe from Section \ref{sec:classicLC}. Average within-cluster treatment difference is plotted as a function of observation similarity within clusters (radius length). Confidence intervals are generated using the \code{LocalControlNearestNeighborsConfidence} function. In Figure \ref{fig:lcnnConf}, observe that the \fct{LocalControl} results show a reduction in treatment cost as the level of correction increases, similar to the original study.
+
+This analysis can be reproduced in \proglang{R} with the following commands:\\
+\begin{minipage}{\textwidth}
+<<echo_lind_nnlc_execution, echo=TRUE, eval=FALSE>>=
+linRes = LocalControl(data = lindner,
+  clusterVars = all7Vars, treatmentColName= "abcix",
+  outcomeColName = "cardbill", treatmentCode = 1)
+linCI = LocalControlNearestNeighborsConfidence(data = lindner,
+  clusterVars = all7Vars, treatmentColName = "abcix",
+  outcomeColName = "cardbill", treatmentCode = 1,
+  nBootstrap = 100)
+plot(linRes, nnConfidence = linCI)
+@
+\end{minipage}
+\begin{figure}[h]
+\centering
+<<figure_6, echo=FALSE, fig = TRUE, height=5, width=7, out.width = 9>>=
+plot(linRes, nnConfidence = linCI, main = "LocalControl confidence intervals")
+@
+\caption{\label{fig:lcnnConf}LocalControl confidence estimates from 100 resamples. Confidence intervals are generated for Local Control by repeatedly resampling N patients with replacement from the original population. Local Control is run once for each of the resampled populations, storing the results from each run as elements of a list. After 100 calls to LocalControl, the 50\%, and 95\% confidence intervals are drawn from the resampled results.}
+\end{figure}
+\section{Survival Local Control}\label{sec:survLC}
+\subsection{Methodology}
+The \code{LocalControl} function is an extension of the nearest-neighbor Local Control introduced in Section \ref{sec:nnLC}. The major variation here is that this adaptation supports survival analysis. In the previous versions of Local Control, the outcome differences within clusters were examined as a function of the cluster-radius. With temporal data, a non-parametric counting method is adopted to compare bias-corrected survival curves. Note that Kaplan-Meier estimates with a single outcome with potentially censored observations is a special case of the more general competing risks problem where there are one or more competing risks (outcomes). Thus a single function is provided for both Kaplan-Meier estimates and the more general case of multiple competing risks.
+
+Kaplan-Meier survival curves provide an intuitive visualization of time to event data. Unfortunately, due to the nature of the counting process, the curves generated with Kaplan-Meier do nothing to correct for covariates in a model, and are thus normally suitable only for randomized studies. With nearest-neighbors clustering, the Kaplan-Meier counting process is adapted to compute survival curves within clusters that are aggregated to produce globally corrected survival curves. These covariate-adjusted survival curves can be easily interpreted, tested, and compared with one another. As a non-parametric method, Local Control does not rely on the proportional hazards assumption or the assumption of linear effects of covariates as is the case for Cox regression. Recall that the Kaplan-Meier estimate for survival at time t, S(t), is equal to the product of the number of observations remaining after the events of time t, divided by the number surviving before those events for all times leading up to t \citep{kaplanmeier}, or:
+\begin{equation*}
+S(t) =  \prod_{t_j \leq t} \frac{atrisk_{j} - failures_j}{atrisk_{j}}
+\end{equation*}
+Bias-corrected survival curves are generated by aggregating survival outcomes from within each cluster. The contribution from each cluster is scaled to ensure that the total number of observations considered at risk never exceeds the original number of observations in the study. Each informative cluster, regardless of the number of near neighbors, contributes equally to the curves generated at a given radius. For example, if cluster j (observation j and its near-neighbors) has five observations, while cluster k has twenty, both would increment the total at risk for each treatment by one. Similarly, in the case where the radius reaches all N-1 observations, the total at risk would be N.
+
+The concept of "fractional observations" is introduced, whereby within clusters, the contributions to the number at risk, and the event (failure and censor) bins are scaled with respect to the number of neighbors on a given treatment. As an example, consider a cluster j, which contains three T1 and two T0 observations. Cluster j is informative, so it increases the number at risk by one for both treatment groups. Because the total number of events must be equal to the number at risk, the contributions to the event bins within a cluster must sum to one for both treatment groups. In cluster j, the outcomes must be scaled such that each observation contributes only $\frac{1}{numT1_j} = \frac{1}{3}$ or $\frac{1}{numT0_j} = \frac{1}{2}$ to the event bin at their respective time. After considering each cluster, for both treatment groups, the total at risk and the sum of all fractional outcomes is equal to the number of informative clusters. From this point, the Kaplan-Meier counting process is applied. With the global radius, this process generates the same Kaplan-Meier curves that can be created from the data naively. This process iterates over decreasing radius lengths to produce curves across many different levels of similarity.
+
+For a given competing risk, the estimator is the cumulative sum over each time interval of the probability neither event occurs before time t (the Kaplan-Meier estimate where both competing risks are combined as an event, and the censored observations are treated as censored) multiplied by the fraction experiencing a given event type out of those still at risk at that time.
+
+Because competing risks is also a counting process, the extension of Local Control Kaplan-Meier to support competing risks is straightforward. Using the same method of creating fractional observations, cumulative incidence curves are created for each type of risk using the following formula:
+\begin{equation*}
+CIF_{risk}(t) =  \sum_{t_j \leq t} \frac{events_{risk, j}}{atrisk_{j}}S(t_{j-1})
+\end{equation*}
+Combining the bias correction of Local Control with a competing risks framework enables computation of bias-corrected cumulative incidence curves while accounting for all possible outcomes. Section \ref{sec:survsimex} provides an example using survival based Local Control to correct bias in a simulated set of data. Section \ref{sec:FHS} presents an in-depth competing risks case study using the publicly available Framingham Heart Study data.
+\subsubsection{Competing risks confidence intervals}\label{sec:crconf}
+The \code{LocalControlCompetingRisksConfidence} function produces pointwise standard error estimates for the \code{LocalControl} cumulative incidence functions (CIFs). This is done using an implementation of Choudhury's \citep{choudhury2002} approach that supports Local Control's fractional observations. Users can pass the object returned from the competing risks function to \fct{LocalControlCompetingRisksConfidence}, which produces confidence intervals corresponding to each of the calculated CIFs. The function currently supports the creation of 90\%, 95\%, 98\%, and 99\% confidence intervals. Additionally, this function allows users to choose between the linear, log(-log), and arcsine confidence interval transformations which are detailed in Choudhury's work.
+\subsubsection{Competing risks hypothesis testing}\label{sec:pepe}
+In addition to the confidence intervals described above, \fct{LocalControl} also supports hypothesis testing using the Pepe and Mori method \citep{pepemori}. This test compares two CIFs using the area between the curves, weighting the differences to account for time passed and the number of observations remaining. The function gives higher weights to differences which occur earlier in time, where more patients remain at risk. The code used to perform the hypothesis testing is derived from the \code{compCIF} function provided in \citet{pintilie2006}. As with Choudhury's, this modified function also works with fractional observations. At each radius, the test is performed on the CIFs from the first risk for the two treatment groups. Each test returns a $\chi~^2$ and $p$ value which can be retrieved by calling \fct{summary} on the object returned from \fct{LocalControl}.
+% table_6
+\subsubsection{Survival data format}
+\begin{table}
+\centering
+    \begin{tabular}{ccccccc}
+      \hline
+      treatment & outcome & time   & x$_1$    & x$_2$    & $\ldots$ & x$_k$    \\
+      \hline
+      A           & death     & 3        & red      & 0        & $\ldots$ & 98.6     \\
+      B           & censored  & 9        & green    & 1        & $\ldots$ & 99.2     \\
+      $\vdots$    & $\vdots$  & $\vdots$ & $\vdots$ & $\vdots$ & $\ddots$ & $\vdots$ \\
+      A           & cancer    & 4        & blue     & 0        & $\ldots$ & 101.1    \\
+      \hline
+    \end{tabular}
+    \caption{\label{tab:survData}Data frame for survival-based Local Control. Contains all of the columns which are necessary to run LocalControl. The first three from the left, treatment, outcome, and time must be included for all survival analyses. The remaining x-columns correspond to the covariates used for clustering observations. }
+\end{table}
+For survival analysis \code{LocalControl(outcomeType = "survival")}, the outcome variable must be categorical, where the values correspond to types of risk, or right censoring (specified with \code{cenCode}.) Additionally, the data frame must contain a variable representing the time that the outcome occurred. Table \ref{tab:survData} displays an example of a valid survival data frame.
+
+There are two major parameter differences for \fct{LocalControl} when working with survival outcomes.
+\begin{itemize}
+  \item{Time to outcome: }{Rather than severity or magnitude of an outcome, this function takes as input the time to an event. This means that an additional column must be specified, containing the amount of time it took to reach the observed outcome. This function supports time in both integer and floating point formats.}
+  \item{Categorical outcomes: }{This function is used with survival or competing risks data. The column of outcomes provided should correspond to the category of outcome, rather than a measure of effect. With right-censored survival data not involving competing risks, the outcome column is generally binary or logical with a value of 1 for patients who experienced the outcome, and 0 for those who were right-censored. For competing risks data, multiple factors can be included, with one of them representing right censoring.}
+\end{itemize}
+\subsection{Example}\label{sec:survsimex}
+\subsubsection{Data: Survival simulation}
+\begin{table}[h]
+\centering
+<<table_7, echo=F, eval=T, results=tex>>=
+  tas = survSimData[which(survSimData$drug == 1),]
+  tbs = survSimData[which(survSimData$drug == 0),]
+  ot = data.frame(matrix(data = 0, nrow = 3, ncol = 4), row.names = c("n (patients)", "age (years)", "BMI ($\\frac{kg}{m^2}$)"))
+  names(ot) = c("A + B", "A", "B", "$p$~value")
+  ot[1,] = as.numeric(c(nrow(survSimData), nrow(tas),nrow(tbs),  NA))
+  ageTest = t.test(tas$age, tbs$age)
+  ot[2,] = as.numeric(c(mean(survSimData$age), mean(tas$age), mean(tbs$age), as.numeric(ageTest$p.value)))
+  bmiTest = t.test(tas$bmi, tbs$bmi)
+  ot[3,] = as.numeric(c(mean(survSimData$bmi), mean(tas$bmi), mean(tbs$bmi), as.numeric(bmiTest$p.value)))
+  ctext = "Survival simulation cohort summary. A hypothetical hypertension Treatment A (blue) is prescribed more frequently to younger, healthier patients with a low body mass index (BMI), Treatment B (red) is prescribed to older patients with a higher body mass index. Significant treatment biases exist for age and BMI."
+  dm = matrix(data = 2, nrow = 3, ncol = 5)
+  dm[,5] = -2
+  dm[1,] = 0
+
+  print(xtable(ot, caption = ctext, label = "tab:ssimData", digits = dm, align = "lrrrr"),
+        sanitize.text.function = function(x){x},
+        floating=FALSE,
+        hline.after=NULL,
+        add.to.row=list(pos=list(-1, 0, nrow(ot)),
+                        command = c('\\hline\n','\\hline\n','\\hline\n')))
+@
+\caption{\label{tab:ssimData}Survival simulation cohort summary. A hypothetical hypertension Treatment A (blue) is prescribed more frequently to younger, healthier patients with a low body mass index (BMI), Treatment B (red) is prescribed to older patients with a higher body mass index. Significant treatment biases exist for age and BMI.}
+\end{table}
+This simulated data demonstrates the effects of Local Control on correcting bias within survival data. In this simulation, a treatment bias is introduced which skews the global treatment difference. Treatment A and B are two pharmaceutically equivalent treatments. The true effects of these drugs are masked by assigning treatment A to younger, lower BMI patients, and treatment B to those who are older and have a higher BMI. That is, the two treatments affect all patients equally, but one drug is given to the healthier patients, making the alternative superficially appear to have inferior outcomes due to the detrimental effects of age and obesity. Table~\ref{tab:ssimData} describes the two treatment groups.
+
+The following code can be used to generate this data in an \proglang{R} session:
+<<echo_survival_sim_generation, echo=T, eval=F>>=
+weibullSim = function(N, lambda, rho, betaage, betabmi) {
+  bmi = rnorm(N, mean = 26, sd = 4)       
+  age = runif(N) * 47 + 18                  
+  pbmi = (bmi - min(bmi)) / (max(bmi) - min(bmi)) * 0.8 + 0.1
+  page = (age - min(age)) / (max(age) - min(age)) * 0.8 + 0.1
+  drug = 1 - rbinom(N, 1, (pbmi + page) / 2) 
+  et = exp(bmi * betabmi + age * betaage)
+  Tlat = (-log(runif(n=N)) / (lambda * et))^(1 / rho)
+  C = runif(N) * 30
+  time = pmin(Tlat, C)                       
+  status = as.numeric(Tlat <= C)
+  data.frame(id = 1:N, drug, age, bmi, time, status)
+}
+survSimData = weibullSim(10000, 1e-10, 2.6, log(1.2), log(1.45))
+@
+The \pkg{LocalControl} package also includes a saved copy of this simulation, \code{cardSim}, which can be loaded using \code{data("cardSim")}. After generating or loading the data, the covariates are specified and \code{LocalControl} is invoked.
+<<echo_call_cardsim, echo=TRUE, eval=FALSE>>=
+results = LocalControl( data = cardSim, 
+  outcomeType = "survival",
+  treatmentColName = "drug",
+  timeColName = "time",
+  outcomeColName = "status",
+  clusterVars =  c("age", "bmi"))
+@
+The object returned from \code{LocalControl} is an \proglang{R} list containing vectors, data frames, and nested lists. The \code{KM} element contains the Kaplan-Meier survival curves for both treatment groups at each radius. \code{CIF} contains a list of lists for each different risk in the model. The sublists each contain a pair of data frames (T1 and T0) with CIFs for each radius. If there is only one possible type of failure (not including censoring) in the data provided, then both treatment groups will have one cumulative incidence curve generated per radius which are equivalent to 1 minus the Kaplan-Meier estimate.
+\begin{figure}[ht]
+\centering
+<<figure_7, echo=FALSE, fig = TRUE, height=6, width=10, out.width = 9>>=
+sSim = survSimData
+maxtime = max(sSim$time)
+sSim$pc = ifelse(sSim$drug == 1, t1Blue, t0Red)
+sSim$ci = 1 - sSim$time/maxtime
+sSim$pca = apply(X = sSim, MARGIN = 1, FUN = function(x) {setColAlpha(col = x["pc"], intensity = x["ci"])})
+sSim = sSim[sample(nrow(sSim), nrow(sSim)),]
+
+par(mar = c(2.6,2.6,1,.9), mgp = c(1.6, 0.5, 0))
+plot(NA,xlim = c(0,30), ylim = c(0,1),xaxs="i", yaxs="i", xlab = "Time in years",cex.lab = 1, cex.axis = 1, cex = 1,
+  ylab = "Survival probability")
+grid()
+
+lines(x =sSimFTs, y=sSimT1R1, xlim = c(0,30), ylim = c(0,1), col = t1Blue, lty = 2, lwd = 2)
+lines(x = sSimFTs, y=sSimT0R1, xlim = c(0,30), ylim = c(0,1), col = t0Red, lty = 2, lwd = 2)
+lines(x = sSimFTs, y=sSimT1R21, xlim = c(0,30), ylim = c(0,1), col = t1Blue, lwd = 2)
+lines(x = sSimFTs, y=sSimT0R21, xlim = c(0,30), ylim = c(0,1), col = t0Red, lwd = 2)
+
+box()
+legend("bottomleft", legend = c("Treatment A (uncorrected)", "Treatment A (corrected)",
+                                "Treatment B (uncorrected)", "Treatment B (corrected)"),
+       lty = c(2, 1, 2, 1), lwd = c(2,2,2,2), pt.cex = 1, cex = 1,col = c(t1Blue, t1Blue, t0Red, t0Red))
+
+#http://stackoverflow.com/questions/17041246/how-to-add-an-inset-to-topright-of-an-r-plot
+subplot(
+  plot(x = sSim$age, y = sSim$bmi, xlab = "Age (18-65)", ylab = "BMI (10-40)",col=sSim$pca,
+       xaxt = 'n', yaxt = 'n', pch=20, cex.lab=1, cex = .8,
+       mgp=c(0.5,0,0),cex.axis=0.5), x=grconvertX(c(0.5,1), from='npc'),
+       y=grconvertY(c(0.5,1), from='npc'), type='fig', pars=list( mar=c(1.5,1.5,0,0)+0.1, mgp = c(0,0,0)))
+@
+\caption{\label{fig:survCorrection}Treatment bias correction using Local Control on the survival simulation. Because of the treatment assignment bias, patients on A appear to have better outcomes than those on B (dotted lines on Kaplan-Meier plot). However, the Local Control corrected curves (solid lines) show the true treatment effect, that the two treatments are identical, when patients are clustered for similarity of age and BMI. The upper right subfigure shows a scatterplot of age and BMI in the survival simulation. The shading of points indicates the time to failure, with light shading corresponding to a short survival time, while darker points represent a longer survival time. The color of the points represents the treatment group of an observation. Blue and red points indicate whether a patient received treatment A or B, respectively.}
+\end{figure}
+Figure \ref{fig:survCorrection} illustrates the correction that occurs when calling \code{LocalControl(outcomeType = "survival")} on the biased simulated data discussed previously in Section \ref{sec:survsimex}. The dotted lines show the survival curves generated from the raw data. Without correction, it appears that the blue (treatment A) and red (treatment B) patients have nearly identical outcomes. The solid lines on the plot represent the curves generated across Local Control clusters at a much smaller radius (7.61 vs 0.82 radius units). In Section \ref{sec:FHS}, Local Control survival analysis is applied to real data from the Framingham Heart Study.
+\section{Case study: Framingham heart patients}\label{sec:FHS}
+The effects of smoking on the time to the competing risk of either reaching death, or being diagnosed with hypertension are analyzed using Local Control. Those who leave the study prior to reaching either of these outcomes, or reach the study conclusion without either outcome occurring, are considered to be right-censored observations. The available covariates are tested for a significant impact on the outcome and examine the results produced along with their interpretation.
+\subsubsection[Data: framingham]{Data: \code{framingham}}\label{sec:framdata}
+The Framingham study data tracks the cardiac health of more than 4000 patients over the course of twenty-four years \citep{framingham}. A subset of the data is provided that has been approved for training and testing purposes. More information about the Framingham Heart Study can be found at: \url{https://www.framinghamheartstudy.org/}. While the original data includes several additional variables, only the following are used in this analysis:
+\begin{itemize}
+  \item{\code{female - }}{Sex of the patient. 1=female, 0=male.}
+  \item{\code{totchol - }}{Total cholesterol of patient at study entry.}
+  \item{\code{age - }}{Age of the patient at study entry.}
+  \item{\code{bmi - }}{Patient body mass index.}
+  \item{\code{BPVar - }}{Average units of systolic and diastolic blood pressure above normal:\\ ((SystolicBP-120)/2) + (DiasystolicBP-80)}
+  \item{\code{heartrte - }}{Patient heartrate taken at study entry.}
+  \item{\code{glucose - }}{Patient blood glucose level.}
+  \item{\code{cursmoke - }}{Whether or not the patient was a smoker at the time of study entry.}
+  \item{\code{outcome - }}{Did the patient die, experience hypertension, or leave the study without experiencing either event.}
+  \item{\code{time_outcome - }}{The time at which the patient experienced outcome.}
+  \item{\code{cigpday - }}{Number of cigarettes smoked per day at time of study entry.}
+\end{itemize}
+<<table_8, echo=F, eval=T, results=tex>>=
+  data(framingham)
+  
+  smokers = framingham[which(framingham$cursmoke == 1), ]
+  nonsmokers = framingham[which(framingham$cursmoke == 0), ]
+  framVars = c("female", "totchol", "age", "bmi", "BPVar", "heartrte", "glucose")
+
+  ot = data.frame(matrix(data = 0, nrow = 8, ncol = 4),
+                  row.names = c("n (patients)",
+                                "female",
+                                "totchol ($\\frac{mg}{dL}$)",
+                                "age (years)",
+                                "BMI ($\\frac{kg}{m^2}$)",
+                                "BPVar (mm Hg)",
+                                "heartrte (bpm)",
+                                "glucose ($\\frac{mg}{dL}$)"))
+
+  names(ot) = c("All patients", "Smokers", "Nonsmokers", "$p$~value")
+  ot[1,] = as.numeric(c(nrow(framingham), nrow(smokers),nrow(nonsmokers),  NA))
+
+  for(i in 1:length(framVars)){
+    cv = framVars[i]
+    ot[i+1,] = as.numeric(c(mean(framingham[, cv]), mean(smokers[, cv]), 
+                            mean(nonsmokers[, cv]), as.numeric(t.test(smokers[, cv],nonsmokers[, cv])$p.value)))
+  }
+
+  ctext = 'Framingham Heart Study cohort biases. Patients with preexisting cardiovascular conditions are dropped from the study. Fisher\'s exact test is used for the comparison of the female binary covariate. For the remaining continuous covariates, a t-test is used to compare the two groups. Smoking "treatment" bias significantly affects sex, age, BMI, blood pressure, and heart rate.'
+  dm = matrix(data = 2, nrow = 8, ncol = 5)
+  dm[,5] = -2
+  dm[1,] = 0
+
+  print(xtable(ot, caption = ctext, label = "tab:framData", digits = dm), sanitize.text.function = function(x){x}, table.placement="ht")
+@
+Due to the high correlation between diastolic and systolic blood pressure, the two variables are combined by centering them at the threshold of ideal/pre-high blood pressure, then scaling comparably and summing them to create \code{BPvar}. Patients with preexisting conditions are also removed to form a more comparable population (Table~\ref{tab:framData}). The competing risks of hypertension and death are analyzed.
+
+\begin{minipage}{\textwidth}
+<<echo_fram_ana, echo=TRUE, eval=FALSE>>=
+data("framingham")
+
+framVars = c("female","totchol","age","bmi","BPVar","heartrte","glucose")
+FHSResults = LocalControl( data = framingham, outcomeType = "survival",
+  treatmentColName = "cursmoke", treatmentCode = 1,
+  timeColName = "time_outcome", outcomeColName = "outcome",
+  clusterVars = framVars)
+print(summary(FHSResults))
+@
+\end{minipage}
+<<table_9, echo=F, eval=T, results = tex>>=
+dm = matrix(data = 2, nrow = 11, ncol = 6)
+dm[1,] = 0
+dm[,6] = -2
+
+print(xtable(FHSSummary[1:11,], digits = dm, caption = "Framingham Local Control summary. Each row corresponds to one radius of correction. The values in the first column are the radius lengths in normalized units. The second column contains the fraction of observations who are informative at the given radius. The pct\\_radius column is the size of the radius as a fraction of the maximum distance between any two observations. The last two columns contain the results from the hypothesis tests comparing the hypertension CIFs for the two treatment groups (as described in Section~\\ref{sec:pepe}).", label = 'tab:framSumm'), include.rownames = T,NA.string = "-", table.placement="hb")
+@
+\begin{figure}[p]
+\centering
+<<figure_8, echo=FALSE, fig = TRUE, height=11, width=8.5>>=
+plotz = list()
+for(radLim in c("rad_1","rad_11")){
+
+    t1lines2plot = FHSPlotLines[[radLim]][["t1HT"]] 
+    t0lines2plot = FHSPlotLines[[radLim]][["t0HT"]]
+    t1DeathLines = FHSPlotLines[[radLim]][["t1Death"]] 
+    t0DeathLines = FHSPlotLines[[radLim]][["t0Death"]]
+
+    ptitle = ifelse(radLim=="rad_1", "Uncorrected cumulative incidence", "Local Control corrected")
+
+    plotz[[radLim]]<-ggplot() +
+                     theme_bw(base_size = 12) +
+                     theme(plot.title = element_text(hjust = 0.5)) +
+                     ggtitle(ptitle) +
+                     geom_line(data = t1lines2plot, aes(x = TIMES, y=CIF, colour=NG, linetype = NG)) +
+                     geom_ribbon(data = t1lines2plot,aes(x = TIMES,ymin=LOWER, ymax=UPPER, fill = NG), alpha=0.2) +
+                     geom_line(data = t0lines2plot, aes(x = TIMES, y=CIF, colour=NG, linetype = NG)) +
+                     geom_ribbon(data = t0lines2plot,aes(x = TIMES,ymin=LOWER, ymax=UPPER, fill = NG), alpha=0.2) +
+                     geom_line(data = t0DeathLines, aes(x = TIMES, y=CIF, colour=NG, linetype = NG)) +
+                     geom_ribbon(data = t0DeathLines,aes(x = TIMES,ymin=LOWER, ymax=UPPER, fill = NG), alpha=0.2)  +
+                     geom_line(data = t1DeathLines, aes(x = TIMES, y=CIF, colour=NG, linetype = NG)) +
+                     geom_ribbon(data = t1DeathLines,aes(x = TIMES,ymin=LOWER, ymax=UPPER, fill = NG), alpha=0.2) +
+                     scale_fill_manual(values = c( "#377EB8", "#377EB8","#E41A1C","#E41A1C"), name = "Smoker status and outcome",
+                                       labels = c("Nonsmoker Death", "Nonsmoker Hypertension","Smoker Death", "Smoker Hypertension")) +
+                     scale_colour_manual( values = c( "#377EB8", "#377EB8","#E41A1C","#E41A1C"), name = "Smoker status and outcome",
+                                          labels = c("Nonsmoker Death", "Nonsmoker Hypertension","Smoker Death", "Smoker Hypertension"))+
+                     scale_linetype_manual(name = "Smoker status and outcome",
+                                           labels = c("Nonsmoker Death", "Nonsmoker Hypertension","Smoker Death", "Smoker Hypertension"),
+                                           values = c(1, 2, 1, 2)) +
+                     scale_x_continuous(limits =c(0,24),expand = c(0, 0), breaks = seq(0, 24, 2),
+                                        name = "Time (years)") +
+                     scale_y_continuous(limits =c(0,.7), expand = c(0, 0), breaks = seq(0, .7, .1),
+                                        name = "Cumulative incidence of death and hypertension") +
+                     theme(legend.justification=c(0,1),
+                           legend.position=c(0,1),
+                           legend.title=element_blank(),
+                           legend.direction='vertical',
+                           legend.box='horizontal',
+                           legend.background = element_rect(colour = 'transparent', fill = 'transparent'))
+
+
+}
+grid.arrange(plotz$rad_1, plotz$rad_11, ncol=1)
+@
+\caption{\label{fig:framCorrection}Competing risks of hypertension and death among smokers and nonsmokers in the Framingham Heart Study. The top plot shows the cumulative incidence without any correction for covariates. This biased estimate suggests that non-smokers have a higher risk for hypertension and lower risk of death. The bottom plot displays the results from Local Control after correcting for sex, cholesterol, age, BMI, heart rate, blood pressure, and blood glucose level. The competing risks Local Control bias-corrected curves show us that, among comparable patients, there is almost no difference in the rate of hypertension over time, but that the greater risk of death remains for smokers. The shaded areas represent the 95\% confidence interval estimates.}
+\end{figure}
+
+The summary frame contains the percentage of informative information across all levels of radius correction (Table \ref{tab:framSumm}). Figure \ref{fig:framCorrection} shows the cumulative incidence curves for both risks and treatment groups first without any correction, then with the correction observed at the 11th radius, corresponding with 78.3\% of the data being informative.
+
+The uncorrected plot of Figure \ref{fig:framCorrection} shows that after a long exposure, the cumulative incidence of death in the smoking treatment group is higher than that of the non-smokers. What is surprising is that it appears as though smoking protects individuals from hypertension. After correcting with Local Control, the hypertension curve for non-smokers shifts down towards the smoking group, and is no longer significantly different. Note that the death CIFs remain almost identical in both of these plots. Does smoking protect from hypertension? An early article claimed that cigarette smoking inhibits blood pressure \citep{seltzer1974}, but a more recent review suggests the evidence is inconclusive \citep{virdis2010}. Even if smoking reduced hypertension, the competing risk of death is still higher for smokers.
+\section{Patient level prediction/heterogeneity of treatment effect} \label{sec:plp}
+Heretofore, covariates have been used to group patients for comparison to estimate a bias-corrected global treatment difference between a pair of treatments within a population. Such evidence is useful in making generalizations that one treatment may be safer or more effective than another on average. However, this does not answer the question of what is the expected outcome from a given treatment for a particular patient.
+\begin{figure}[ht]
+\centering
+<<figure_9, fig = TRUE, eval = TRUE, echo = FALSE, height=5, width=8>>=
+#sults = linSults
+lindner$rad_33 = linRad33 # sults$ltds$rad_33
+
+lindner$stent = ifelse(lindner$stent == 1, "1", "0")
+lindner$female = ifelse(lindner$female == 1, "1", "0")
+
+fit <- rpart(formula = rad_33 ~ female + stent, cost = c(0.5, 2),
+             data = lindner, control=rpart.control(maxdepth=2,cp=-1), method = "anova")
+
+boxlabs = c("Entire population",  "All male", "Male without stent", "Male with stent","All female", "Female with stent", "Female without stent")
+boxlabs = paste0(boxlabs, "\ncb = ")
+
+prp(fit, main=NA,
+    type=4, fallen=T, branch=.3, round=0, leaf.round=0,
+    clip.right.labs=F, under.cex=1,
+    border.col = c("purple", "blue","blue","blue", "#FF0099FF", "#FF0099FF","#FF0099FF"),
+    box.palette=0, prefix = boxlabs,
+    branch.col = c("#FF0099FF", "blue", "blue", "blue", "#FF0099FF", "#FF0099FF"),
+    branch.lwd=3, branch.lty = rep(1,6),  # branch.lty = c(2,1,2,1,1,1),
+    extra=1, under=F, lt=" < ", ge=" >= ")
+
+par(mar = c(0,0,0,0))
+
+botrowbot = -0.01
+botrowtop = 0.165
+sidePoints = 5
+tbPoints = 8
+pcex = 0.7
+
+#MEN WITHOUT STENT BOX
+box1LX = -0.015
+box1RX =  0.1875
+points(x = rep(box1LX, sidePoints), y = seq(from = botrowbot, to = botrowtop, length.out = sidePoints) , col = "blue", pch = 1, cex = pcex) #left
+points(x = rep(box1RX, sidePoints), y = seq(from = botrowbot, to = botrowtop, length.out = sidePoints) , col = "blue", pch = 1, cex = pcex) #right
+points(x = seq(from = box1LX, to = box1RX, length.out = tbPoints), y = rep(botrowtop, tbPoints) , col = "blue", pch = 1, cex = pcex) #top
+points(x = seq(from = box1LX, to = box1RX, length.out = tbPoints), y = rep(botrowbot, tbPoints) , col = "blue", pch = 1, cex = pcex) #bot
+
+box2LX = 0.273
+box2RX = 0.4423
+points(x = rep(box2LX, sidePoints), y = seq(from = botrowbot, to = botrowtop, length.out = sidePoints) , col = "blue", pch = 16, cex = pcex) #left
+points(x = rep(box2RX, sidePoints), y = seq(from = botrowbot, to = botrowtop, length.out = sidePoints) , col = "blue", pch = 16, cex = pcex) #right
+points(x = seq(from = box2LX, to = box2RX, length.out = tbPoints), y = rep(botrowtop, tbPoints) , col = "blue", pch = 16, cex = pcex) #top
+points(x = seq(from = box2LX, to = box2RX, length.out = tbPoints), y = rep(botrowbot, tbPoints) , col = "blue", pch = 16, cex = pcex) #bot
+
+box3LX = 0.53
+box3RX = .73
+points(x = rep(box3LX, sidePoints), y = seq(from = botrowbot, to = botrowtop, length.out = sidePoints) , col = "#FF0099FF", pch = 16, cex = pcex) #left
+points(x = rep(box3RX, sidePoints), y = seq(from = botrowbot, to = botrowtop, length.out = sidePoints) , col = "#FF0099FF", pch = 16, cex = pcex) #right
+points(x = seq(from = box3LX, to = box3RX, length.out = tbPoints), y = rep(botrowtop, tbPoints) , col = "#FF0099FF", pch = 16, cex = pcex) #top
+points(x = seq(from = box3LX, to = box3RX, length.out = tbPoints), y = rep(botrowbot, tbPoints) , col = "#FF0099FF", pch = 16, cex = pcex) #bot
+
+box4LX = 0.789
+box4RX = 1.02
+points(x = rep(box4LX, sidePoints), y = seq(from = botrowbot, to = botrowtop, length.out = sidePoints) , col = "#FF0099FF", pch = 1, cex = pcex) #left
+points(x = rep(box4RX, sidePoints), y = seq(from = botrowbot, to = botrowtop, length.out = sidePoints) , col = "#FF0099FF", pch = 1, cex = pcex) #right
+points(x = seq(from = box4LX, to = box4RX, length.out = tbPoints), y = rep(botrowtop, tbPoints) , col = "#FF0099FF", pch = 1, cex = pcex) #top
+points(x = seq(from = box4LX, to = box4RX, length.out = tbPoints), y = rep(botrowbot, tbPoints) , col = "#FF0099FF", pch = 1, cex = pcex) #bot
+@
+\caption{\label{fig:subgroupTree}Recursive partitioning tree. Using the results from the analysis in Section~\ref{sec:nnLindner} as input to recursive partitioning, variables are identified which produce significant treatment differences. The color of the nodes is used to differentiate between the entire population (purple), subgroups containing only women (pink), and those with only male patients (blue). The dots bordering the leaves represent a second partitioning of the men and women. Solid dots represent patients with a stent, while hollow dots represent those without. The \fct{LocalControl} outcomes for each of these subgroups are displayed in Figure \ref{fig:subgroupPlot}.}
+\end{figure}
+Patient level prediction recognizes that there may be heterogeneity of treatment effect (HTE), namely that patients can have very different outcomes depending on patient characteristics. Traditional approaches will use regression models or machine learning on patient covariates to predict patient outcomes. While these approaches can provide patient level predictions, the interpretation of such models could be distorted by the biasing variables.  Instead, after bias correction, regression or machine learning can be applied to model bias-corrected treatment differences, giving insight into what variables modify the difference in outcome from one treatment to another, unpolluted by variables that govern choice of treatment.
+
+In Section \ref{sec:classicLC}, an analysis of the Lindner data was presented using \code{LocalControlClassic}. In Section \ref{sec:nnLC}, \code{LocalControl} was used to provide a comparison of the results from the two methods. The Lindner data is now analyzed for the third time, for the investigation of patient subgroups. This analysis continues from Section~\ref{sec:nnLindner}, having just called \code{LocalControl} on the Lindner data, and plotting the results (Figure \ref{fig:lcnnConf}). Recursive partitioning is used to explore patient subgroups with statistically significant differences in bias-corrected treatment difference as a function of patient covariates, including the clustering variables \citep{obenchain2013, faries2013, young2015, young2016}. Statistical significance was adjusted to account for multiple comparisons.
+\begin{figure}[h!]
+\centering
+<<figure_10, fig = TRUE, eval = TRUE, echo = FALSE, height=5.4, width=9, out.width = 9 >>=
+
+pMatches = linSummary[nrow(linSummary),]
+everyone = linSummary[1:(nrow(linSummary)-1),]
+
+logXlimits = c(1,min(everyone$pct_radius))
+
+layMatrix = matrix(1, nrow = 20, ncol = 20, byrow = TRUE)
+layMatrix[1:5,1:18] = 3
+layMatrix[6:20,19:20] = 2
+layMatrix[1:5,19:20] = 4
+
+layout(layMatrix)
+
+#Bottomleft - Main plot
+par(mar = c(4.1,4.1,0,0))
+{
+plot(x = everyone$pct_radius,y = everyone$ltd, xlim = logXlimits,type = "l",
+     xlab = "Fraction of maximum radius", ylim = c(-16001, 8000), col = "purple",
+     ylab = "Cardbill difference (Abciximab - control)", log = "x", panel.first=grid(equilogs=FALSE), lwd= 2)
+lines(x = everyone$pct_radius, y = everyone$maleAverage, col = "blue", lwd= 2)
+lines(x = everyone$pct_radius, y = everyone$femaleAverage, col = "#FF0099FF", lwd= 2)
+lines(x = everyone$pct_radius,y = everyone$male_without, col = "blue", pch = 1, type = "o")
+lines(x = everyone$pct_radius,y = everyone$female_without, col = "#FF0099FF", pch = 1, type = "o")
+lines(x = everyone$pct_radius,y = everyone$male_stent, col = "blue", pch = 16, type = "o")
+lines(x = everyone$pct_radius,y = everyone$female_stent, col = "#FF0099FF", pch = 16, type = "o")
+abline(v=linSummary["rad_33","pct_radius"],col="forestgreen", lwd = 3, lty = 3)
+
+legend("bottomleft", cex = 1.1,
+       legend = c( "Entire population", "Women", "Men",
+                   "Women with stents", "Men with stents",
+                   "Women without stents", "Men without stents",
+                   "Fraction of informative data","Tree-radius"),
+       col = c("purple", rep(c("#FF0099FF", "blue" ),3), "black","forestgreen"), 
+       lwd = c(2,2,2,rep(1,4),2,3), lty = c(rep(1,8),3), pch = c(NA,NA,NA,16,16,1,1,NA,NA))
+}
+
+#Bottomright - Perfect matches
+par(mar = c(4.1, 0.5,0,2))
+{
+plot(NA, xaxt = "n", yaxt = "n", ylim = c(-16001, 8000) ,xlim=c(-1,1), xlab = NA, ylab=NA, panel.first = grid(nx = 2, ny = NULL))
+axis(side = 1, at = 0)
+mtext(side = 1, text = "Perfect\n matches", cex = 0.6, line = 3)
+lines(x = c(-1/2,1/2),y = c(pMatches$ltd,pMatches$ltd), col = "purple", lwd = 2)
+lines(x = c(-1/2,1/2),y = c(pMatches$maleAverage,pMatches$maleAverage), col = "blue", lwd = 2)
+lines(x = c(-1/2,1/2),y = c(pMatches$femaleAverage,pMatches$femaleAverage), col = "#FF0099FF", lwd = 2)
+points(x = c(-1/2,0,1/2),y = rep(pMatches$male_without,3), col = "blue",  pch = 1, type = "o")
+points(x = c(-1/2,0,1/2),y = rep(pMatches$female_without,3), col = "#FF0099FF",  pch = 1, type = "o")
+points(x = c(-1/2,0,1/2),y = rep(pMatches$male_stent,3), col = "blue",  pch = 16, type = "o")
+points(x = c(-1/2,0,1/2),y = rep(pMatches$female_stent,3), col = "#FF0099FF", pch = 16, type = "o")
+}
+
+#Topleft - pct info for main plot
+par(mar = c(0.5, 4.1, 2, 0))
+{
+plot(x = everyone$pct_radius, y = everyone$pct_data,
+     xaxt = "n",yaxt="n",type = "l", lwd = 3,
+     ylab =NA , xlab=NA, xlim = logXlimits, ylim = c(0,1),
+     log="x", panel.first=grid(ny = 5,nx=NULL,equilogs = F))
+abline(v=linSummary["rad_33","pct_radius"],col="forestgreen", lwd = 3, lty = 3)
+
+mtext(side = 2, text = "Fraction\ninformative data", cex = 0.6, line = 2)
+axis(side = 2, at = c(0,0.2,0.4,0.6,0.8,1), labels = c(0,".2",".4",".6",".8","1"),cex.axis = .9)
+}
+
+#Topright - pct info for perfect matches
+par(mar = c(0.5, 0.5, 2, 2))
+{
+plot(x=c(-1/2,1/2), y= c(pMatches$pct_data, pMatches$pct_data),
+     type = "l", xlim = c(-1,1), ylim = c(0,1), xaxt = "n", lwd = 3,
+     yaxt = "n", xlab = NA, ylab=NA, panel.first=grid(ny = 5,nx=2))
+}
+
+@
+\caption{\label{fig:subgroupPlot}Local Control subgroup analysis. After identifying significant subgroups with recursive partitioning, the subgroup treatment differences are graphed as a function of radius. Observe that the men without stents have a much lower billing cost on Abciximab vs. control than each of the other subgroups.}
+\end{figure}
+A clustering radius must be selected to begin the analysis. The problem of radius selection is similar to that of selecting bin sizes when using propensity scoring. It is difficult to say which radius is "correct", and the results may vary significantly from one to the next. It is thus important to examine the behavior of the estimates across a range of radii, as well as compare those results to perfectly matched patients, if they exist. When a radius must be selected, it is useful to plot the fraction of patients who are considered informative at a given radius. In this example, a radius is chosen where 95\% of the data is informative, and where the estimates are also plateauing (Figure \ref{fig:lcnnConf}). Eeach patient is assigned the average treatment difference produced within their cluster at the selected radius. With local treatment difference as the dependent variable, and patient covariates as the independent variables, recursive partitioning is used to classify patient subgroups. In Figure \ref{fig:subgroupTree}, recursive partitioning identifies four mutually exclusive subgroups: men and women with and without stents. Patients are then divided into these identified subgroups to examine the average local treatment differences per subgroup (Figure \ref{fig:subgroupPlot}). The data suggests over a wide range of radii of bias correction, that men without stents result in lower cost of care on Abciximab, but that all other subgroups have a lower or neutral cost of treatment on usual care alone.
+
+In large data sets it can be true that an "average/overall" effect is meaningless. The answer is that "it depends". For example, a drug might work for women, but not for men. When there is treatment response heterogeneity, a recommendation of one-size-fits-all is problematic and even a bias-corrected overall effect is misleading. Local Control enables the analysis of both the bias-corrected average effect, as well as creates insight into subgroup outcome heterogeneity.
+\clearpage
+\section{Conclusion}\label{sec:conclusion}
+The \proglang{R} \pkg{LocalControl} package has been presented with examples of bias-corrected estimation of treatment outcome differences for observational studies, including time-to event data with competing risks. Patient-level prediction and heterogeneity of treatment effect analysis is currently not implemented for survival analysis. It remains as future work to adapt this approach to survival-based outcomes, for example by extensions to survival-based recursive partitioning trees \citep{bou-hamad2011}.
+%\clearpage
+\section*{Computational details}
+% \begin{leftbar}
+% If necessary or useful, information about certain computational details
+% such as version numbers, operating systems, or compilers could be included
+% in an unnumbered section. Also, auxiliary packages (say, for visualizations,
+% maps, tables, \dots) that are not cited in the main text can be credited here.
+% \end{leftbar}
+The results in this paper were obtained using
+\proglang{R}~\Sexpr{paste(R.Version()[6:7], collapse = ".")} with the
+\pkg{LocalControl}~\Sexpr{packageVersion("LocalControl")} package. \proglang{R} itself
+and the following packages which have been used throughout the paper are available from the Comprehensive
+\proglang{R} Archive Network (CRAN) at
+\url{https://CRAN.R-project.org/}.
+\begin{itemize}
+\item{\pkg{xtable} }{\cite{xtable}}
+\item{\pkg{TeachingDemos} }{\cite{TeachingDemos}}
+\item{\pkg{gplots} }{\cite{gplots}}
+\item{\pkg{dendextend} }{\cite{dendextend}}
+\item{\pkg{data.table} }{\cite{data.table}}
+\item{\pkg{colorspace} }{\cite{colorspace}}
+\item{\pkg{RColorBrewer} }{\cite{RColorBrewer}}
+\item{\pkg{gridExtra} }{\cite{gridExtra}}
+\item{\pkg{ggplot2} }{\cite{ggplot2}}
+\item{\pkg{rpart} }{\cite{rpart}}
+\item{\pkg{rpart.plot} }{\cite{rpart.plot}}
+\end{itemize}
+
+\section*{Acknowledgments}
+This work was supported by funding from the National Institutes of Health, National Library of Medicine (1 R21 LM012389-01).
+\clearpage
+\bibliography{LocalControl}
+
+\newpage
+
+\begin{appendix}
+\end{appendix}
+
+%% -----------------------------------------------------------------------------
+
+
+\end{document}

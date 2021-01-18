@@ -1,0 +1,152 @@
+---
+title: "Outlier Detection in Genetic Data"
+author: "Mads Lindskou"
+output: 
+  rmarkdown::html_vignette:
+    highligh: zenburn
+    toc: true
+    fig_height: 4
+    fig_width: 4
+    fig_align: "center"
+bibliography: refs.bib
+vignette: >
+  %\VignetteIndexEntry{Outlier Detection in Genetic Data}
+  %\VignetteEngine{knitr::rmarkdown}
+  \usepackage[utf8]{inputenc}
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, include = TRUE)
+```
+
+# The 1000 Genomes Project Data
+
+The outlier detection method [@lindskououtlier] arose from a problem in the forensic science community where it is of great interest to make statements about the geographical origin of a DNA sample. This is in general a very complicated matter. More over, when DNA markers are in linkage disequilibrium things get even more complicated. The 1000 Genomes Project set out to provide a comprehensive description of common human genetic variation by applying whole-genome sequencing to a diverse set of individuals from multiple populations [@10002015global]. In the **molic** package we include the final data from the project which includes $2504$ DNA profiles coming from five different continental regions; Europe (EUR), Africa (AFR), America (AMR), East Asia (EAS), South Asia (SAS). Each DNA profile is the compound of two rows in the data `tgp_dat`, one for each chromosome copy. This makes the outlier procedure slightly more complicated since we must fit a model to each copy and aggregate the information (but we shall see in a moment that it is not hard to do using the **molic** package).
+
+The data includes $276$ SNP markers grouped in $97$ microhaplotypes; in other words, the SNPs within a microhaplotype are so close that they cannot be assumed to be in linkage disequilibrium and we must take into account their mutual dependencies. We do this with the use of decomposable graphical models. See the `outlier_intro` for more details on the model. The microhaplotype grouping is provided is the list `tgp_haps`.
+
+## Setup and Data
+
+
+```{r e}
+library(molic)
+library(ess)   # for fit_components
+library(dplyr)
+set.seed(7)    # for reproducibility
+
+## Data
+
+# The components - here microhaplotypes
+haps <- tgp_haps
+
+# All the Europeans
+eur <- tgp_dat %>%
+  as_tibble() %>%
+  filter(pop_meta == "EUR")
+
+# Extracting the two databases for each copy of the chromosomes
+eur_a <- eur %>%
+  filter(grepl("a$", sample_name)) %>%
+  select(-c(1:2))
+
+eur_b <- eur %>%
+  filter(grepl("b$", sample_name)) %>%
+  select(-c(1:2))
+```
+
+We peak at data:
+
+```{r}
+print(eur, n_extra = 0)
+```
+
+We now fit the interaction graphs for each chromosome copy. We use `fit_components` since we know, that SNPs between haplotypes are independent. This also makes the procedure much faster.
+
+```{r fig.align='center', fig.width = 6, fig.height = 6,fig.show='hold'}
+ga <- fit_components(eur_a, comp = haps, trace = FALSE)
+gb <- fit_components(eur_b, comp = haps, trace = FALSE)
+print(ga)
+plot(ga, vertex.size = 3, vertex.label = NA)
+```
+
+## Example 1 - Testing which observations within data are outliers
+
+Fitting the model:
+
+```{r}
+# Only 500 simulations is used here to exeplify
+# The default number of simulations is 10,000
+m1 <- fit_outlier(eur_a, ga, nsim = 500) # consider using more cores (ncores argument)
+m2 <- fit_outlier(eur_b, gb, nsim = 500) # consider using more cores (ncores argument)
+m  <- fit_mixed_outlier(m1, m2)
+```
+
+Model information:
+
+```{r}
+print(m)
+```
+
+The distribution of the test statistic:
+
+```{r fig.align='center', fig.width = 6, fig.height = 6,fig.show='hold'}
+plot(m)
+```
+
+Locating the outliers:
+
+```{r}
+outs <- outliers(m)
+eur_a_outs <- eur_a[which(outs), ]
+eur_b_outs <- eur_b[which(outs), ]
+print(eur_a_outs, n_extra = 0)
+```
+Retrieving the deviance  test statistic for individual observations:
+
+```{r}
+x1 <- rbind(eur_a_outs[1, ], eur_b_outs[1, ])
+x2 <- rbind(eur_a[1, ], eur_b[1, ])
+dev1 <- deviance(m, x1) # falls within the critical region in the plot (the red area)
+dev2 <- deviance(m, x2) # falls within the acceptable region in the plot
+
+dev1
+dev2
+
+# Retrieving the pvalues
+pval(m, dev1)
+pval(m, dev2)
+```
+
+## Example 2 - Testing if a new observation is an outlier
+
+Testing if an American is an outlier in Europe:
+
+```{r fig.align='center', fig.width = 6, fig.height = 6,fig.show='hold'}
+amr <- tgp_dat %>%
+  as_tibble() %>%
+  filter(pop_meta == "AMR")
+
+z1  <- amr %>%
+  filter(grepl("a$", sample_name)) %>% 
+  select(unname(unlist(haps))) %>%
+  slice(1) %>%
+  unlist()
+
+z2  <- amr %>%
+  filter(grepl("b$", sample_name)) %>% 
+  select(unname(unlist(haps))) %>%
+  slice(1) %>%
+  unlist()
+
+# Only 500 simulations is used here to exemplify
+# The default number of simulations is 10,000
+m3 <- fit_outlier(eur_a, ga, z1, nsim = 500) # consider using more cores (ncores argument)
+m4 <- fit_outlier(eur_b, gb, z2, nsim = 500) # consider using more cores (ncores argument)
+m5 <- fit_mixed_outlier(m3, m4)
+print(m5)
+plot(m5)
+```
+
+Thus, `z` does not deviate significantly from the Europe database. The red area depicts the $0.05$ significance level and the dotted line is the observed deviance of `z` (`r m5$dev`). This is not a complete surprise, since Americans and Europeans have many similarities.
+
+# References

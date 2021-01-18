@@ -1,0 +1,372 @@
+%\VignetteEngine{knitr::knitr}
+%\VignetteIndexEntry{Behavioral Change Point Analysis}
+
+\documentclass[10pt]{article}
+\usepackage{amsmath}
+\usepackage{amstext}
+\usepackage{graphicx}
+\usepackage{color}        
+\usepackage{multirow}
+\usepackage{setspace}
+\setlength{\parindent}{0in}
+\setlength{\parskip}{\baselineskip}
+
+\usepackage[colorlinks=true,urlcolor=blue]{hyperref}
+
+\newcommand{\bc}{\begin{center}}
+\newcommand{\ec}{\end{center}}
+
+\newcommand{\ben}{\begin{enumerate}}
+\newcommand{\een}{\end{enumerate}}
+\newcommand{\I}{\item}
+
+\newcommand{\beq}{\begin{eqnarray}}
+\newcommand{\eeq}{\end{eqnarray}}
+\newcommand{\ed}{\end{document}}
+
+\usepackage[left=1in,top=1.25in,right=1in,bottom=1.25in]{geometry}
+\usepackage{setspace}
+
+\title{Behavioral Change Point Analysis in R:\\
+The {\tt bcpa} package}
+
+\author{Eliezer Gurarie,\\
+Department of Statistics\\
+School of Environmental and Forest Sciences\\
+University of Washington, Seattle\\
+\url{eliezg@u.washington.edu}}
+\date{October 2013\\
+Version 1.1 updated: October 2014}
+
+\begin{document}
+
+\maketitle
+\begin{spacing}{0.1}
+\tableofcontents
+\end{spacing}
+\section{Background}
+
+The \texttt{bcpa} package is designed to streamline the implementation of the ``behavioral change point analysis'' (BCPA, Gurarie et al.~2009) for any time-stamped movement data, i.e.~in which there are $X$, $Y$ and $T$ coordinates representing spatial locations and time of observation. 
+
+The BCPA was developed in order to identify changes in animal behaviors that were obscured by visual inspection or standard techniques. Specific difficulties associated with movement data include the multi-dimensionality, auto- and cross-correlation, considerable internal structure (reflecting behavioral complexity), and data collection that can be error-ridden or be irregularly sampled.  The irregular sampling is a particulaly vexing problem for marine organism data, for which locations are usually transmitted only when the animal is at the surface, while most standard approaches to modeling movement (e.g.~the Correlated Random Walk) are only meaningful for regularly sampled data. 
+
+The paper had attracted considerable interest from biologists and ecologists that collect animal movement data and are eager to identify structure in the behaviors.  Unfortunately, the code that was originally posted as supplementary material was incomplete and poorly documented, making the method somewhat inaccesible to practitioners without strong statistical or programming backgrounds.  After responding to (about) the hundredth email to share the code and offer some suggestions, and in light of a bevy of improvements to the code itelf (e.g.~greater speed by dropping some routines into C++, greater flexibility in visualizing and presenting the results, more usable ``tuning knobs'' and flexible syntax) it became clear that bundling the implementation in an R package would be the most efficient and tidy way to make it more accessible.  
+
+  
+\section{Summary of method}
+
+The BCPA uses a likelihood-based method for identifying significant changes in movement parameter values across long, complex datasets by sweeping an analysis window over the timeseries and identifying the most likely changepoints, while simultaneously testing which, if any, of the parameters might have changed at that changepoint.  
+
+Implementing the BCPA involves the following steps:
+
+\ben
+\I Pick a response time-series variable $X$.  One fairly robust variable is the persistence velocity $V_p = V \cos(\theta)$ where $V$ is speed = displacement/time interval and $\theta$ is turning angle.  Another alternative is simply $V$. 
+
+\I Assume that the observations $X(t)$ are a observations from a stationary continuous-time Gaussian process with mean $\mu_i$, standard deviation $\sigma_i$ and time-scale of autocorrelation $\tau_i$, where $i \in (1,2,...N)$ represents an \emph{a priori} unknown number of behavioral states. \emph{Note: the use of a continuous time scale $\tau >0$ is a change from the original model, which estimates a discrete autocorrelation $0 < \rho < 1$.  The time-scale is more biologically meaningful, as it is estimated in units of time: the longer the time-scale the longer the ``memory'' of the movement}.
+
+\I Obtain a likelihood for $\mu_i$, $\sigma_i$ and $\rho_i$ within a given stationary state $i$ (See Gurarie et al.~2009 for details).
+
+\I Find the location within a window of observations which splits a subset of the data into two sets of the three parameters. 
+
+\I Within this window, use a version of BIC to determine which combination (if any) of the three parameters most parsimoniously describes the separation in the data.  Often, the null model is returned.  I say "modified" because the BIC is usually defined as: $BIC = - 2 \log(L) + k \log(n)$, where $L$ is the likelihood, $k$ is the number of parameters, and $n$ is the number of data points; however, the 2 is replace with a constant $K > 0$.  The smaller this value, the more conservative the analysis, i.e.~the more likely it is to select a simpler or null model.  This is one of several ``tuning knobs'' in the BCPA. 
+
+\I Sweep a window of fixed size across the time series and collect all the changepoints, the  associated models, and the values of the estimated parameters according to the selected model on either side of the changepoint within the window.   Note, the window size is another "knob" - larger windows are more robust but more coarse, smaller windows are more sensitive but more likely to give slightly spurious results, compensated by adjusting the $K$.
+\een
+
+These steps summarize the actual analysis.  The output of the analysis can be summarized and presented in two ways: 
+ 
+\ben
+\I Smooth BCPA: A ``smooth'' output is the one described in the original paper: is the average over all the estimated parameters, and the location of all the change points on the other.  This gives interesting output - with, in particular, the opportunity to have parameters change both suddenly and gradually, and to visualize a phase plot of the behavioral shifts - both sudden and gradual. 
+
+\I Flat BCPA: A "flat" output takes the result of the window sweep and finds the most frequently chosen change points, clustering those unique changepoints which are close to each other (within some interval $dT_c$).  The three parameters $\mu$, $\sigma$ and $\tau$ are then estimated within each section, and the location of these ``flat'' changepoints is recorded.  This output is directly comparable to the BPMM segmentation. 
+\een
+
+\section{Detailed implementation}
+
+The complete analysis can now be performed in, essentially, two or three lines of code (see final sections of this vignette).   Before leaping into them, I review the assumptions and fundamental pieces of the method, using the functions within \texttt{bcpa} to facilitate implementation.
+
+\subsection{Estimating auto-correlation / characteristic time-scale for irregular data}
+
+The BCPA (as currently implemented) analyzes a one-dimensional, arbitrarily sampled autocorrelated Gaussian time-series $X(t)$, specified by three parameters, a mean $\mu$, a standard deviation $\sigma$ and a characteristic time-scale $\tau$ (or autocorrelation coefficient $\rho$), such that:
+\begin{eqnarray*}
+  \text{E}{X(t)} &=& \mu	\nonumber\\
+	\text{Var}{X(t)} &=& \sigma^2 \nonumber\\
+	\text{Cor}{X(t)}{X(t-\Delta t)} &=& \exp(-\Delta t/\tau) = \rho^{\Delta t},
+\end{eqnarray*}
+\noindent 
+The characteristic time-scale is an innovation over the original implementation, which estimated $\rho$.  The interpretation of  $\rho$, which ranges from 0 to 1, depends on the units of the time measurement - and can flirt with being uninformatively close to 0 or 1, whereas the time scale is a measurement of the temporal range of correlation in the movement, with somewhat more intuitive biological interpretation (Gurarie and Ovaskainen 2011).
+
+These relationships are used to obtain a likelihood for observations $X_i$ observed at times $T_i$, and the likelihood is maximized to estimate the characteristic time scale. In the \texttt{bcpa} package, this is done with the \texttt{GetRho} function, which is driven by the \texttt{GetL} function (encoded in C++).  Examples are given below:
+
+Loading the package
+<<message=FALSE>>=
+library(bcpa)
+@
+
+Simulating a gappy, Gaussian, time series
+
+<<GetRhoDemo1, out.width="\\textwidth", fig.height=3, echo=-1>>=
+par(bty="l")
+rho <- 0.8
+x.full <- arima.sim(1000, model=list(ar = rho))
+t.full <- 1:1000
+keep <- sort(sample(1:1000, 200))
+x <- x.full[keep]
+t <- t.full[keep]
+plot(t,x, type="l")
+@
+
+Obtaining the likelihood function for different values of $\rho$.
+
+<<GetRhoDemo2, out.width="\\textwidth", fig.height=3, echo=-1, tidy=FALSE>>=
+par(bty="l")
+rhos <- seq(0,.99,.01)
+L <- rep(NA, length(rhos))
+for(i in 1:length(rhos))
+  L[i] <- GetL(x,t,rhos[i])
+# plot likelihood profile
+plot(rhos, L, type="l")
+abline(v = rho, lty=2, lwd=2); abline(v = rhos[L == max(L)], lty=3, lwd=2)
+legend("bottomleft", legend=c("true value","MLE"), lty=2:3, lwd=2)
+@
+
+Using the \texttt{GetRho} function to estimate $\rho$ or $\tau$:
+<<>>=
+GetRho(x, t, tau=FALSE)
+GetRho(x, t, tau=TRUE)
+@
+{\bf Future work:  It is straightforward to obtain approximate confidence intervals around this estimate using the Hessian of the log-likelihood.}
+
+\subsection{Speeds and turning angles}
+
+To apply the method to movement data of the form ${\bf Z}_i,T_i$, where ${\bf Z}_i$ represents the location vector at time $T_i$, it is necessary to extract a one-dimensional time series that conforms to the assumption.  Examples which generally conforms to the assumptions are the ``persistence'' velocity velocity $V_p(t)$ and turning velocity $V_t(t)$:
+
+  \begin{eqnarray}
+  	V_p(T_i) = V(T_i) \cos(\Theta(T_i))\\
+		V_t(T_i) = V(T_i) \sin(\Theta(T_i))
+	\end{eqnarray}
+
+where $V(T_i) = ||{\bf Z}_i - {\bf Z}_{i-1}||/(T_i - T_{i-1})$ is the scalar speed at time $T_i$.  $V_p$ captures the tendency and magnitude of a movement to persist in a given direction while $V_t$ captures the tendency of movement to head in a perpendicular direction in a given time interval.  Thus, the primary descriptive features of movement, namely speed, directional persistence, and variability are captured in these variables.  Alternatively, the log of step lengths can have a roughly Gaussian distribution.
+
+For demonstration purposes, we include a simulated movement data set called \texttt{Simp}:
+\bc
+<<Simp, out.width="0.7\\textwidth", fig.width=5, fig.height=5, echo=-1>>=
+par(bty="l", cex.lab=1.25)
+data(Simp)
+head(Simp)
+plot(Simp)
+@
+\ec
+The \texttt{Simp} objects is of class ``track'', which is simply a data frame with columns $X$, $Y$ and $T$, and the \texttt{bcpa} package contains a plotting method for a track of this form with a green circle illustrating the start and a red rhombus indicating the end of the track.  The \texttt{MakeTrack} function was added to facilitate the creation of a ``track'' class object, e.g.:
+<<MakeTrack>>=
+X <- cumsum(arima.sim(n=100, model=list(ar=0.8)))
+Y <- cumsum(arima.sim(n=100, model=list(ar=0.8)))
+Time <- 1:100
+mytrack <- MakeTrack(X,Y,Time)
+plot(mytrack)
+@
+
+To obtain the step length and turning angles, use the \texttt{GetVT} function, which decomposes the data into single step and all the relevant statistics:
+<<>>=
+Simp.VT <- GetVT(Simp)
+head(Simp.VT)
+@
+The overall persistence of the movement and distribution of step lengths:
+\bc
+<<Histograms, fig.height = 4, out.width="0.8\\textwidth">>=
+par(mfrow=c(1,2))
+hist(Simp.VT$V, breaks=20, col="grey")
+hist(Simp.VT$Theta, breaks=20, col="grey")
+@
+\ec
+
+
+\subsection{Obtaining a changepoint}
+
+A single changepoint in a time-series where the parameters change at some unknown timepoints $t^*$ is done by simply sweeping all possible breaks, and finding the most-likely changepoint according to the likelihood.  This is illustrated below:
+
+<<OneBreak, fig.height=4, echo=-1, tidy=FALSE, cache=TRUE>>=
+set.seed(2)
+par(bty="l")
+mu1 <- 5; mu2 <- 3
+sigma1 <- 2; sigma2 <- 1
+rho1 <- 0.5; rho2 <- 0.5
+
+SimTS <- function(n, mu, rho, sigma)
+{
+  X.standard <- arima.sim(n, model=list(ar = rho))
+  X.standard/sd(X.standard)*sigma + mu
+}
+
+# create time series with break at 500
+t.full <- 1:1000
+t.break <- 500
+x.full <- c(SimTS(t.break, mu1, rho1, sigma1), 
+            SimTS(max(t.full)-t.break+1, mu2, rho2, sigma2))
+
+# subsample 100 observations and estimate
+keep <- sort(sample(1:length(x.full), 100))
+x <- x.full[keep]
+t <- t.full[keep]
+(BB <- GetBestBreak(x,t, tau=FALSE))
+@
+
+The estimates should be fairly good (note that we are chosing to estimate $\rho$ rather than $\tau$).
+\bc
+<<OneBreak2, fig.height=4, echo=-1, tidy=FALSE, out.width="0.8\\textwidth">>=
+par(bty="l")
+plot(t,x, type="l")
+abline(v = 500, col=2, lwd=2, lty=2); abline(v = BB[2], col=2, lwd=2, lty=3)
+legend("topright", legend=c("true break", "estimated break"), col=2, lwd=2, lty=2:3)
+@
+\ec
+
+The likelihood is used to obtain a BIC value for all of the possible models.  The possible models are numbered M0 to M7, corresponding to no significant changes (M0), only $\mu$, $\sigma$ or $\rho$ changing (M1, M2, M3, respectively), both of $\mu$ and $\sigma$, $\mu$ and $\rho$ and $\sigma$ and $\rho$ changing (M4, M5, M6), and all three parameters changing (M7).  The model are compared with the \texttt{GetModels} function:
+
+<<>>=
+GetModels(x,t,BB[1], tau=FALSE)
+@
+The model selection should select model 4 ($\mu$ and $\sigma$ change) as having the lowest BIC.  
+
+This is with the default sensitivity parameter $K=2$, which comes from the definition of the BIC $= -Kn \log(L) + k \log(n)$ (see summary in section 2).  If we lower this value, a simpler model is more likely to be selected:
+<<>>=
+GetModels(x,t,BB[1], tau=FALSE, K=0.5)
+@
+
+And if we increase it, more complex models are likely to be selected
+<<>>=
+GetModels(x,t,BB[1], tau=FALSE, K=5)
+@
+
+Below, we change only the autocorrelation parameter, which is quite a bit more difficult to detect by eye:
+\bc
+<<OneBreak3, fig.height=4, echo=1:3, out.width="0.8\\textwidth">>=
+mu1 <- 0; mu2 <- 0
+sigma1 <- 1; sigma2 <- 1
+rho1 <- 0.9; rho2 <- 0.2
+set.seed(11)
+SimTS <- function(n, mu, rho, sigma)
+{
+  X.standard <- arima.sim(n, model=list(ar = rho))
+  X.standard/sd(X.standard)*sigma + mu
+}
+
+# create time series with break at 500
+t.full <- 1:1000
+t.break <- 500
+x.full <- c(SimTS(t.break, mu1, rho1, sigma1), SimTS(max(t.full)-t.break+1, mu2, rho2, sigma2))
+
+# subsample 100 observations and estimate
+keep <- sort(sample(1:length(x.full), 100))
+x <- x.full[keep]
+t <- t.full[keep]
+BB <- GetBestBreak(x,t, tau=FALSE)
+
+par(bty="l")
+plot(t,x, type="l")
+
+abline(v = 500, col=2, lwd=2, lty=2)
+abline(v = BB[2], col=2, lwd=2, lty=3)
+legend("topright", legend=c("true break", "estimated break"), col=2, lwd=2, lty=2:3)
+@
+\ec
+The model selection should select model 4 (only $\rho$ changes):
+
+<<>>=
+GetModels(x,t,BB[1], tau=FALSE)
+@
+
+\subsection{Applying the window sweep}
+
+The main wrapper function for the complete analysis is \texttt{WindowSweep}.  We select a windowsize and sensitivity parameter $K$ and sweep analysis windows across the entire time series:
+
+<<LampreyBCPA, cache=TRUE>>=
+  Simp.ws <- WindowSweep(Simp.VT, "V*cos(Theta)", windowsize=50, progress=FALSE, K=2)
+@
+
+Note that the second argument of the function is a character string within which any function of the columns of the VT table can be analyzed as a response. 
+
+The key portion of the output of this function is the ``windowsweep'' data frame, which contains the proposed break (last column), the parameters to the left and right of the break, and the selected model:
+
+<<>>=
+head(Simp.ws$ws) 
+@
+
+Note that in this example, the first 4 windows detect no changes in the  parameter values (Model 0) so the values are the same to the left and to the right of each changepoint. (A minor note: the \texttt{rho1} and \texttt{rho2} columns correspond to $\tau_1$ and $\tau_2$ - i.e.~the time-scales.)  
+
+The following functions plot the output of the ``smooth'' summary, i.e.~the summary in which all the windows are averaged to obtain the ``smooth'' model.  In these plots, the vertical lines represent the significant change points, the width of the lines is proportional to the number of time that change point was selected, the black an dred lines represent the mean and standard deviation estimate, and the colors reflect the autocorrelation time-scale (bluer colors have smaller autocorrelation time scales).
+
+<<BCPAsmooth, fig.width = 9, fig.height=5, out.width="\\textwidth", size="small", echo=-1, warning=FALSE>>=
+par(mfrow=c(2,1), mar=c(0,4,0,1), oma=c(4,0,1,0), bty="l")
+plot(Simp.ws, type="smooth")
+plot(Simp.ws, type="smooth", threshold = 7)
+@
+
+
+The \texttt{threshold} parameter indicates how many of the windows that were swept over the data must have selected that changepoint for it to be considered significant.  The changepoints selected (at that threshold) are almost exactly the ones that were encoded in the original simulaiton. 
+
+The ``flat'' analysis first selects changepoints that it deeps significant by clustering neighboring changepoints, and then estimates a homogeneous behavior between those changepoints.  Note that by increasing the clusterwisth to 3, many of the more minor changepoints are filtered away and the resulting profile is fairly uniform.
+
+<<BCPAflat, fig.width = 9, fig.height=5, out.width="\\textwidth", size="small", echo=-1, warning=FALSE>>=
+par(mfrow=c(2,1), mar=c(0,4,0,1), oma=c(4,0,1,0), bty="l")
+plot(Simp.ws, type="flat")
+plot(Simp.ws, type="flat", clusterwidth=3)
+@
+
+A summary of the flat changepoints can be obtained as follows: 
+<<>>=
+ChangePointSummary(Simp.ws, clusterwidth=3)
+@
+This summmary suggests five phases, with phases 2 and 3 consisting of a much higher velocity and longer time-scale movement than in the other phases.
+
+The results of the BCPA can also be visualized with a so-called ``path plot'':
+<<BCPApaths, echo=-1, warning=FALSE, fig.height=4, fig.width=8>>=
+par(mfrow=c(1,2))
+PathPlot(Simp, Simp.ws, type="flat", clusterwidth = 3, main="Flat BCPA")
+PathPlot(Simp, Simp.ws, type="smooth", main="Smooth BCPA")
+@
+The width of the line is proportional to the mean speed, while the colors correspond to the time-scales in the plots above.  Both of thse plots clearly separate the period of faster, more directed movement
+
+An additional, potentially interesting visualization of the analysis is the ``phase plot'', which illustrates how the three parameters change with respect to each other:
+
+
+\bc
+<<out.width="0.6\\textwidth", fig.height=4, fig.width=5, echo=-1>>=
+par(bty="l")
+PhasePlot(Simp.ws, type="smooth", clusterwidth = 3)
+@
+\ec
+
+Finally, it is important to assess the assumptions of the BCPA using diagnostic plots. In particular, to assess whether the standardized residuals of the final model are indeed distributed roughly as ${\cal N}(0,1)$ random variables
+
+\bc
+<<DiagnosticPlot, fig.width = 8, fig.height=3, out.width = "0.8\\textwidth", echo=-1>>=
+par(bty="l")
+DiagPlot(Simp.ws)
+@
+\ec
+
+This plot illustrates the qq-norm plot, the histogram and the auto-correlation function of the standardized data ($Z_i = X_i - \widehat{\mu}(T_i) / \widehat{\sigma}(T_i)$).  Overall the results seem to satisfy the assumptions of normality. 
+
+
+\section{Conclusions}
+
+It is hoped that this package will facilitate analysis of complex behavioral movement data.  However, it should be stressed that this is perhaps first and foremost an exploratory tool.  Its strength is that it can distill complex information into some tabulated and visual summaries that outline underlying structures.  It is also relatively fast - a long data set with tens of thousands of locations takes well under a minute to analyze on most machines.  
+
+That said, this tool merely \emph{describes} and does not \emph{explain} complex behavioral profiles.  The BCPA can be used to propose some appropriate movement models or behavioral hypotheses for further testing.  Alternatively, an explanatory or predictive analysis of behaviors with respect to covariates can be performed by extracting some biologically meaningful summary from the BCPA, and performing a post-hoc analysis to model the observed patterns with respect to covariates.   
+
+
+\section{Acknowledgments}
+
+Gratitude is extended to F.~Cagnacci, M.~Panzacchi, B.~van Moorter and colleagues at the Norwegian Institute of Nature Institute, who organized an animal movement analysis workshop and spearheaded a special issue of J.~Animal Ecology (in progress), lighting the fuse to finally follow through on this package. C.~Bracis and G.~Passolt helped with the technical aspects of finalizing this package.  Thanks, finally, to the many diverse colleagues and animal movement ecologists that tested earlier versions on actual data.  
+
+\section{References}
+
+\begin{description}
+
+\item Gurarie, E., R.~Andrews and K.~Laidre. 2009. A novel method for identifying behavioural changes in animal movement data. Ecology Letters. 12: 395-408.
+\item Gurarie, E., O.~Ovaskainen. 2011. Characteristic spatial and temporal scales unify models of animal movement. American Naturalist. 178: 113-123.
+
+\end{description}
+
+\end{document}

@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<meta name="author" content="Paul Northrop" />
+
+<meta name="date" content="2020-09-02" />
+
+<title>Introducing rust: Ratio-of-Uniforms Simulation with Transformation</title>
+
+
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css" data-origin="pandoc">
+code.sourceCode > span { display: inline-block; line-height: 1.25; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode { white-space: pre; position: relative; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+code.sourceCode { white-space: pre-wrap; }
+code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    for (var j = 0; j < rules.length; j++) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") continue;
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') continue;
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Introducing rust: Ratio-of-Uniforms Simulation with Transformation</h1>
+<h4 class="author">Paul Northrop</h4>
+<h4 class="date">2020-09-02</h4>
+
+
+<div id="TOC">
+<ul>
+<li><a href="#the-multivariate-generalized-ratio-of-uniforms-method">The multivariate generalized ratio-of-uniforms method</a><ul>
+<li><a href="#example-the-multivariate-normal-distribution">Example: the multivariate normal distribution</a></li>
+</ul></li>
+<li><a href="#transformation-of-variable-prior-to-sampling">Transformation of variable prior to sampling</a><ul>
+<li><a href="#relocation-of-the-mode-to-the-origin">Relocation of the mode to the origin</a></li>
+<li><a href="#transformations-to-improve-normality-and-reduce-association">Transformations to improve normality and reduce association</a></li>
+</ul></li>
+<li><a href="#using-the-code">Using the code</a><ul>
+<li><a href="#example-1-posterior-density-from-a-generalized-pareto-extreme-value-analysis">Example 1: posterior density from a generalized Pareto extreme value analysis</a></li>
+<li><a href="#example-2-log-normal-density">Example 2: log-normal density</a></li>
+<li><a href="#example-3-gamma-density">Example 3: gamma density</a></li>
+<li><a href="#example-4-normal-density">Example 4: normal density</a></li>
+</ul></li>
+<li><a href="#references">References</a></li>
+</ul>
+</div>
+
+<p>The <strong>rust</strong> package implements the multivariate generalized ratio-of-uniforms method for simulating random variates from a <span class="math inline">\(d\)</span>-dimensional continuous distribution. The user specifies (the log of) a positive target function <span class="math inline">\(f\)</span> that is proportional to the density function of the distribution. For guidance on which target functions are suitable see the vignette <a href="rust-b-when-to-use-vignette.html">When can rust be used?</a>.</p>
+<p>The user can provide either an R function (to <code>ru</code>) or, from version 1.2.0, a (pointer to a) C++ function (to <code>ru_rcpp</code>). This vignette gives examples of the former. For examples of the latter see the vignette <a href="rust-c-using-rcpp-vignette.html">Rusting faster: Speedy Simulation using Rcpp</a>.</p>
+<p>The ratio-of-uniforms method has been used to simulate from low-dimensional distributions in Bayesian analyses, either as part of a Gibbs sampler, a Markov Chain Monte Carlo (MCMC) algorithm, <span class="citation">(Wakefield et al. 1994)</span> or to simulate directly from a posterior distribution <span class="citation">(Northrop, Attalides, and Jonathan 2016)</span>. <strong>rust</strong> is unlikely to be of direct use in high-dimensional problems because its efficiency decreases with dimension, but it may provide an alternative to MCMC methods in Bayesian analyses of models with small numbers of parameters. <strong>rust</strong> is used by the package <strong>revdbayes</strong> package <span class="citation">(Northrop 2017)</span> to perform Bayesian extreme value analyses. Potential advantages over MCMC methods are that it produces a random sample of the desired size rather than a dependent sample and avoids the need for MCMC convergence diagnostics.</p>
+<p>The generalized ratio-of-uniforms method is an acceptance-rejection algorithm: proposals are simulated uniformly over a <span class="math inline">\((d+1)\)</span>-dimensional region, typically a box, that bounds an acceptance region <span class="math inline">\(C(r)\)</span>, where <span class="math inline">\(r \geq 0\)</span> is a tuning parameter. The <em>probability of acceptance</em> <span class="math inline">\(p_a(d, r)\)</span>, i.e. the probability that an arbitrary proposal is accepted, is given by the ratio of the volume of <span class="math inline">\(C(r)\)</span> to the volume of the bounding region. <span class="citation">Wakefield, Gelfand, and Smith (1991)</span> suggest the strategy of relocating the mode of <span class="math inline">\(f\)</span> to the origin as a means of increasing efficiency, in the sense of increasing <span class="math inline">\(p_a(d, r)\)</span>. However, <span class="math inline">\(p_a(d, r)\)</span> may still be low even after mode relocation. In some cases it is not possible to find a simple region to bound <span class="math inline">\(C(r)\)</span>, which means that the ratio-of-uniforms method cannot be used. Transformation of variable, such as the Box-Cox family <span class="citation">(Box and Cox 1964)</span> provided in <strong>rust</strong>, can be helpful in these instances. In the multi-dimensional cases strong association between the variables tends to result in a low <span class="math inline">\(p_a(d, r)\)</span>. <strong>rust</strong> finds a rotation of variable axes that reduces the association to increase <span class="math inline">\(p_a(d, r)\)</span>. The user can also specify their own variable transformation.</p>
+<p>The main function in the rust package is <code>ru</code>, which implements the generalized ratio-of-uniforms algorithm. Also provided are two functions, <code>find_lambda</code> and <code>find_lambda_one_d</code>, that may be used to set a suitable value for the parameter <code>lambda</code> if Box-Cox transformation is used prior to simulation. These are somewhat <em>ad hoc</em> but they work well on the examples studied so far. Basic plot and summary methods are also provided.</p>
+<div id="the-multivariate-generalized-ratio-of-uniforms-method" class="section level2">
+<h2>The multivariate generalized ratio-of-uniforms method</h2>
+<p>This description follows <span class="citation">Wakefield, Gelfand, and Smith (1991)</span>. Suppose that we wish to simulate values of a <span class="math inline">\(d\)</span>-dimensional continuous random variable <span class="math inline">\(X = (X_1, \ldots, X_d)\)</span> with density function proportional to a positive integrable function <span class="math inline">\(f(x)\)</span> over a subset <span class="math inline">\(\chi\)</span> of <span class="math inline">\(\mathbb{R}^d\)</span>, where <span class="math inline">\(x =(x_1, \ldots, x_d)\)</span>. If variables <span class="math inline">\((u, v_1, \ldots, v_d)\)</span> are uniformly distributed over <span class="math display">\[ C(r) = \left\{ (u, v_1, \ldots, v_d): 0 &lt; u \leq \left[ f\left( \frac{v_1}{u^r}, \ldots, \frac{v_d}{u^r} \right) \right] ^ {1/(r d + 1)} \right\} \]</span> for some <span class="math inline">\(r \geq 0\)</span>, then <span class="math inline">\((v_1 / u ^r, \ldots, v_d / u ^ r)\)</span> has density <span class="math inline">\(f(x) / \int f(x) {\rm ~d}x\)</span>. Typically, it is not possible directly to simulate <span class="math inline">\((u, v_1, \ldots, v_d)\)</span> uniformly over <span class="math inline">\(C(r)\)</span>. Instead we simulate uniformly over a simpler region that encloses <span class="math inline">\(C(r)\)</span> accepting only those values for which the inequality in the definition of <span class="math inline">\(C(r)\)</span> holds. If, over <span class="math inline">\(\chi\)</span>, <span class="math inline">\(f(x)\)</span> and <span class="math inline">\(x_i^{r d +1} f(x)^r\)</span>, <span class="math inline">\(i = 1, \ldots, d\)</span>, are bounded then we can enclose <span class="math inline">\(C(r)\)</span> within the <span class="math inline">\((d+1)\)</span>-dimensional bounding box <span class="math inline">\(\{ 0 &lt; u \leq a(r), \, b_i^-(r) \leq v_i \leq b_i^+(r), \, i = 1, \ldots, d \}\)</span>, where the parameters of the bounding box are given by <span class="math display">\[
+\begin{eqnarray}
+a(r) &amp;=&amp; \sup_\chi \, f(x)^{1 / (r d + 1)}, \\
+b_i^-(r) &amp;=&amp; \inf_{\chi_i^-} \, x_i \, f(x)^{r / (r d + 1)}, \\  
+b_i^+(r) &amp;=&amp; \sup_{\chi_i^+} \, x_i \, f(x)^{r / (r d + 1)},  
+\end{eqnarray}
+\]</span> where <span class="math inline">\(\chi_i^- = \{ x \in \chi, x_i \leq 0 \}\)</span> and <span class="math inline">\(\chi_i^+ = \{ x \in \chi, x_i \geq 0 \}\)</span>. The probability of acceptance <span class="math inline">\(p_a(d, r)\)</span> of a point simulated uniformly over the bounding box is given by <span class="math display">\[ p_a(d, r) = \frac{\int f(x) {\rm ~d}x}{(r d + 1) \, a(r) \displaystyle\prod_{i=1}^d \left[b_i^+(r) -b_i^-(r) \right]}. \]</span></p>
+<div id="example-the-multivariate-normal-distribution" class="section level3">
+<h3>Example: the multivariate normal distribution</h3>
+<p>To study how the efficiency of the ratio-of-uniforms method decreases with dimension <span class="math inline">\(d\)</span> a useful benchmark is provided by the zero-mean <span class="math inline">\(d\)</span>-dimensional normal distribution with independent components. Without loss of generality we work with the case with unit marginal variances, i.e. <span class="math display">\[ f(x) \propto \exp\left( -\frac12 \sum_{i=1}^d x_i^2 \right).\]</span></p>
+<p>For all dimensions <span class="math inline">\(d\)</span> the maximal probability of acceptance occurs when <span class="math inline">\(r = 1/2\)</span>, giving <span class="math display">\[ p_a(d, 1/2) = \frac{(\pi e)^{d/2}}{2^d (1+d/2)^{1+d/2}}. \]</span> The maximal probability of acceptance decreases rapidly as <span class="math inline">\(d\)</span> increases, as the following table shows.</p>
+<table>
+<caption><span class="math inline">\(p_a(d, 1/2)\)</span> as <span class="math inline">\(d\)</span> varies.</caption>
+<thead>
+<tr class="header">
+<th align="right">1</th>
+<th align="right">2</th>
+<th align="right">3</th>
+<th align="right">4</th>
+<th align="right">5</th>
+<th align="right">6</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">0.795</td>
+<td align="right">0.534</td>
+<td align="right">0.316</td>
+<td align="right">0.169</td>
+<td align="right">0.083</td>
+<td align="right">0.038</td>
+</tr>
+</tbody>
+</table>
+<p>It can be shown that introducing any correlation between the components reduces <span class="math inline">\(p_a(d, r)\)</span>. Later we consider using transformations to make the target density function closer to that of a <span class="math inline">\(d\)</span>-dimensional normal distribution with independent components. The closeness of the probability of acceptance that we achieved after doing this is a measure of how successful we have been.</p>
+</div>
+</div>
+<div id="transformation-of-variable-prior-to-sampling" class="section level2">
+<h2>Transformation of variable prior to sampling</h2>
+<div id="relocation-of-the-mode-to-the-origin" class="section level3">
+<h3>Relocation of the mode to the origin</h3>
+<p><span class="citation">Wakefield, Gelfand, and Smith (1991)</span> consider the strategy of shifting the location of the target function <span class="math inline">\(f\)</span> towards the original prior to sampling, that is, we simulate <span class="math inline">\(y\)</span> from the distribution of <span class="math inline">\(Y = X-\mu\)</span> and then transform back to the original scale using <span class="math inline">\(x = y + \mu\)</span>. They show that if, in the 1-dimensional case, <span class="math inline">\(f\)</span> is unimodal and symmetric choosing <span class="math inline">\(\mu\)</span> to be the mode of <span class="math inline">\(f\)</span> maximizes <span class="math inline">\(p_a(1, r)\)</span> for all <span class="math inline">\(r\)</span>. Their proof extends to the multivariate case: mode relocation is optimal for unimodal <span class="math inline">\(d\)</span>-dimensional densities for which all the marginal densities are symmetric.</p>
+<p><span class="citation">Wakefield, Gelfand, and Smith (1991)</span> suggest mode relocation and use of <span class="math inline">\(r = 1/2\)</span> as a good general strategy when <span class="math inline">\(f\)</span> is approximately unimodal. For this reason, and because experience suggests that this produces greater numerical stability in finding the bounding box parameters, the <code>ru</code> function in <strong>rust</strong> is hard-wired always to use mode relocation. The mode of the target function is relocated to the origin <em>after</em> any user-supplied transformation and/or Box-Cox transformation and <em>before</em> any rotation of axes. The default value of <span class="math inline">\(r\)</span> is <span class="math inline">\(1/2\)</span> but the user can change this.</p>
+</div>
+<div id="transformations-to-improve-normality-and-reduce-association" class="section level3">
+<h3>Transformations to improve normality and reduce association</h3>
+<p>The general idea is the same as mode relocation, i.e. to simulate from the distribution of some transformation of the original variable and transform the simulated values back to the original scale. Our aim is to use a transformation for which the transformed variable is closer than the original to being a <span class="math inline">\(d\)</span>-dimensional normal distribution with independent components. The table above gives us an indication of the best probability of acceptance we can hope to achieve for a given <span class="math inline">\(d\)</span>. Thus, we may be able to increase the probability of acceptance. In some examples, the original density is not suitable for the ratio-of-uniforms method because it is not possible to enclose <span class="math inline">\(C(r)\)</span> within a bounding box, perhaps because the density is unbounded. It may be that a transformation of variable produces a bounded density for which a bounding box be constructed.</p>
+<p>From now on we denote the target variable as <span class="math inline">\(\theta = (\theta_1, \ldots, \theta_d)\)</span>. We consider a sequence of four transformations: from <span class="math inline">\(\theta\)</span> to <span class="math inline">\(\phi\)</span>; from <span class="math inline">\(\phi\)</span> to <span class="math inline">\(\psi\)</span>; mode relocation on the <span class="math inline">\(\psi\)</span>-scale; and from (mode relocated) <span class="math inline">\(\psi\)</span> to <span class="math inline">\(\rho\)</span>.</p>
+<ol style="list-style-type: decimal">
+<li><span class="math inline">\(\phi=\phi(\theta)\)</span> is a user-defined transformation that could be used to ensure that all components of <span class="math inline">\(\phi\)</span> are positive prior to a Box-Cox transformation.</li>
+<li><span class="math inline">\(\psi=\psi(\phi)\)</span> performs Box-Cox transformations on the margins, i.e. for <span class="math inline">\(i=1, \ldots, d\)</span>, <span class="math inline">\(\psi_i = g_i \log(\phi_i)\)</span> for <span class="math inline">\(\lambda_i = 0\)</span> and <span class="math inline">\(\displaystyle\psi_i = \frac{\phi_i^{\lambda_i} - 1}{\lambda_i g_i^{\lambda_i-1}}\)</span>, for <span class="math inline">\(\lambda_i \neq 0\)</span>.</li>
+<li>Mode relocation means transforming from <span class="math inline">\(\psi\)</span> to <span class="math inline">\(\psi - \hat{\psi}\)</span>, where <span class="math inline">\(\hat{\psi}\)</span> is the estimated mode on the <span class="math inline">\(\psi\)</span>-scale.</li>
+<li><span class="math inline">\(\rho=\rho(\psi - \hat{\psi})\)</span> is a rotation of axes, performed <em>after</em> mode relocation, so that the mode of the density stays at the origin. This is only relevant for <span class="math inline">\(d &gt; 1\)</span>. The transformation is <span class="math inline">\(\rho = (\psi - \hat{\psi}) L / \det(L)^{1/d}\)</span>, where <span class="math inline">\(L L^T = \hat{H}\)</span> is the estimated Hessian of the negated log-density for <span class="math inline">\(\psi\)</span>, evaluated at <span class="math inline">\(\hat{\psi}\)</span>. <code>optimHess</code> is used to estimate the Hessian and <code>chol</code> is used to calculate <span class="math inline">\(L\)</span> using the Choleski decomposition. The effect of this transformation is to produce a log-density for <span class="math inline">\(\rho\)</span> whose Hessian is diagonal at its mode. Using this orthogonalizing transformation will tend to mean that the components of <span class="math inline">\(\rho\)</span> are more weakly associated than the components of <span class="math inline">\(\psi\)</span>.</li>
+</ol>
+<p>We denote the resulting density as <span class="math inline">\(f_\rho\!(\rho)\)</span>. It may be that we only use a subset of these transformations. To perform only axis rotation we use identity functions <span class="math inline">\(\phi(\theta) = \theta\)</span> and <span class="math inline">\(\psi(\phi) = \phi\)</span>. If we wish to use a Box-Cox transformation and all components of <span class="math inline">\(\theta\)</span> are positive then we may use <span class="math inline">\(\phi(\theta) = \theta\)</span>.</p>
+<p>To define <span class="math inline">\(\psi(\phi)\)</span> the user can set the Box-Cox parameter <span class="math inline">\(\lambda = (\lambda_1, \ldots, \lambda_d)\)</span> (and perhaps <span class="math inline">\(g = (g_1, \ldots, g_d))\)</span> by hand in a call to <code>ru</code>. Alternatively, these parameters can be set in a (somewhat) automatic way using a call to <code>find_lambda_one_d</code> (<span class="math inline">\(d = 1\)</span> only) or <code>find_lambda</code>. See the documentation of these functions for details.</p>
+</div>
+</div>
+<div id="using-the-code" class="section level2">
+<h2>Using the code</h2>
+<p>We demonstrate how to use the code with four examples. We start with the generalized Pareto posterior example because (a) it illustrates well the effect of transformations on the density used in the ratio-of-uniforms algorithm and effects on the probability of acceptance, and (b) it is an example where the ratio-of-uniforms offers a meaningful alternative to the standard approach of using MCMC <span class="citation">(Stephenson and Ribatet 2014)</span>. The other examples are purely illustrative: there are specific algorithms that are preferable.</p>
+<div id="example-1-posterior-density-from-a-generalized-pareto-extreme-value-analysis" class="section level3">
+<h3>Example 1: posterior density from a generalized Pareto extreme value analysis</h3>
+<p>The generalized Pareto (GP) distribution is used in extreme value analyses as a model for excesses over a high threshold. It has two parameters: a scale parameter <span class="math inline">\(\sigma\)</span> and a shape parameter <span class="math inline">\(\xi\)</span>. For <span class="math inline">\(\xi \neq 0\)</span> it has density function <span class="math inline">\(g_Z(z) = \sigma^{-1} \, \left(1 + \xi z / \sigma\right)_{+}^{-(1+1/\xi)}, \, z &gt; 0,\)</span> where <span class="math inline">\(x_+\!=\!\max(x,0)\)</span>. In the limit as <span class="math inline">\(\xi \rightarrow 0\)</span> we obtain the density of exponential distribution with mean <span class="math inline">\(\sigma\)</span>. Suppose that we have available a random sample <span class="math inline">\(z = (z_1, \ldots, z_m)\)</span> of threshold excesses. The likelihood for <span class="math inline">\(\theta = (\sigma, \xi)\)</span> is <span class="math inline">\(L(\theta; z) = \prod_{i=1}^m g_Z(z_i; \theta).\)</span></p>
+<p>In a Bayesian analysis a prior density <span class="math inline">\(\pi(\theta)\)</span> is placed on <span class="math inline">\(\theta\)</span>. Information from the prior and likelihood are combined using Bayes’ theorem to form a posterior density <span class="math inline">\(\pi(\theta \mid z) \propto L(\theta; z) \pi(\theta).\)</span> The target density to be <span class="math inline">\(f(\theta) = \pi(\theta \mid z)\)</span>, which is positive for <span class="math inline">\(\sigma &gt; 0, \, \xi &gt; - \sigma / x_{(m)}\)</span>, where <span class="math inline">\(x_{(m)} = \max(z_1, \ldots, z_m)\)</span>. The particular prior density that we use here is <span class="math inline">\(\pi(\theta) \propto \sigma^{-1} \exp[-(\xi+1)], \,\sigma &gt; 0, \, \xi \geq -1\)</span> <span class="citation">(Northrop and Attalides 2016)</span>. For a review of Bayesian extreme value modelling see <span class="citation">Stephenson (2016)</span> and for an application based on the GP distribution see <span class="citation">Northrop, Attalides, and Jonathan (2016)</span>.</p>
+<p>We simulate some data from a GP(1, -1/2) distribution. We choose <span class="math inline">\(\xi=-1/2\)</span> because this tends to result in a posterior distribution with strong negative posterior association between <span class="math inline">\(\sigma\)</span> and <span class="math inline">\(\xi\)</span>, making the benefit of transformation more apparent. We also calculate some sample properties that feature in the likelihood, so that they can be passed to the log-density <code>logf</code> rather than being recalculated, and set an initial estimate at which <code>logf</code> is positive.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">library</span>(rust)</span>
+<span id="cb1-2"><a href="#cb1-2"></a><span class="kw">set.seed</span>(<span class="dv">46</span>)</span>
+<span id="cb1-3"><a href="#cb1-3"></a><span class="co"># Sample data from a GP(sigma, xi) distribution</span></span>
+<span id="cb1-4"><a href="#cb1-4"></a>gpd_data &lt;-<span class="st"> </span><span class="kw">rgpd</span>(<span class="dt">m =</span> <span class="dv">100</span>, <span class="dt">xi =</span> <span class="fl">-0.5</span>, <span class="dt">sigma =</span> <span class="dv">1</span>)</span>
+<span id="cb1-5"><a href="#cb1-5"></a><span class="co"># Calculate summary statistics for use in the log-likelihood</span></span>
+<span id="cb1-6"><a href="#cb1-6"></a>ss &lt;-<span class="st"> </span><span class="kw">gpd_sum_stats</span>(gpd_data)</span>
+<span id="cb1-7"><a href="#cb1-7"></a><span class="co"># Calculate an initial estimate</span></span>
+<span id="cb1-8"><a href="#cb1-8"></a>init &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="kw">mean</span>(gpd_data), <span class="dv">0</span>)</span></code></pre></div>
+<p>We set the size of the sample required. We sample first on the <span class="math inline">\((\sigma, \xi)\)</span> scale, with mode relocation only. Then we add a rotation of the <span class="math inline">\((\sigma, \xi)\)</span>.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1"></a>n &lt;-<span class="st"> </span><span class="dv">10000</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a><span class="co"># Mode relocation only ----------------</span></span>
+<span id="cb2-3"><a href="#cb2-3"></a>x1 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> gpd_logpost, <span class="dt">ss =</span> ss, <span class="dt">d =</span> <span class="dv">2</span>, <span class="dt">n =</span> n, <span class="dt">init =</span> init,</span>
+<span id="cb2-4"><a href="#cb2-4"></a>  <span class="dt">lower =</span> <span class="kw">c</span>(<span class="dv">0</span>, <span class="op">-</span><span class="ot">Inf</span>), <span class="dt">rotate =</span> <span class="ot">FALSE</span>)</span>
+<span id="cb2-5"><a href="#cb2-5"></a></span>
+<span id="cb2-6"><a href="#cb2-6"></a><span class="co"># Rotation of axes plus mode relocation ----------------</span></span>
+<span id="cb2-7"><a href="#cb2-7"></a>x2 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> gpd_logpost, <span class="dt">ss =</span> ss, <span class="dt">d =</span> <span class="dv">2</span>, <span class="dt">n =</span> n, <span class="dt">init =</span> init,</span>
+<span id="cb2-8"><a href="#cb2-8"></a>  <span class="dt">lower =</span> <span class="kw">c</span>(<span class="dv">0</span>, <span class="op">-</span><span class="ot">Inf</span>))</span></code></pre></div>
+<p>Now we perform Box-Cox transformation. We define <span class="math inline">\(\phi_1 = \sigma, \phi_2 = \xi + \sigma / x_{(m)}\)</span>, so that the components of <span class="math inline">\(\phi=(\phi_1, \phi_2)\)</span> are positive, and set the inverse transformation <code>phi_to_theta</code> and the log-Jacobian <code>log_j</code>.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1"></a><span class="co"># Find initial estimates for phi = (phi1, phi2),</span></span>
+<span id="cb3-2"><a href="#cb3-2"></a><span class="co"># where phi1 = sigma</span></span>
+<span id="cb3-3"><a href="#cb3-3"></a><span class="co">#   and phi2 = xi + sigma / max(x),</span></span>
+<span id="cb3-4"><a href="#cb3-4"></a><span class="co"># and ranges of phi1 and phi2 over over which to evaluate the posterior to find</span></span>
+<span id="cb3-5"><a href="#cb3-5"></a><span class="co"># a suitable value of lambda.</span></span>
+<span id="cb3-6"><a href="#cb3-6"></a><span class="co">#</span></span>
+<span id="cb3-7"><a href="#cb3-7"></a><span class="co"># gpd_init returns estimates of phi and associated estimated standard </span></span>
+<span id="cb3-8"><a href="#cb3-8"></a><span class="co"># errors based on the data alone.  This gives a basis for setting </span></span>
+<span id="cb3-9"><a href="#cb3-9"></a><span class="co"># min_phi and max_phi provided that the prior the prior is not</span></span>
+<span id="cb3-10"><a href="#cb3-10"></a><span class="co"># strongly informative.</span></span>
+<span id="cb3-11"><a href="#cb3-11"></a>temp &lt;-<span class="st"> </span><span class="kw">do.call</span>(gpd_init, ss)</span>
+<span id="cb3-12"><a href="#cb3-12"></a>min_phi &lt;-<span class="st"> </span><span class="kw">pmax</span>(<span class="dv">0</span>, temp<span class="op">$</span>init_phi <span class="op">-</span><span class="st"> </span><span class="dv">2</span> <span class="op">*</span><span class="st"> </span>temp<span class="op">$</span>se_phi)</span>
+<span id="cb3-13"><a href="#cb3-13"></a>max_phi &lt;-<span class="st"> </span><span class="kw">pmax</span>(<span class="dv">0</span>, temp<span class="op">$</span>init_phi <span class="op">+</span><span class="st"> </span><span class="dv">2</span> <span class="op">*</span><span class="st"> </span>temp<span class="op">$</span>se_phi)</span>
+<span id="cb3-14"><a href="#cb3-14"></a></span>
+<span id="cb3-15"><a href="#cb3-15"></a><span class="co"># Set phi_to_theta() that ensures positivity of phi</span></span>
+<span id="cb3-16"><a href="#cb3-16"></a><span class="co"># We use phi1 = sigma and phi2 = xi + sigma / max(data)</span></span>
+<span id="cb3-17"><a href="#cb3-17"></a>phi_to_theta &lt;-<span class="st"> </span><span class="cf">function</span>(phi) <span class="kw">c</span>(phi[<span class="dv">1</span>], phi[<span class="dv">2</span>] <span class="op">-</span><span class="st"> </span>phi[<span class="dv">1</span>] <span class="op">/</span><span class="st"> </span>ss<span class="op">$</span>xm)</span>
+<span id="cb3-18"><a href="#cb3-18"></a>log_j &lt;-<span class="st"> </span><span class="cf">function</span>(x) <span class="dv">0</span></span></code></pre></div>
+<p>We use <code>find_lambda</code> to set a suitable value of <span class="math inline">\(\lambda=(\lambda_1, \lambda_2)\)</span>.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1"></a>lambda &lt;-<span class="st"> </span><span class="kw">find_lambda</span>(<span class="dt">logf =</span> gpd_logpost, <span class="dt">ss =</span> ss, <span class="dt">d =</span> <span class="dv">2</span>, <span class="dt">min_phi =</span> min_phi,</span>
+<span id="cb4-2"><a href="#cb4-2"></a>  <span class="dt">max_phi =</span> max_phi, <span class="dt">phi_to_theta =</span> phi_to_theta, <span class="dt">log_j =</span> log_j)</span>
+<span id="cb4-3"><a href="#cb4-3"></a>lambda</span>
+<span id="cb4-4"><a href="#cb4-4"></a><span class="co">#&gt; $lambda</span></span>
+<span id="cb4-5"><a href="#cb4-5"></a><span class="co">#&gt; [1] 0.1624226 0.3678549</span></span>
+<span id="cb4-6"><a href="#cb4-6"></a><span class="co">#&gt; </span></span>
+<span id="cb4-7"><a href="#cb4-7"></a><span class="co">#&gt; $gm</span></span>
+<span id="cb4-8"><a href="#cb4-8"></a><span class="co">#&gt; [1] 1.10542493 0.03225836</span></span>
+<span id="cb4-9"><a href="#cb4-9"></a><span class="co">#&gt; </span></span>
+<span id="cb4-10"><a href="#cb4-10"></a><span class="co">#&gt; $init_psi</span></span>
+<span id="cb4-11"><a href="#cb4-11"></a><span class="co">#&gt; [1]  0.1054021 -0.2184344</span></span>
+<span id="cb4-12"><a href="#cb4-12"></a><span class="co">#&gt; </span></span>
+<span id="cb4-13"><a href="#cb4-13"></a><span class="co">#&gt; $sd_psi</span></span>
+<span id="cb4-14"><a href="#cb4-14"></a><span class="co">#&gt;       Var1       Var2 </span></span>
+<span id="cb4-15"><a href="#cb4-15"></a><span class="co">#&gt; 0.12670792 0.02477219 </span></span>
+<span id="cb4-16"><a href="#cb4-16"></a><span class="co">#&gt; </span></span>
+<span id="cb4-17"><a href="#cb4-17"></a><span class="co">#&gt; $phi_to_theta</span></span>
+<span id="cb4-18"><a href="#cb4-18"></a><span class="co">#&gt; function(phi) c(phi[1], phi[2] - phi[1] / ss$xm)</span></span>
+<span id="cb4-19"><a href="#cb4-19"></a><span class="co">#&gt; &lt;bytecode: 0x000000000fc5f6e0&gt;</span></span>
+<span id="cb4-20"><a href="#cb4-20"></a><span class="co">#&gt; </span></span>
+<span id="cb4-21"><a href="#cb4-21"></a><span class="co">#&gt; $log_j</span></span>
+<span id="cb4-22"><a href="#cb4-22"></a><span class="co">#&gt; function(x) 0</span></span>
+<span id="cb4-23"><a href="#cb4-23"></a><span class="co">#&gt; &lt;bytecode: 0x00000000130526b8&gt;</span></span></code></pre></div>
+<p>We sample from the Box-Cox transformed density, first without, and then with, rotation of axes.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1"></a><span class="co"># Sample on Box-Cox transformed, without rotation</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a>x3 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> gpd_logpost, <span class="dt">ss =</span> ss, <span class="dt">d =</span> <span class="dv">2</span>, <span class="dt">n =</span> n, <span class="dt">trans =</span> <span class="st">&quot;BC&quot;</span>,</span>
+<span id="cb5-3"><a href="#cb5-3"></a>  <span class="dt">lambda =</span> lambda, <span class="dt">rotate =</span> <span class="ot">FALSE</span>)</span>
+<span id="cb5-4"><a href="#cb5-4"></a></span>
+<span id="cb5-5"><a href="#cb5-5"></a><span class="co"># Box-Cox transformation, mode relocation and rotation ----------------</span></span>
+<span id="cb5-6"><a href="#cb5-6"></a>x4 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> gpd_logpost, <span class="dt">ss =</span> ss, <span class="dt">d =</span> <span class="dv">2</span>, <span class="dt">n =</span> n, <span class="dt">trans =</span> <span class="st">&quot;BC&quot;</span>,</span>
+<span id="cb5-7"><a href="#cb5-7"></a>  <span class="dt">lambda =</span> lambda, <span class="dt">var_names =</span> <span class="kw">c</span>(<span class="st">&quot;sigma&quot;</span>, <span class="st">&quot;xi&quot;</span>))</span></code></pre></div>
+<p>We plot the samples obtained on the scales used for the ratio-of-uniforms algorithm and contours of the corresponding target density <span class="math inline">\(f_\rho\!(\rho)\)</span>.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1"></a><span class="kw">plot</span>(x1, <span class="dt">ru_scale =</span> <span class="ot">TRUE</span>, <span class="dt">cex.main =</span> <span class="fl">0.75</span>, <span class="dt">cex.lab =</span> <span class="fl">0.75</span>, </span>
+<span id="cb6-2"><a href="#cb6-2"></a>  <span class="dt">main =</span> <span class="kw">paste</span>(<span class="st">&quot;mode relocation </span><span class="ch">\n</span><span class="st"> pa = &quot;</span>, <span class="kw">round</span>(x1<span class="op">$</span>pa, <span class="dv">3</span>)))</span>
+<span id="cb6-3"><a href="#cb6-3"></a><span class="kw">plot</span>(x2, <span class="dt">ru_scale =</span> <span class="ot">TRUE</span>, <span class="dt">cex.main =</span> <span class="fl">0.75</span>, <span class="dt">cex.lab =</span> <span class="fl">0.75</span>, </span>
+<span id="cb6-4"><a href="#cb6-4"></a>  <span class="dt">main =</span> <span class="kw">paste</span>(<span class="st">&quot;mode relocation and rotation </span><span class="ch">\n</span><span class="st"> pa = &quot;</span>, <span class="kw">round</span>(x2<span class="op">$</span>pa, <span class="dv">3</span>)))</span>
+<span id="cb6-5"><a href="#cb6-5"></a><span class="kw">plot</span>(x3, <span class="dt">ru_scale =</span> <span class="ot">TRUE</span>, <span class="dt">cex.main =</span> <span class="fl">0.75</span>, <span class="dt">cex.lab =</span> <span class="fl">0.75</span>, </span>
+<span id="cb6-6"><a href="#cb6-6"></a>  <span class="dt">main =</span> <span class="kw">paste</span>(<span class="st">&quot;Box-Cox and mode relocation </span><span class="ch">\n</span><span class="st"> pa = &quot;</span>, <span class="kw">round</span>(x3<span class="op">$</span>pa, <span class="dv">3</span>)))</span>
+<span id="cb6-7"><a href="#cb6-7"></a><span class="kw">plot</span>(x4, <span class="dt">ru_scale =</span> <span class="ot">TRUE</span>, <span class="dt">cex.main =</span> <span class="fl">0.75</span>, <span class="dt">cex.lab =</span> <span class="fl">0.75</span>,</span>
+<span id="cb6-8"><a href="#cb6-8"></a>  <span class="dt">main =</span> <span class="kw">paste</span>(<span class="st">&quot;Box-Cox, mode relocation and rotation </span><span class="ch">\n</span><span class="st"> pa = &quot;</span>, <span class="kw">round</span>(x4<span class="op">$</span>pa, <span class="dv">3</span>)))</span></code></pre></div>
+<p><img src="data:image/png;base64,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" /><img src="data:image/png;base64,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" /><img src="data:image/png;base64,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" /><img src="data:image/png;base64,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" /></p>
+<p>The figure shows how the transformations affect with shape of the density from which we simulate. In the bottom right plot the density contours suggests little dependence between the transformed components. The estimate of the probability of acceptance is approximately equal to the 0.534 obtained for a 2-dimensional normal distribution with independent components.</p>
+<p>Finally, we show a plot of the sample and contours on the original <span class="math inline">\((\sigma, \xi\)</span>)-scale.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1"></a><span class="kw">plot</span>(x4, <span class="dt">xlab =</span> <span class="st">&quot;sigma&quot;</span>, <span class="dt">ylab =</span> <span class="st">&quot;xi&quot;</span>)</span></code></pre></div>
+<p><img src="data:image/png;base64,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" style="display: block; margin: auto;" /></p>
+<p>and an example of the output from <code>summary.ru</code>.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1"></a><span class="kw">summary</span>(x4)</span>
+<span id="cb8-2"><a href="#cb8-2"></a><span class="co">#&gt; ru bounding box:  </span></span>
+<span id="cb8-3"><a href="#cb8-3"></a><span class="co">#&gt;                 box        vals1        vals2 conv</span></span>
+<span id="cb8-4"><a href="#cb8-4"></a><span class="co">#&gt; a        1.00000000  0.000000000  0.000000000    0</span></span>
+<span id="cb8-5"><a href="#cb8-5"></a><span class="co">#&gt; b1minus -0.06636547 -0.107225819  0.006573398    0</span></span>
+<span id="cb8-6"><a href="#cb8-6"></a><span class="co">#&gt; b2minus -0.06756121 -0.001105787 -0.107428499    0</span></span>
+<span id="cb8-7"><a href="#cb8-7"></a><span class="co">#&gt; b1plus   0.07292561  0.123468775  0.005092513    0</span></span>
+<span id="cb8-8"><a href="#cb8-8"></a><span class="co">#&gt; b2plus   0.06961246 -0.003093026  0.115104329    0</span></span>
+<span id="cb8-9"><a href="#cb8-9"></a><span class="co">#&gt; </span></span>
+<span id="cb8-10"><a href="#cb8-10"></a><span class="co">#&gt; estimated probability of acceptance:  </span></span>
+<span id="cb8-11"><a href="#cb8-11"></a><span class="co">#&gt; [1] 0.5319432</span></span>
+<span id="cb8-12"><a href="#cb8-12"></a><span class="co">#&gt; </span></span>
+<span id="cb8-13"><a href="#cb8-13"></a><span class="co">#&gt; sample summary </span></span>
+<span id="cb8-14"><a href="#cb8-14"></a><span class="co">#&gt;      sigma              xi         </span></span>
+<span id="cb8-15"><a href="#cb8-15"></a><span class="co">#&gt;  Min.   :0.7156   Min.   :-0.9428  </span></span>
+<span id="cb8-16"><a href="#cb8-16"></a><span class="co">#&gt;  1st Qu.:1.0228   1st Qu.:-0.6205  </span></span>
+<span id="cb8-17"><a href="#cb8-17"></a><span class="co">#&gt;  Median :1.1088   Median :-0.5617  </span></span>
+<span id="cb8-18"><a href="#cb8-18"></a><span class="co">#&gt;  Mean   :1.1160   Mean   :-0.5606  </span></span>
+<span id="cb8-19"><a href="#cb8-19"></a><span class="co">#&gt;  3rd Qu.:1.2004   3rd Qu.:-0.5023  </span></span>
+<span id="cb8-20"><a href="#cb8-20"></a><span class="co">#&gt;  Max.   :1.7745   Max.   :-0.1537</span></span></code></pre></div>
+</div>
+<div id="example-2-log-normal-density" class="section level3">
+<h3>Example 2: log-normal density</h3>
+<p>If <span class="math inline">\(X\)</span> has a log-normal distribution with parameters <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma\)</span> then <span class="math inline">\(Z = \log X\)</span> has a normal distribution with mean <span class="math inline">\(\mu\)</span> and variance <span class="math inline">\(\sigma^2\)</span>. Therefore, we know that a log transformation, i.e. a Box-Cox transformation with <span class="math inline">\(\lambda =0\)</span>, produces exact normality and we find that the estimated probability of acceptance if greater when we transform than when we don’t.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1"></a><span class="co"># Sampling on original scale ----------------</span></span>
+<span id="cb9-2"><a href="#cb9-2"></a>x1 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> dlnorm, <span class="dt">log =</span> <span class="ot">TRUE</span>, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n, <span class="dt">lower =</span> <span class="dv">0</span>, <span class="dt">init =</span> <span class="dv">1</span>)</span>
+<span id="cb9-3"><a href="#cb9-3"></a>x1<span class="op">$</span>pa</span>
+<span id="cb9-4"><a href="#cb9-4"></a><span class="co">#&gt; [1] 0.5740858</span></span>
+<span id="cb9-5"><a href="#cb9-5"></a><span class="kw">summary</span>(x1)</span>
+<span id="cb9-6"><a href="#cb9-6"></a><span class="co">#&gt; ru bounding box:  </span></span>
+<span id="cb9-7"><a href="#cb9-7"></a><span class="co">#&gt;                box      vals1 conv</span></span>
+<span id="cb9-8"><a href="#cb9-8"></a><span class="co">#&gt; a        1.0000000  0.0000000    0</span></span>
+<span id="cb9-9"><a href="#cb9-9"></a><span class="co">#&gt; b1minus -0.2023271 -0.2607045    0</span></span>
+<span id="cb9-10"><a href="#cb9-10"></a><span class="co">#&gt; b1plus   1.5722199  8.0997951    0</span></span>
+<span id="cb9-11"><a href="#cb9-11"></a><span class="co">#&gt; </span></span>
+<span id="cb9-12"><a href="#cb9-12"></a><span class="co">#&gt; estimated probability of acceptance:  </span></span>
+<span id="cb9-13"><a href="#cb9-13"></a><span class="co">#&gt; [1] 0.5740858</span></span>
+<span id="cb9-14"><a href="#cb9-14"></a><span class="co">#&gt; </span></span>
+<span id="cb9-15"><a href="#cb9-15"></a><span class="co">#&gt; sample summary </span></span>
+<span id="cb9-16"><a href="#cb9-16"></a><span class="co">#&gt;        V1          </span></span>
+<span id="cb9-17"><a href="#cb9-17"></a><span class="co">#&gt;  Min.   : 0.01584  </span></span>
+<span id="cb9-18"><a href="#cb9-18"></a><span class="co">#&gt;  1st Qu.: 0.52102  </span></span>
+<span id="cb9-19"><a href="#cb9-19"></a><span class="co">#&gt;  Median : 1.02848  </span></span>
+<span id="cb9-20"><a href="#cb9-20"></a><span class="co">#&gt;  Mean   : 1.64284  </span></span>
+<span id="cb9-21"><a href="#cb9-21"></a><span class="co">#&gt;  3rd Qu.: 1.95576  </span></span>
+<span id="cb9-22"><a href="#cb9-22"></a><span class="co">#&gt;  Max.   :30.91191</span></span>
+<span id="cb9-23"><a href="#cb9-23"></a></span>
+<span id="cb9-24"><a href="#cb9-24"></a><span class="co"># Box-Cox transform with lambda = 0 ----------------</span></span>
+<span id="cb9-25"><a href="#cb9-25"></a>lambda &lt;-<span class="st"> </span><span class="dv">0</span></span>
+<span id="cb9-26"><a href="#cb9-26"></a>x2 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> dlnorm, <span class="dt">log =</span> <span class="ot">TRUE</span>, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n, <span class="dt">init =</span> <span class="fl">0.1</span>, <span class="dt">trans =</span> <span class="st">&quot;BC&quot;</span>,</span>
+<span id="cb9-27"><a href="#cb9-27"></a>         <span class="dt">lambda =</span> lambda)</span>
+<span id="cb9-28"><a href="#cb9-28"></a>x2<span class="op">$</span>pa</span>
+<span id="cb9-29"><a href="#cb9-29"></a><span class="co">#&gt; [1] 0.7944074</span></span></code></pre></div>
+<p>To show how a user could implement their own transformation prior to sampling we use the <code>trans = &quot;user&quot;</code> argument and supply the inverse Box-Cox transformation via <code>phi_to_theta</code> and the log-Jacobian via <code>log_j</code>.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1"></a><span class="co"># Equivalently, we could use trans = &quot;user&quot; and supply the (inverse) Box-Cox</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a><span class="co"># transformation and the log-Jacobian by hand</span></span>
+<span id="cb10-3"><a href="#cb10-3"></a>x3 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> dlnorm, <span class="dt">log =</span> <span class="ot">TRUE</span>, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n, <span class="dt">init =</span> <span class="fl">0.1</span>, <span class="dt">trans =</span> <span class="st">&quot;user&quot;</span>,</span>
+<span id="cb10-4"><a href="#cb10-4"></a>        <span class="dt">phi_to_theta =</span> <span class="cf">function</span>(x) <span class="kw">exp</span>(x), <span class="dt">log_j =</span> <span class="cf">function</span>(x) <span class="op">-</span><span class="kw">log</span>(x))</span>
+<span id="cb10-5"><a href="#cb10-5"></a>x3<span class="op">$</span>pa</span>
+<span id="cb10-6"><a href="#cb10-6"></a><span class="co">#&gt; [1] 0.7931472</span></span></code></pre></div>
+<p>Sampling is performed using a normal density before transforming back to the log-normal scale.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1"></a><span class="kw">plot</span>(x3, <span class="dt">ru_scale =</span> <span class="ot">TRUE</span>, <span class="dt">xlab =</span> <span class="st">&quot;z&quot;</span>)</span>
+<span id="cb11-2"><a href="#cb11-2"></a><span class="kw">plot</span>(x1, <span class="dt">xlab =</span> <span class="st">&quot;x&quot;</span>)</span></code></pre></div>
+<p><img src="data:image/png;base64,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" /><img src="data:image/png;base64,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" /></p>
+<p>We could also use <code>find_lambda_one_d</code> to estimate a suitable value of <span class="math inline">\(\lambda\)</span>.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1"></a><span class="co"># Note: the default value of max_phi = 10 is OK here but this will not always be the case.</span></span>
+<span id="cb12-2"><a href="#cb12-2"></a>lambda &lt;-<span class="st"> </span><span class="kw">find_lambda_one_d</span>(<span class="dt">logf =</span> dlnorm, <span class="dt">log =</span> <span class="ot">TRUE</span>)</span>
+<span id="cb12-3"><a href="#cb12-3"></a>lambda</span>
+<span id="cb12-4"><a href="#cb12-4"></a><span class="co">#&gt; $lambda</span></span>
+<span id="cb12-5"><a href="#cb12-5"></a><span class="co">#&gt; [1] 0.06564725</span></span>
+<span id="cb12-6"><a href="#cb12-6"></a><span class="co">#&gt; </span></span>
+<span id="cb12-7"><a href="#cb12-7"></a><span class="co">#&gt; $gm</span></span>
+<span id="cb12-8"><a href="#cb12-8"></a><span class="co">#&gt; [1] 0.9535484</span></span>
+<span id="cb12-9"><a href="#cb12-9"></a><span class="co">#&gt; </span></span>
+<span id="cb12-10"><a href="#cb12-10"></a><span class="co">#&gt; $init_psi</span></span>
+<span id="cb12-11"><a href="#cb12-11"></a><span class="co">#&gt; [1] -0.06345259</span></span>
+<span id="cb12-12"><a href="#cb12-12"></a><span class="co">#&gt; </span></span>
+<span id="cb12-13"><a href="#cb12-13"></a><span class="co">#&gt; $sd_psi</span></span>
+<span id="cb12-14"><a href="#cb12-14"></a><span class="co">#&gt; [1] 0.9753502</span></span></code></pre></div>
+<p>We get a value of <span class="math inline">\(\lambda\)</span> that is close to zero and an estimated probability of acceptance that is similar to before.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1"></a>x4 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> dlnorm, <span class="dt">log =</span> <span class="ot">TRUE</span>, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n, <span class="dt">trans =</span> <span class="st">&quot;BC&quot;</span>, <span class="dt">lambda =</span> lambda)</span>
+<span id="cb13-2"><a href="#cb13-2"></a>x4<span class="op">$</span>pa</span>
+<span id="cb13-3"><a href="#cb13-3"></a><span class="co">#&gt; [1] 0.7914523</span></span></code></pre></div>
+</div>
+<div id="example-3-gamma-density" class="section level3">
+<h3>Example 3: gamma density</h3>
+<p>The gamma distribution, with shape parameter <span class="math inline">\(\alpha\)</span>, provides a useful example because when <span class="math inline">\(\alpha &lt; 1\)</span> the gamma density is not bounded above. Therefore the ratio-of-uniforms cannot be used unless we use transformation to avoid this. Even if <span class="math inline">\(\alpha \geq 1\)</span> we can improve the probability of acceptance by transforming to approximate normality using a cube root transformation <span class="citation">(Wilson and Hilferty 1931)</span>, i.e. a Box-Cox transformation with <span class="math inline">\(\lambda = 1/3\)</span>. We illustrate this for <span class="math inline">\(\alpha = 1\)</span>.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1"></a>alpha &lt;-<span class="st"> </span><span class="dv">1</span></span>
+<span id="cb14-2"><a href="#cb14-2"></a>x1 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> dgamma, <span class="dt">shape =</span> alpha, <span class="dt">log =</span> <span class="ot">TRUE</span>, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n, <span class="dt">lower =</span> <span class="dv">0</span>,</span>
+<span id="cb14-3"><a href="#cb14-3"></a>       <span class="dt">init =</span> alpha)</span>
+<span id="cb14-4"><a href="#cb14-4"></a><span class="co">#&gt; Warning in ru(logf = dgamma, shape = alpha, log = TRUE, d = 1, n = n, lower = 0, : The Hessian of the target log-density at its mode is not positive</span></span>
+<span id="cb14-5"><a href="#cb14-5"></a><span class="co">#&gt;             definite. This may not be a problem, but it may be that a mode</span></span>
+<span id="cb14-6"><a href="#cb14-6"></a><span class="co">#&gt;             at/near a parameter boundary has been found and/or that the target</span></span>
+<span id="cb14-7"><a href="#cb14-7"></a><span class="co">#&gt;             function is unbounded.</span></span>
+<span id="cb14-8"><a href="#cb14-8"></a><span class="co">#&gt;   It might be worth using the option trans = ``BC&#39;&#39;.</span></span>
+<span id="cb14-9"><a href="#cb14-9"></a>x1<span class="op">$</span>pa</span>
+<span id="cb14-10"><a href="#cb14-10"></a><span class="co">#&gt; [1] 0.6043757</span></span></code></pre></div>
+<p>We get a warning because when <span class="math inline">\(\alpha = 1\)</span> the mode of a gamma distribution is at zero, the lower end point of the distribution. In this example it doesn’t matter because the density is finite at the mode and we are not relying on the mode being at a turning point of the density. However, if we are using rotation of axes in a multidimensional example then we may have a problem because the rotation is based on an estimate of the Hessian of the density at the mode.</p>
+<p>Now we use a cube root transformation.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1"></a><span class="co"># Box-Cox transform with lambda = 1/3 works well for shape &gt;= 1. -----------</span></span>
+<span id="cb15-2"><a href="#cb15-2"></a>x2 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> dgamma, <span class="dt">shape =</span> alpha, <span class="dt">log =</span> <span class="ot">TRUE</span>, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n, <span class="dt">trans =</span> <span class="st">&quot;BC&quot;</span>,</span>
+<span id="cb15-3"><a href="#cb15-3"></a>       <span class="dt">lambda =</span> <span class="dv">1</span><span class="op">/</span><span class="dv">3</span>, <span class="dt">init =</span> alpha)</span>
+<span id="cb15-4"><a href="#cb15-4"></a>x2<span class="op">$</span>pa</span>
+<span id="cb15-5"><a href="#cb15-5"></a><span class="co">#&gt; [1] 0.7937768</span></span></code></pre></div>
+<p>Again we show how <code>trans = &quot;user&quot;</code> can be used to use user-defined transformation, this time supplying the value of <span class="math inline">\(\lambda\)</span> using <code>user_args</code>.</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1"></a><span class="co"># Equivalently, we could use trans = &quot;user&quot; and supply the (inverse) Box-Cox</span></span>
+<span id="cb16-2"><a href="#cb16-2"></a><span class="co"># transformation and the log-Jacobian by hand</span></span>
+<span id="cb16-3"><a href="#cb16-3"></a><span class="co"># Note: when phi_to_theta is undefined at x this function returns NA</span></span>
+<span id="cb16-4"><a href="#cb16-4"></a>phi_to_theta  &lt;-<span class="st"> </span><span class="cf">function</span>(x, lambda) {</span>
+<span id="cb16-5"><a href="#cb16-5"></a>  <span class="kw">ifelse</span>(x <span class="op">*</span><span class="st"> </span>lambda <span class="op">+</span><span class="st"> </span><span class="dv">1</span> <span class="op">&gt;</span><span class="st"> </span><span class="dv">0</span>, (x <span class="op">*</span><span class="st"> </span>lambda <span class="op">+</span><span class="st"> </span><span class="dv">1</span>) <span class="op">^</span><span class="st"> </span>(<span class="dv">1</span> <span class="op">/</span><span class="st"> </span>lambda), <span class="ot">NA</span>)</span>
+<span id="cb16-6"><a href="#cb16-6"></a>}</span>
+<span id="cb16-7"><a href="#cb16-7"></a>log_j &lt;-<span class="st"> </span><span class="cf">function</span>(x, lambda) (lambda <span class="op">-</span><span class="st"> </span><span class="dv">1</span>) <span class="op">*</span><span class="st"> </span><span class="kw">log</span>(x)</span>
+<span id="cb16-8"><a href="#cb16-8"></a>lambda &lt;-<span class="st"> </span><span class="dv">1</span><span class="op">/</span><span class="dv">3</span></span>
+<span id="cb16-9"><a href="#cb16-9"></a>x3 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> dgamma, <span class="dt">shape =</span> alpha, <span class="dt">log =</span> <span class="ot">TRUE</span>, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n, <span class="dt">trans =</span> <span class="st">&quot;user&quot;</span>,</span>
+<span id="cb16-10"><a href="#cb16-10"></a>       <span class="dt">phi_to_theta =</span> phi_to_theta, <span class="dt">log_j =</span> log_j, <span class="dt">user_args =</span> <span class="kw">list</span>(<span class="dt">lambda =</span> lambda),</span>
+<span id="cb16-11"><a href="#cb16-11"></a>       <span class="dt">init =</span> alpha)</span>
+<span id="cb16-12"><a href="#cb16-12"></a>x3<span class="op">$</span>pa</span>
+<span id="cb16-13"><a href="#cb16-13"></a><span class="co">#&gt; [1] 0.7968762</span></span></code></pre></div>
+<p>We could also use <code>find_lambda_one_d</code> to set <span class="math inline">\(\lambda\)</span>: see the examples in the documentation for <code>find_lambda_one_d</code> for details.</p>
+<p>For <span class="math inline">\(\alpha &lt; 1\)</span> the gamma density is very skewed and the density increases without limit at the origin. A cube root transformation tends not to be sufficiently strong to produce a distribution for which the density is finite at its mode. We use <code>find_lambda_one_d</code> to estimate a suitable value of <span class="math inline">\(\lambda\)</span>. We need to set a range of values over which to evaluate the gamma density in order to estimate <span class="math inline">\(\lambda\)</span>. Here we cheat by using the gamma quantile function, something that wouldn’t usually be available.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1"></a>alpha &lt;-<span class="st"> </span><span class="fl">0.1</span></span>
+<span id="cb17-2"><a href="#cb17-2"></a><span class="co"># Choose a sensible value of max_phi</span></span>
+<span id="cb17-3"><a href="#cb17-3"></a>max_phi &lt;-<span class="st"> </span><span class="kw">qgamma</span>(<span class="fl">0.999</span>, <span class="dt">shape =</span> alpha)</span>
+<span id="cb17-4"><a href="#cb17-4"></a><span class="co"># [I appreciate that typically the quantile function won&#39;t be available.</span></span>
+<span id="cb17-5"><a href="#cb17-5"></a><span class="co"># In practice the value of lambda chosen is quite insensitive to the choice</span></span>
+<span id="cb17-6"><a href="#cb17-6"></a><span class="co"># of max_phi, provided that max_phi is not far too large or far too small.]</span></span>
+<span id="cb17-7"><a href="#cb17-7"></a>max_phi &lt;-<span class="st"> </span><span class="kw">qgamma</span>(<span class="fl">0.999</span>, <span class="dt">shape =</span> alpha)</span>
+<span id="cb17-8"><a href="#cb17-8"></a>lambda &lt;-<span class="st"> </span><span class="kw">find_lambda_one_d</span>(<span class="dt">logf =</span> dgamma, <span class="dt">shape =</span> alpha, <span class="dt">log =</span> <span class="ot">TRUE</span>,</span>
+<span id="cb17-9"><a href="#cb17-9"></a>  <span class="dt">max_phi =</span> max_phi)</span>
+<span id="cb17-10"><a href="#cb17-10"></a>lambda</span>
+<span id="cb17-11"><a href="#cb17-11"></a><span class="co">#&gt; $lambda</span></span>
+<span id="cb17-12"><a href="#cb17-12"></a><span class="co">#&gt; [1] 0.06758891</span></span>
+<span id="cb17-13"><a href="#cb17-13"></a><span class="co">#&gt; </span></span>
+<span id="cb17-14"><a href="#cb17-14"></a><span class="co">#&gt; $gm</span></span>
+<span id="cb17-15"><a href="#cb17-15"></a><span class="co">#&gt; [1] 0.008056577</span></span>
+<span id="cb17-16"><a href="#cb17-16"></a><span class="co">#&gt; </span></span>
+<span id="cb17-17"><a href="#cb17-17"></a><span class="co">#&gt; $init_psi</span></span>
+<span id="cb17-18"><a href="#cb17-18"></a><span class="co">#&gt; [1] -0.0342618</span></span>
+<span id="cb17-19"><a href="#cb17-19"></a><span class="co">#&gt; </span></span>
+<span id="cb17-20"><a href="#cb17-20"></a><span class="co">#&gt; $sd_psi</span></span>
+<span id="cb17-21"><a href="#cb17-21"></a><span class="co">#&gt; [1] 0.009372876</span></span>
+<span id="cb17-22"><a href="#cb17-22"></a>x4 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> dgamma, <span class="dt">shape =</span> alpha, <span class="dt">log =</span> <span class="ot">TRUE</span>, <span class="dt">d =</span> <span class="dv">1</span>, <span class="dt">n =</span> n, <span class="dt">trans =</span> <span class="st">&quot;BC&quot;</span>,</span>
+<span id="cb17-23"><a href="#cb17-23"></a>  <span class="dt">lambda =</span> lambda)</span>
+<span id="cb17-24"><a href="#cb17-24"></a>x4<span class="op">$</span>pa</span>
+<span id="cb17-25"><a href="#cb17-25"></a><span class="co">#&gt; [1] 0.7531822</span></span></code></pre></div>
+<p>For a value of <span class="math inline">\(\alpha\)</span> so close to 0 the density is very peaked at the origin (see the plot on the left below). After a transformation that is close to a log transformation the target density (see the plot on the right) is bounded above and the estimated probability of acceptance is similar to that of a normal distribution.</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1"></a><span class="kw">plot</span>(x4)</span>
+<span id="cb18-2"><a href="#cb18-2"></a><span class="kw">plot</span>(x4, <span class="dt">ru_scale =</span> <span class="ot">TRUE</span>)</span></code></pre></div>
+<p><img src="data:image/png;base64,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" /><img src="data:image/png;base64,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" /></p>
+</div>
+<div id="example-4-normal-density" class="section level3">
+<h3>Example 4: normal density</h3>
+<p>We show the effects of rotation of axes for the two- and three- dimensional normal density.</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1"></a><span class="co"># two-dimensional normal with positive association ----------------</span></span>
+<span id="cb19-2"><a href="#cb19-2"></a>rho &lt;-<span class="st"> </span><span class="fl">0.9</span></span>
+<span id="cb19-3"><a href="#cb19-3"></a>covmat &lt;-<span class="st"> </span><span class="kw">matrix</span>(<span class="kw">c</span>(<span class="dv">1</span>, rho, rho, <span class="dv">1</span>), <span class="dv">2</span>, <span class="dv">2</span>)</span>
+<span id="cb19-4"><a href="#cb19-4"></a>log_dmvnorm &lt;-<span class="st"> </span><span class="cf">function</span>(x, <span class="dt">mean =</span> <span class="kw">rep</span>(<span class="dv">0</span>, d), <span class="dt">sigma =</span> <span class="kw">diag</span>(d)) {</span>
+<span id="cb19-5"><a href="#cb19-5"></a>  x &lt;-<span class="st"> </span><span class="kw">matrix</span>(x, <span class="dt">ncol =</span> <span class="kw">length</span>(x))</span>
+<span id="cb19-6"><a href="#cb19-6"></a>  d &lt;-<span class="st"> </span><span class="kw">ncol</span>(x)</span>
+<span id="cb19-7"><a href="#cb19-7"></a>  <span class="op">-</span><span class="st"> </span><span class="fl">0.5</span> <span class="op">*</span><span class="st"> </span>(x <span class="op">-</span><span class="st"> </span>mean) <span class="op">%*%</span><span class="st"> </span><span class="kw">solve</span>(sigma) <span class="op">%*%</span><span class="st"> </span><span class="kw">t</span>(x <span class="op">-</span><span class="st"> </span>mean)</span>
+<span id="cb19-8"><a href="#cb19-8"></a>}</span>
+<span id="cb19-9"><a href="#cb19-9"></a><span class="co"># No rotation.</span></span>
+<span id="cb19-10"><a href="#cb19-10"></a>x1 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> log_dmvnorm, <span class="dt">sigma =</span> covmat, <span class="dt">d =</span> <span class="dv">2</span>, <span class="dt">n =</span> n, <span class="dt">init =</span> <span class="kw">c</span>(<span class="dv">0</span>, <span class="dv">0</span>),</span>
+<span id="cb19-11"><a href="#cb19-11"></a>  <span class="dt">rotate =</span> <span class="ot">FALSE</span>)</span>
+<span id="cb19-12"><a href="#cb19-12"></a><span class="co"># With rotation.</span></span>
+<span id="cb19-13"><a href="#cb19-13"></a>x2 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> log_dmvnorm, <span class="dt">sigma =</span> covmat, <span class="dt">d =</span> <span class="dv">2</span>, <span class="dt">n =</span> n, <span class="dt">init =</span> <span class="kw">c</span>(<span class="dv">0</span>, <span class="dv">0</span>))</span>
+<span id="cb19-14"><a href="#cb19-14"></a><span class="kw">c</span>(x1<span class="op">$</span>pa, x2<span class="op">$</span>pa)</span>
+<span id="cb19-15"><a href="#cb19-15"></a><span class="co">#&gt; [1] 0.2353273 0.5368839</span></span></code></pre></div>
+<p>The probability of acceptance is increased by the rotation of axes. These plots show why.</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1"></a><span class="kw">plot</span>(x1, <span class="dt">ru_scale =</span> <span class="ot">TRUE</span>)</span>
+<span id="cb20-2"><a href="#cb20-2"></a><span class="kw">plot</span>(x2, <span class="dt">ru_scale =</span> <span class="ot">TRUE</span>)</span></code></pre></div>
+<p><img src="data:image/png;base64,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" /><img src="data:image/png;base64,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" /></p>
+<p>The three-dimensional case.</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1"></a><span class="co"># three-dimensional normal with positive association ----------------</span></span>
+<span id="cb21-2"><a href="#cb21-2"></a>covmat &lt;-<span class="st"> </span><span class="kw">matrix</span>(rho, <span class="dv">3</span>, <span class="dv">3</span>) <span class="op">+</span><span class="st"> </span><span class="kw">diag</span>(<span class="dv">1</span> <span class="op">-</span><span class="st"> </span>rho, <span class="dv">3</span>)</span>
+<span id="cb21-3"><a href="#cb21-3"></a><span class="co"># No rotation.  Slow !</span></span>
+<span id="cb21-4"><a href="#cb21-4"></a>x3 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> log_dmvnorm, <span class="dt">sigma =</span> covmat, <span class="dt">d =</span> <span class="dv">3</span>, <span class="dt">n =</span> n,</span>
+<span id="cb21-5"><a href="#cb21-5"></a>  <span class="dt">init =</span> <span class="kw">c</span>(<span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">0</span>), <span class="dt">rotate =</span> <span class="ot">FALSE</span>)</span>
+<span id="cb21-6"><a href="#cb21-6"></a><span class="co"># With rotation.</span></span>
+<span id="cb21-7"><a href="#cb21-7"></a>x4 &lt;-<span class="st"> </span><span class="kw">ru</span>(<span class="dt">logf =</span> log_dmvnorm, <span class="dt">sigma =</span> covmat, <span class="dt">d =</span> <span class="dv">3</span>, <span class="dt">n =</span> n,</span>
+<span id="cb21-8"><a href="#cb21-8"></a>  <span class="dt">init =</span> <span class="kw">c</span>(<span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">0</span>))</span>
+<span id="cb21-9"><a href="#cb21-9"></a><span class="kw">c</span>(x3<span class="op">$</span>pa, x4<span class="op">$</span>pa)</span>
+<span id="cb21-10"><a href="#cb21-10"></a><span class="co">#&gt; [1] 0.05319488 0.31257814</span></span></code></pre></div>
+<p>Again, pairwise plots of the simulated values illustrate the effect of the rotation of axes.</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1"></a><span class="kw">plot</span>(x3, <span class="dt">ru_scale =</span> <span class="ot">TRUE</span>)</span></code></pre></div>
+<p><img src="data:image/png;base64,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" /><!-- --></p>
+<div class="sourceCode" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1"></a><span class="kw">plot</span>(x4, <span class="dt">ru_scale =</span> <span class="ot">TRUE</span>)</span></code></pre></div>
+<p><img src="data:image/png;base64,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" /><!-- --></p>
+</div>
+</div>
+<div id="references" class="section level2">
+<h2>References</h2>
+<script type="text/x-mathjax-config">
+   MathJax.Hub.Config({  "HTML-CSS": { minScaleAdjust: 125, availableFonts: [] }  });
+</script>
+<div id="refs" class="references">
+<div id="ref-BC1964">
+<p>Box, G. E. P., and D. R. Cox. 1964. “An Analysis of Transformations.” <em>Journal of the Royal Statistical Society. Series B (Methodological)</em> 26 (2): 211–52.</p>
+</div>
+<div id="ref-revdbayes">
+<p>Northrop, P. J. 2017. <em>revdbayes: Ratio-of-Uniforms Sampling for Bayesian Extreme Value Analysis</em>. <a href="https://CRAN.R-project.org/package=revdbayes">https://CRAN.R-project.org/package=revdbayes</a>.</p>
+</div>
+<div id="ref-NA2016">
+<p>Northrop, P. J., and N. Attalides. 2016. “Posterior Propriety in Bayesian Extreme Value Analyses Using Reference Priors.” <em>Statistica Sinica</em> 26 (2): 721–43. <a href="https://doi.org/10.5705/ss.2014.034">https://doi.org/10.5705/ss.2014.034</a>.</p>
+</div>
+<div id="ref-NAJ2016">
+<p>Northrop, P. J., N. Attalides, and P. Jonathan. 2016. “Cross-Validatory Extreme Value Threshold Selection and Uncertainty with Application to Ocean Storm Severity.” <em>Journal of the Royal Statistical Society: Series C (Applied Statistics)</em>. <a href="https://doi.org/10.1111/rssc.12159">https://doi.org/10.1111/rssc.12159</a>.</p>
+</div>
+<div id="ref-Stephenson2016">
+<p>Stephenson, A. 2016. “Bayesian Inference for Extreme Value Modelling.” In <em>Extreme Value Modeling and Risk Analysis: Methods and Applications</em>, edited by D. K. Dey and J. Yan, 257–80. London: Chapman; Hall. <a href="https://doi.org/10.1201/b19721">https://doi.org/10.1201/b19721</a>.</p>
+</div>
+<div id="ref-evdbayes">
+<p>Stephenson, A., and M. Ribatet. 2014. <em>evdbayes: Bayesian Analysis in Extreme Value Theory</em>. <a href="https://CRAN.R-project.org/package=evdbayes">https://CRAN.R-project.org/package=evdbayes</a>.</p>
+</div>
+<div id="ref-WGS1991">
+<p>Wakefield, J. C., A. E. Gelfand, and A. F. M. Smith. 1991. “Efficient Generation of Random Variates via the Ratio-of-Uniforms Method.” <em>Statistics and Computing</em> 1 (2): 129–33. <a href="https://doi.org/10.1007/BF01889987">https://doi.org/10.1007/BF01889987</a>.</p>
+</div>
+<div id="ref-WSRG1994">
+<p>Wakefield, J. C., A. F. M. Smith, A. Racine-Poon, and A. E. Gelfand. 1994. “Bayesian Analysis of Linear and Non-Linear Population Models by Using the Gibbs Sampler.” <em>Journal of the Royal Statistical Society. Series C (Applied Statistics)</em> 43 (1): 201–21.</p>
+</div>
+<div id="ref-WH1931">
+<p>Wilson, E. B., and M. M. Hilferty. 1931. “The Distribution of Chi-Square.” <em>Proc. Natl. Acad. Sci. USA</em> 17 (12): 684–88.</p>
+</div>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

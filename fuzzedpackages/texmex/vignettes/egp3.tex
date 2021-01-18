@@ -1,0 +1,500 @@
+\documentclass[a4paper]{article}\usepackage[]{graphicx}\usepackage[]{color}
+% maxwidth is the original width if it is less than linewidth
+% otherwise use linewidth (to make sure the graphics do not exceed the margin)
+\makeatletter
+\def\maxwidth{ %
+  \ifdim\Gin@nat@width>\linewidth
+    \linewidth
+  \else
+    \Gin@nat@width
+  \fi
+}
+\makeatother
+
+\definecolor{fgcolor}{rgb}{0.345, 0.345, 0.345}
+\newcommand{\hlnum}[1]{\textcolor[rgb]{0.686,0.059,0.569}{#1}}%
+\newcommand{\hlstr}[1]{\textcolor[rgb]{0.192,0.494,0.8}{#1}}%
+\newcommand{\hlcom}[1]{\textcolor[rgb]{0.678,0.584,0.686}{\textit{#1}}}%
+\newcommand{\hlopt}[1]{\textcolor[rgb]{0,0,0}{#1}}%
+\newcommand{\hlstd}[1]{\textcolor[rgb]{0.345,0.345,0.345}{#1}}%
+\newcommand{\hlkwa}[1]{\textcolor[rgb]{0.161,0.373,0.58}{\textbf{#1}}}%
+\newcommand{\hlkwb}[1]{\textcolor[rgb]{0.69,0.353,0.396}{#1}}%
+\newcommand{\hlkwc}[1]{\textcolor[rgb]{0.333,0.667,0.333}{#1}}%
+\newcommand{\hlkwd}[1]{\textcolor[rgb]{0.737,0.353,0.396}{\textbf{#1}}}%
+\let\hlipl\hlkwb
+
+\usepackage{framed}
+\makeatletter
+\newenvironment{kframe}{%
+ \def\at@end@of@kframe{}%
+ \ifinner\ifhmode%
+  \def\at@end@of@kframe{\end{minipage}}%
+  \begin{minipage}{\columnwidth}%
+ \fi\fi%
+ \def\FrameCommand##1{\hskip\@totalleftmargin \hskip-\fboxsep
+ \colorbox{shadecolor}{##1}\hskip-\fboxsep
+     % There is no \\@totalrightmargin, so:
+     \hskip-\linewidth \hskip-\@totalleftmargin \hskip\columnwidth}%
+ \MakeFramed {\advance\hsize-\width
+   \@totalleftmargin\z@ \linewidth\hsize
+   \@setminipage}}%
+ {\par\unskip\endMakeFramed%
+ \at@end@of@kframe}
+\makeatother
+
+\definecolor{shadecolor}{rgb}{.97, .97, .97}
+\definecolor{messagecolor}{rgb}{0, 0, 0}
+\definecolor{warningcolor}{rgb}{1, 0, 1}
+\definecolor{errorcolor}{rgb}{1, 0, 0}
+\newenvironment{knitrout}{}{} % an empty environment to be redefined in TeX
+
+\usepackage{alltt}
+\usepackage[british]{babel}
+%\usepackage{fancyhdr}
+\usepackage{amsmath}
+\usepackage{rotating}
+%\pagestyle{fancy}
+%\rfoot{DRAFT}
+%\rhead{DRAFT}
+
+%\VignetteIndexEntry{egp3}
+%\VignetteEngine{knitr}
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\begin{document}
+\title{The Extended Generalized Pareto Distribution 3 (EGP3) in texmex}
+\author{Harry Southworth}
+\maketitle%\thispagestyle{empty}
+\tableofcontents
+\clearpage
+
+
+
+\section{Introduction}
+Version 2 of the the texmex~\cite{texmex} package for R~\cite{R} introduced
+the ability to add new families of extreme value distributions to the package
+and itself added the Generalized Extreme Value (GEV) distribution, previous
+releases having supported modelling only with the Generalized Pareto
+Distribution (GPD). We here describe the implementation of a new extreme
+value family, the Extended Generalized Pareto Distribution 3 (EGP3) described
+by Papastathopoulos and Tawn~\cite{egp}.
+
+The EGP3 family introduces a new parameter, $\kappa > 0$. For the purposes
+of numerical stability and avoiding negative values, when modelling data we
+work with $\lambda = \log\kappa$.
+
+Papastathopoulos and Tawn~\cite{egp} work more with their EGP1 and 2 models
+than with EGP3, but state that there are few differences in results between
+the 3 versions. The EGP3 model has the advantage of closed form derivatives
+for approximating the standard errors of return levels, which is
+one reason why it is preferred here. Section~\ref{sec:egp3} contains some
+technical details.
+
+\subsection{Acknowledgements}
+This work was partly funded by AstraZeneca. I'm also grateful to Yiannis
+Papastathopoulos and Paul Metcalfe for various comments and corrections.
+Thanks also to Emmanuel Flachaire for pointing out a bug in an earlier
+version of {\tt egp3RangeFit}.
+
+\subsection{Software}
+R version 3.6.2 (2019-12-12)~\cite{R} will be used for all analyses.
+A summary of the R session appears in the Appendix, in the interests of
+reproducibility.
+
+\section{Using the EGP3 distribution for extreme value modelling}
+The additional parameter, $\kappa$ in the EGP models is allowed to vary
+over the positive real line, and in each case a value of $\kappa = 1$ results in
+a distribution identical to the GPD. This property suggests a new diagnostic
+plot to aid threshold selection: plot the estimated value of $\kappa$ with a
+confidence interval over a range of thresholds and select the lowest threshold
+which contains the value $\hat\kappa = 1$. GPD modelling can then be performed
+on values above this threshold.
+This diagnostic plot provides a useful addition to the standard methods of
+examining the values of $\hat\sigma_*$ and $\hat\xi$ over a range of thresholds,
+and examining the mean residual life plot as described by Coles~\cite{coles}.
+
+\subsection{River Nidd example}
+Following Papastathopoulos and Tawn, we work with the River Nidd data, producing
+the standard threshold selection plots and the new plot based on EGP3.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{library}\hlstd{(texmex)}
+\hlkwd{library}\hlstd{(gridExtra)}
+\hlstd{g1} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwd{gpdRangeFit}\hlstd{(nidd,} \hlkwc{cov}\hlstd{=}\hlstr{"numeric"}\hlstd{,} \hlkwc{umax}\hlstd{=}\hlnum{90}\hlstd{,} \hlkwc{umin}\hlstd{=}\hlnum{65}\hlstd{,} \hlkwc{nint}\hlstd{=}\hlnum{20}\hlstd{))}
+\hlstd{g2} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwd{mrl}\hlstd{(nidd))}
+\hlstd{g3} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwd{egp3RangeFit}\hlstd{(nidd,} \hlkwc{umax}\hlstd{=}\hlnum{90}\hlstd{,} \hlkwc{umin}\hlstd{=}\hlnum{65}\hlstd{,} \hlkwc{nint}\hlstd{=}\hlnum{20}\hlstd{),)}
+
+\hlkwd{grid.arrange}\hlstd{(g1[[}\hlnum{1}\hlstd{]],g1[[}\hlnum{2}\hlstd{]],g2,g3,}\hlkwc{ncol}\hlstd{=}\hlnum{2}\hlstd{)}
+\end{alltt}
+\end{kframe}\begin{figure}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/egp3nidd-1} \caption[Threshold selection plots for the River Nidd data]{Threshold selection plots for the River Nidd data. The bottom right panel displays the $\hat\kappa$ with an approximate 95\% confidence interval. The lowest value of $\hat\kappa$ for which the confidence interval contains 1 is approximately 75, suggesting this as a threshold above which GPD modelling can be performed.}\label{fig:nidd}
+\end{figure}
+
+
+\end{knitrout}
+
+Figure~\ref{fig:nidd} displays the results. The lowest threshold for which
+$\hat\kappa$ is similar to 1 is at about 75, suggesting that GPD models can be
+used above this level.
+
+\subsection{Pharmaceutical example}
+The introduction of $\kappa$ into the distribution suggests that lower thresholds
+might be usable for extreme value modelling. We now follow Southworth and
+Heffernan~\cite{southHeffMultivariate} in analyzing some clinical trial safety data.
+Southworth and Heffernan model all the values of various safety related laboratory
+variables above the $70^{th}$ percentile
+using GPD models allowing $\hat\xi$ to vary linearly with dose. In each case,
+they find a linear relationship with dose, except for bilirubin. Following
+Papastathopoulos and Tawn, we revisit the issue of threshold selection, hoping
+to find a lower threshold above which EGP3 models can be fit, thus including
+more of the available data in the model, increasing the chance of identifying
+a dose effect if one exists.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{library}\hlstd{(MASS)}
+\hlstd{rmod} \hlkwb{<-} \hlkwd{rlm}\hlstd{(}\hlkwd{log}\hlstd{(TBL.M)} \hlopt{~} \hlkwd{log}\hlstd{(TBL.B)} \hlopt{+} \hlkwd{as.numeric}\hlstd{(dose),}
+            \hlkwc{data}\hlstd{=liver,} \hlkwc{method}\hlstd{=}\hlstr{"MM"}\hlstd{,} \hlkwc{c}\hlstd{=}\hlnum{3.44}\hlstd{)}
+\hlstd{liver}\hlopt{$}\hlstd{r} \hlkwb{<-} \hlkwd{resid}\hlstd{(rmod)}
+
+\hlstd{p} \hlkwb{<-} \hlkwd{lapply}\hlstd{(LETTERS[}\hlnum{1}\hlopt{:}\hlnum{4}\hlstd{],}\hlkwa{function}\hlstd{(}\hlkwc{dose}\hlstd{)\{}
+    \hlkwd{ggplot}\hlstd{(}\hlkwd{egp3RangeFit}\hlstd{(liver}\hlopt{$}\hlstd{r[liver}\hlopt{$}\hlstd{dose} \hlopt{==} \hlstd{dose],}
+                        \hlkwc{umin}\hlstd{=}\hlopt{-}\hlnum{.5}\hlstd{,} \hlkwc{umax}\hlstd{=}\hlnum{.135}\hlstd{))} \hlopt{+}
+        \hlkwd{ggtitle}\hlstd{(}\hlkwd{paste}\hlstd{(}\hlstr{"\textbackslash{}nDose"}\hlstd{,dose))\})}
+
+\hlkwd{grid.arrange}\hlstd{(p[[}\hlnum{1}\hlstd{]],p[[}\hlnum{2}\hlstd{]],p[[}\hlnum{3}\hlstd{]],p[[}\hlnum{4}\hlstd{]],}\hlkwc{ncol}\hlstd{=}\hlnum{2}\hlstd{)}
+\end{alltt}
+\end{kframe}\begin{figure}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/egp3liver-1} \caption[The EGP3 threshold selection plot for each dose group in the liver data]{The EGP3 threshold selection plot for each dose group in the liver data.}\label{fig:liver}
+\end{figure}
+
+
+\end{knitrout}
+
+The plots of $\hat\kappa$ over the range of thresholds in Figure~\ref{fig:liver}
+suggests that GPD models ought to fit above a threshold of about 0, the $57^{th}$
+percentile, or even a little lower for some doses.
+
+We now pool the residual bilirubin data from all doses and present the standard
+threshold selection plots as well as the EGP3 plot. The results appear in
+Figure~\ref{fig:liverthresh} and also suggest a threshold of 0 to be appropriate,
+gaining us an additional 79 observations compared to the $70^{th}$ percentile
+used by Southworth and Heffernan.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{p1} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwd{gpdRangeFit}\hlstd{(liver}\hlopt{$}\hlstd{r,} \hlkwc{nint}\hlstd{=}\hlnum{20}\hlstd{))}
+\hlstd{p2} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwd{mrl}\hlstd{(liver}\hlopt{$}\hlstd{r))}
+\hlstd{p3} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(}\hlkwd{egp3RangeFit}\hlstd{(liver}\hlopt{$}\hlstd{r,} \hlkwc{nint}\hlstd{=}\hlnum{20}\hlstd{))}
+\hlkwd{grid.arrange}\hlstd{(p1[[}\hlnum{1}\hlstd{]],p1[[}\hlnum{2}\hlstd{]],p2,p3,}\hlkwc{ncol}\hlstd{=}\hlnum{2}\hlstd{)}
+\end{alltt}
+\end{kframe}\begin{figure}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/egp3liverthresh-1} \caption[Threshold selection plots for the liver data]{Threshold selection plots for the liver data. The bottom right panel displays our new plot based on the EGP3 distribution.}\label{fig:liverthresh}
+\end{figure}
+
+
+\end{knitrout}
+\clearpage
+
+We now fit the GPD model and produce diagnostic plots (Figure~\ref{fig:gmod}) and a summary of the model.
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{gmod} \hlkwb{<-} \hlkwd{evm}\hlstd{(r,} \hlkwc{data}\hlstd{=liver,} \hlkwc{th}\hlstd{=}\hlnum{0}\hlstd{,} \hlkwc{xi}\hlstd{=}\hlopt{~}\hlkwd{as.numeric}\hlstd{(dose))}
+\hlkwd{ggplot}\hlstd{(gmod,}\hlkwc{span}\hlstd{=}\hlnum{1}\hlstd{)}
+\end{alltt}
+\end{kframe}\begin{figure}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/egp3gmod-1} \caption[Diagnostic plots for the GPD model with threshold at 1.3]{Diagnostic plots for the GPD model with threshold at 1.3.}\label{fig:gmod}
+\end{figure}
+
+\begin{kframe}\begin{alltt}
+\hlkwd{summary}\hlstd{(gmod)}
+\end{alltt}
+\begin{verbatim}
+## Call: evm(y = r, data = liver, th = 0, xi = ~as.numeric(dose))
+## 
+## Family:       GPD 
+## 
+## Model fit by maximum likelihood.
+## 
+## Convergence:		TRUE
+## Threshold:		0
+## Rate of excess:		0.502
+## 
+##   Log lik.  Penalized log lik.        AIC
+##   208.5003            208.5003  -411.0005
+## 
+## 
+## Coefficients:
+##                       Value     SE        t       
+## phi: (Intercept)       -1.3992    0.0753  -18.5931
+## xi: (Intercept)        -0.3418    0.0762   -4.4836
+## xi: as.numeric(dose)    0.0216    0.0230    0.9386
+## 
+## 1000 simulated data sets compared against observed data QQ-plot.
+## Quantile of the observed MSE:  0.499 
+## 29 observations (9.539%) outside the 95% simulated envelope.
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+The GPD model fit to all values above 0 seems to fit reasonably well, with the diagnostic plots
+revealing no great cause for concern. A few points on the QQ-plot fall outside
+the simulated envelope, but because these points are correlated, it makes no
+sense to choose thresholds such as 5\% or 10\% as hard cut-offs, so the model
+fit is not seriously called into question. The summary table reveals there to
+be still no evidence of a dose
+effect, at least according to the approximate test implied by the {\em t}-value.
+
+\clearpage
+We next attempt to model {\em all} the data using the EGP3 distribution.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{emod} \hlkwb{<-} \hlkwd{evm}\hlstd{(r,} \hlkwc{data}\hlstd{=liver,} \hlkwc{family}\hlstd{=egp3,} \hlkwc{th}\hlstd{=}\hlkwd{min}\hlstd{(liver}\hlopt{$}\hlstd{r} \hlopt{-} \hlnum{.0001}\hlstd{),}
+            \hlkwc{xi}\hlstd{=}\hlopt{~}\hlkwd{as.numeric}\hlstd{(dose))}
+\hlkwd{ggplot}\hlstd{(emod,}\hlkwc{span}\hlstd{=}\hlnum{0.8}\hlstd{)}
+\end{alltt}
+\end{kframe}\begin{figure}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/egp3liveregp3-1} \caption[Diagnostic plots from fitting the EGP3 distribution to all of the residual bilirubin data]{Diagnostic plots from fitting the EGP3 distribution to all of the residual bilirubin data.}\label{fig:liveregp3}
+\end{figure}
+
+\begin{kframe}\begin{alltt}
+\hlkwd{summary}\hlstd{(emod)}
+\end{alltt}
+\begin{verbatim}
+## Call: evm(y = r, data = liver, family = egp3, th = min(liver$r - 1e-04), 
+##     xi = ~as.numeric(dose))
+## 
+## Family:       EGP3 
+## 
+## Model fit by maximum likelihood.
+## 
+## Convergence:		TRUE
+## 
+##    Log lik.  Penalized log lik.      AIC
+##   -92.35099           -92.35099  192.702
+## 
+## 
+## Coefficients:
+##                       Value      SE         t        
+## lambda: (Intercept)    2.05e+00   7.65e-02   2.68e+01
+## phi: (Intercept)      -2.24e-01   3.57e-02  -6.27e+00
+## xi: (Intercept)       -4.31e-01   1.61e-02  -2.67e+01
+## xi: as.numeric(dose)   7.16e-03   2.00e-09   3.58e+06
+## 
+## 1000 simulated data sets compared against observed data QQ-plot.
+## Quantile of the observed MSE:  0.995 
+## 412 observations (67.987%) outside the 95% simulated envelope.
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+In Figure~\ref{fig:liveregp3} there is some noticeable structure in the diagnostic
+plots. The simulation test reveals there to be about 65\% of the observations
+outside of the simulated envelope, so that the model is a terrible fit to the
+data.
+\clearpage
+
+We now try a somewhat higher threshold of -0.25.
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{emod} \hlkwb{<-} \hlkwd{evm}\hlstd{(r,} \hlkwc{data}\hlstd{=liver,} \hlkwc{family}\hlstd{=egp3,} \hlkwc{th}\hlstd{=}\hlopt{-}\hlnum{.25}\hlstd{,}
+            \hlkwc{xi}\hlstd{=}\hlopt{~}\hlkwd{as.numeric}\hlstd{(dose))}
+\hlkwd{ggplot}\hlstd{(emod)}
+\end{alltt}
+\end{kframe}\begin{figure}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/egp3liveregp3_2-1} \caption[Diagnostic plots for the EGP3 model when using a threshold of -0.25]{Diagnostic plots for the EGP3 model when using a threshold of -0.25}\label{fig:liveregp3_2}
+\end{figure}
+
+\begin{kframe}\begin{alltt}
+\hlkwd{summary}\hlstd{(emod)}
+\end{alltt}
+\begin{verbatim}
+## Call: evm(y = r, data = liver, family = egp3, th = -0.25, xi = ~as.numeric(dose))
+## 
+## Family:       EGP3 
+## 
+## Model fit by maximum likelihood.
+## 
+## Convergence:		TRUE
+## Threshold:		-0.25
+## Rate of excess:		0.855
+## 
+##   Log lik.  Penalized log lik.        AIC
+##   155.4143            155.4143  -302.8286
+## 
+## 
+## Coefficients:
+##                       Value     SE        t       
+## lambda: (Intercept)     0.4306    0.0715    6.0259
+## phi: (Intercept)       -1.1222    0.0730  -15.3761
+## xi: (Intercept)        -0.3407    0.0500   -6.8132
+## xi: as.numeric(dose)    0.0144    0.0123    1.1770
+## 
+## 1000 simulated data sets compared against observed data QQ-plot.
+## Quantile of the observed MSE:  0.623 
+## 6 observations (1.158%) outside the 95% simulated envelope.
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+We see from the output that the model appears to fit the data, and still there
+is no evidence of a dose effect.
+
+\subsection{Discussion}
+In the pharmaceutical example, we were able to claw back some additional data into
+the model by using the EGP3 distribution, at the expense of an additional
+parameter. However, when all of the data were used, the fit was awful. It appears
+that the EGP3 distribution's most useful function might be to provide an extra
+threshold selection plot, or even a test to decide on a lower threshold. For
+modelling extreme values it will, at least in some examples, allow inclusion of
+a larger proportion of observations, but some care will need to be taken in
+selection of the threshold, and no obvious threshold selection methods for EPG3
+are currently available.
+
+\clearpage
+\section{\label{sec:egp3}The EGP3 distribution: some technical details}
+The EGP3 family introduces a new parameter, $\kappa$, to the familiar
+parameters $\sigma$ and $\xi$ in the GPD family. The threshold $u$ remains.
+The EPG3 distribution function is then obtained by raising the GPD distribution
+function to $\kappa > 0$.
+
+\subsection{Distribution function, probability density function and random number generation}
+
+The cumulative distribution function for the EGP3 family is
+\begin{equation} \label{eqn:cdf}
+F(x) = \begin{cases}
+  \left[ 1 - \left[ 1 + \xi \frac{x - u}{\sigma} \right]^{-1/\xi}\right]^\kappa & \xi \ne 0 \\
+  \left[ 1 - \exp\left(-\frac{(x-u)}{\sigma}\right)\right]^\kappa & \xi = 0
+\end{cases}
+\end{equation}
+
+which yields probability density function
+\begin{equation}\label{eqn:pdf}
+f(x) = \begin{cases}
+  \frac{\kappa}{\sigma}\left\{1 - (1 + \xi (x-u)/\sigma)^{-1/\xi}\right\}^{\kappa - 1}(1 + \xi (x-u)/\sigma)^{-1/\xi -1} & \xi \ne 0 \\
+  \frac{\kappa}{\sigma}e^{-(x - u)/\sigma}\left(1 - e^{-(x-u)/\sigma}\right)^{\kappa - 1} & \xi = 0.
+\end{cases}
+\end{equation}
+
+Equations (\ref{eqn:cdf}) and (\ref{eqn:pdf}) are implemented in texmex in the
+functions {\tt pegp3} and {\tt degp3}.
+
+Inversion of (\ref{eqn:cdf}) yields
+
+\begin{eqnarray}
+z = \left\{ \arraycolsep=1.4pt\def\arraystretch{2.2} % increase vertical spacing
+    \begin{array}{ll}
+    u + \frac{\sigma}{\xi}\left[\left(1 - x^{1/\kappa}\right)^{-\xi} - 1\right] & \xi \ne 0 \label{eqn:rgn}\\
+    u - \sigma \log\left(1 - x^{1/\kappa}\right) & \xi = 0
+    \end{array}
+    \right.
+\end{eqnarray}
+
+enabling random number generation as implemented in {\tt regp3}.
+
+\subsection{Return levels}
+Following Coles (\cite{coles} Section 4.3.3) computation of return levels proceeds
+as follows. We note that
+
+\begin{eqnarray*}
+P(X > x | X > u) = 1 - F(X)_{X > u}
+\end{eqnarray*}
+
+so that
+
+\begin{eqnarray*}
+P(X > x) = \theta_u\{1 - F(X)\}
+\end{eqnarray*}
+
+where $\theta_u = P(X > u)$ for threshold u. Therefore, the level $x_M$ that is
+exceeded on average once every $M$ observations is the solution to
+
+\begin{eqnarray}
+\frac{1}{M} = \theta_u\{1 - F(X)\} \label{eqn:rl}.
+\end{eqnarray}
+
+For the EGP3 distribution, we solve (\ref{eqn:rl}) to yield
+
+\begin{eqnarray}
+x_M = \left\{ \arraycolsep=1.4pt\def\arraystretch{2.2} % increase vertical spacing
+      \begin{array}{ll}
+      u + \frac{\sigma}{\xi}\left[\left\{1 - \left( 1 - \frac{1}{M\theta_u}\right)^{1/\kappa}\right\}^{-\xi} - 1\right] & \xi \ne 0 \label{eqn:retlev}\\
+      u - \sigma\log\left[1 - \left(1 - \frac{1}{M\theta_u}\right)^{1/\kappa}\right] & \xi = 0
+      \end{array}
+      \right.
+\end{eqnarray}
+
+correcting Papastathopoulos and Tawn.
+
+\subsubsection{Derivatives}
+In order to compute approximate standard errors for return levels, we need derivatives
+of (\ref{eqn:retlev}) with respect to each of $\kappa$, $\sigma$ and $\xi$. These
+are found to be
+
+\begin{eqnarray*}
+\frac{dx_M}{d\kappa} &=& -\frac{\left( 1 - \frac{1}{M\theta_u}\right)^{1/\kappa} \sigma\left( 1 - \left( 1 - \frac{1}{M\theta_u}\right)^{1/\kappa}\right)^{-\xi -1}\log\left( 1 - \frac{1}{M\theta_u}\right)}{\kappa^2}\\
+\frac{dx_M}{d\sigma} &=& \frac{\left(1 - \left( 1 - \frac{1}{M\theta_u}\right)^{1/\kappa}\right)^{-\xi} -1}{\xi}\\
+\frac{dx_M}{d\xi} &=& -\frac{\sigma\left(1 - \left( 1 - \frac{1}{M\theta_u}\right)^{1/\kappa}\right)^{-\xi}\log\left(1 - \left( 1 - \frac{1}{M\theta_u}\right)^{1/\kappa}\right)}{\xi} - \frac{\sigma\left(\left(1 - \left( 1 - \frac{1}{M\theta_u}\right)^{1/\kappa}\right)^{-\xi} -1\right)}{\xi^2}
+\end{eqnarray*}
+
+\subsection{Upper endpoint}
+When $\xi < 0$, the GPD has upper endpoint $u - \frac{\sigma}{\xi}$. This value
+is obtained by setting the distribution function to 1 and solving. Working with
+(\ref{eqn:cdf}), setting it to 1 and solving reveals the EGP3 distribution to have
+the same upper endpoint as the GPD.
+
+
+\clearpage
+\section{Appendix}
+\subsection{Information on the R session}
+Information on the R session, in the interests of reproducibility.
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{verbatim}
+## R version 3.6.2 (2019-12-12)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Linux Mint 19.1
+## 
+## Matrix products: default
+## BLAS:   /usr/lib/x86_64-linux-gnu/openblas/libblas.so.3
+## LAPACK: /usr/lib/x86_64-linux-gnu/libopenblasp-r0.2.20.so
+## 
+## locale:
+##  [1] LC_CTYPE=en_GB.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=en_GB.UTF-8        LC_COLLATE=en_GB.UTF-8    
+##  [5] LC_MONETARY=en_GB.UTF-8    LC_MESSAGES=en_GB.UTF-8   
+##  [7] LC_PAPER=en_GB.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=en_GB.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] stats     graphics  grDevices utils     datasets  methods   base     
+## 
+## other attached packages:
+## [1] MASS_7.3-51.4  texmex_2.4.4   ggplot2_3.2.1  mvtnorm_1.0-11 gridExtra_2.3 
+## [6] knitr_1.26    
+## 
+## loaded via a namespace (and not attached):
+##  [1] Rcpp_1.0.3         pillar_1.4.2       compiler_3.6.2     RColorBrewer_1.1-2
+##  [5] highr_0.8          plyr_1.8.4         tools_3.6.2        evaluate_0.14     
+##  [9] tibble_2.1.3       gtable_0.3.0       pkgconfig_2.0.3    rlang_0.4.2       
+## [13] GGally_1.4.0       parallel_3.6.2     xfun_0.11          withr_2.1.2       
+## [17] dplyr_0.8.3        stringr_1.4.0      grid_3.6.2         tidyselect_0.2.5  
+## [21] reshape_0.8.8      glue_1.3.1         R6_2.4.0           purrr_0.3.3       
+## [25] reshape2_1.4.3     magrittr_1.5       scales_1.0.0       assertthat_0.2.1  
+## [29] colorspace_1.4-1   labeling_0.3       stringi_1.4.3      lazyeval_0.2.2    
+## [33] munsell_0.5.0      crayon_1.3.4
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+\bibliographystyle{plain}
+\bibliography{texmex}
+\end{document}

@@ -1,0 +1,859 @@
+\documentclass[article]{bioinf}
+
+\usepackage{amsmath,amssymb}
+\usepackage{hyperref}
+
+\hypersetup{colorlinks=false,
+   pdfborder=0 0 0,
+   pdftitle={RoCoCo - An R Package Implementing a Robust Rank Correlation
+   Coefficient and a Corresponding Test},
+   pdfauthor={Ulrich Bodenhofer}}
+
+\title{{\Huge RoCoCo}\\[5mm]
+  An R Package Implementing a \underline{Ro}bust Rank \underline{Co}rrelation
+  \underline{Co}efficient and a Corresponding Test}
+\author{Ulrich Bodenhofer\affilmark{1} and
+       Martin Krone\affilmark{2}}
+\affiliation{\affilmark{1}Institute of Bioinformatics,
+Johannes Kepler University\\Altenberger Str.\ 69, 4040 Linz, Austria\\[2mm]
+\affilmark{2}Department of Computer Science\\
+Ostfalia University of Applied Sciences\\
+Salzdahlumer Str.\ 46/48, 38302 Wolfenb\"uttel, Germany\\[2mm]
+\email{rococo@bioinf.jku.at}}
+
+\newcommand{\RoCoCo}{\texttt{rococo}}
+\newcommand{\Rcpp}{\texttt{Rcpp}}
+\newcommand{\R}{R}
+\newcommand{\Real}{\mathbb{R}}
+
+\newcommand{\SUBL}{_{\mathbf{L}}}
+\newcommand{\SUBP}{_{\mathbf{P}}}
+\newcommand{\SUBM}{_{\mathbf{M}}}
+
+\newcommand{\TL}{\ensuremath{T\SUBL}}
+\newcommand{\TP}{\ensuremath{T\SUBP}}
+\newcommand{\TM}{\ensuremath{T\SUBM}}
+
+\newcommand{\CINT}[1]{\mbox{$[#1]$}}
+\newcommand{\OINT}[1]{\mbox{$]#1[$}}
+\newcommand{\COINT}[1]{\mbox{$[#1[$}}
+\newcommand{\OCINT}[1]{\mbox{$]#1]$}}
+\newcommand{\UINT}{\CINT{0,1}}
+
+\renewcommand{\vec}[1]{\mathbf{#1}}
+
+%\VignetteIndexEntry{RoCoCo - An R Package Implementing a Robust Rank Correlation Coefficient and a Corresponding Test}
+%\VignetteDepends{Rcpp, methods, stats, graphics, utils, datasets}
+%\VignetteEngine{knitr::knitr}
+
+
+\begin{document}
+<<Init,echo=FALSE,message=FALSE,results='hide'>>=
+options(width=72)
+knitr::opts_knit$set(width=72)
+set.seed(0)
+library(rococo, quietly=TRUE)
+rococoVersion <- packageDescription("rococo")$Version
+rococoDateRaw <- packageDescription("rococo")$Date
+rococoDateYear <- as.numeric(substr(rococoDateRaw, 1, 4))
+rococoDateMonth <- as.numeric(substr(rococoDateRaw, 6, 7))
+rococoDateDay <- as.numeric(substr(rococoDateRaw, 9, 10))
+rococoDate <- paste(month.name[rococoDateMonth], " ",
+                     rococoDateDay, ", ",
+                     rococoDateYear, sep="")
+@
+\newcommand{\RoCoCoVer}{\Sexpr{rococoVersion}}
+\newcommand{\RoCoCoDate}{\Sexpr{rococoDate}}
+\manualtitlepage[Version \RoCoCoVer, \RoCoCoDate]
+
+\section*{Scope and Purpose of this Document}
+
+This document is a user manual for the \R\ package \RoCoCo.
+It is only meant as a gentle introduction into how to use the basic
+functions implemented in this package. Not all features of the \R\
+package are described in full detail. Such details can be obtained
+from the documentation enclosed in the  \R\ package. Further note
+the following: (1) this is not an introduction to robust rank correlation;
+(2) this is not an introduction to \R.
+If you lack the background for understanding this manual, you first
+have to read literature on these subjects.
+
+\vspace{1cm}
+
+\newlength{\auxparskip}
+\setlength{\auxparskip}{\parskip}
+\setlength{\parskip}{0pt}
+\tableofcontents
+\clearpage
+\setlength{\parskip}{\auxparskip}
+
+\newlength{\Nboxwidth}
+\setlength{\Nboxwidth}{\textwidth}
+\addtolength{\Nboxwidth}{-2\fboxrule}
+\addtolength{\Nboxwidth}{-2\fboxsep}
+
+\newcommand{\notebox}[1]{%
+\begin{center}
+\fbox{\begin{minipage}{\Nboxwidth}
+\noindent{\sffamily\bfseries Note:} #1
+\end{minipage}}
+\end{center}}
+
+\section{Introduction}
+
+Correlation measures are among the most basic tools in statistical
+data analysis and machine learning. They are applied to pairs of
+observations
+to measure to which extent the two observations comply with a
+certain model. The most prominent representative is surely {\em
+Pearson's product moment coefficient}\/ \cite{Abdi07b,Pearson20},
+often nonchalantly called {\em correlation coefficient}\/ for short.
+Pearson's product moment coefficient can be applied to numerical data
+and assumes a linear relationship as the underlying model;
+therefore, it can be used to detect linear relationships, but no
+non-linear ones.
+
+Rank correlation measures
+\cite{GoodmanKruskal54,Kendall62,Kruskal58} are intended to measure
+to which extent a monotonic function is able to model the inherent
+relationship between the two observables. They neither assume a
+specific parametric model nor specific distributions of the
+observables. They can be applied to ordinal data and, if some
+ordering relation is given, to numerical data too. Therefore, rank
+correlation measures are ideally suited for detecting monotonic
+relationships, in particular, if more specific information about the
+data is not available. The two most common approaches are {\em
+Spearman's rank correlation coefficient}\/ (short {\em Spearman's
+rho}) \cite{Spearman04,Spearman07} and {\em Kendall's tau (rank
+correlation coefficient)}\/ \cite{Abdi07,Kendall38,Kendall62}.
+Another simple rank correlation measure
+is the {\em gamma rank correlation measure}\/ according to Goodman
+and Kruskal \cite{GoodmanKruskal54}.
+
+The rank correlation measures cited above are designed for ordinal data.
+However, as argued in \cite{BodenhoferKlawonn08}, they are not ideally
+suited for measuring rank correlation for numerical data
+that are perturbed by noise. Consequently, \cite{BodenhoferKlawonn08}
+introduces a family of robust rank correlation measures. The idea
+is to replace the classical ordering of real numbers used in Goodman's and
+Kruskal's gamma \cite{GoodmanKruskal54} by some fuzzy ordering
+\cite{HoehleBlanchard85,Bodenhofer00,BodenhoferDemirci08} with smooth
+transitions --- thereby ensuring that the correlation measure is continuous
+with respect to the data. This package provides this family of rank correlation
+measures along with corresponding statistical tests (as introduced in
+\cite{BodenhoferKroneKlawonn13}). Moreover, the package also
+implements the Gaussian rank correlation estimator
+\cite{BoudtCornelissenCroux12} and a corresponding statistical test.
+
+\section{Installation}
+
+\subsection{Installation via CRAN}
+
+The \R\ package \RoCoCo\ (current version: \RoCoCoVer) is
+part of the {\em Comprehensive R Archive Network (CRAN)}%
+\footnote{\url{http://cran.r-project.org/}}. The simplest way to install the
+package, therefore, is to enter the following command into your \R\ session:
+<<InstallRoCoCo,eval=FALSE>>=
+install.packages("rococo")
+@
+If you use R on Windows or Mac OS, you can also conveniently use the package
+installation menu of your R GUI.
+
+\subsection{Manual installation from source}
+
+Under special circumstances, e.g. if you want to compile
+the C++ code included in the package with some custom options,
+you may prefer to install the package manually from source.
+To this end, open the package's page at CRAN%
+\footnote{\url{http://cran.r-project.org/web/packages/rococo/index.html}} and
+then proceed as follows:
+\begin{enumerate}
+\item Download \texttt{rococo\_\RoCoCoVer.tar.gz}
+and save it to your harddisk.
+\item Open a shell/terminal/command prompt window and change to the directory
+  where you put {\ttfamily rococo\_\RoCoCoVer.tar.gz}. Enter
+\begin{quote}
+\ttfamily R CMD INSTALL rococo\_\RoCoCoVer.tar.gz
+\end{quote}
+to install the package.
+\end{enumerate}
+Note that this might require additional software on some platforms. Windows
+requires
+Rtools\footnote{\url{http://cran.r-project.org/bin/windows/Rtools/}} to be
+installed and to be available in the default search path (environment variable
+\verb+PATH+). Mac OS X requires Xcode developer tools%
+\footnote{\url{https://developer.apple.com/technologies/tools/}} (make sure that
+you have the command line tools installed with Xcode).
+
+\subsection{Compatibility issues}
+
+All versions downloadable from CRAN have been built using the latest version,
+\R\ \Sexpr{R.version$major}.\Sexpr{R.version$minor}.
+However, the package should work without severe problems on \R\ versions
+$\geq$3.0.0.
+
+\section{Getting Started}
+
+To load the package, enter the following in your \R\ session:
+<<LoadRoCoCo,eval=FALSE>>=
+library(rococo)
+@
+You will probably see a message that package \Rcpp\ has been loaded (in case
+it has not been loaded previously in the current \R\ session).
+Apart from this, you can be sure that the package has been installed
+successfully if this command terminates without any further error
+message or warning. If so, the package is ready
+for use now.
+
+The package includes both a user manual (this document) and a reference manual
+(help pages for each function). To view the user manual, enter
+<<OpenVignette,eval=FALSE>>=
+vignette("rococo")
+@
+Help pages can be viewed using the \verb+help+ command. It is recommended to
+start with
+<<ShowHelp,eval=FALSE>>=
+help(rococo)
+@
+
+For demonstration purposes, let us first create an artificial toy data set:
+\begin{center}
+<<ToyData,fig.width=5,fig.height=5.5,out.width='0.5\\textwidth'>>=
+x1 <- rnorm(15)
+y1 <- 2 * x1 + rnorm(length(x1), sd=0.25)
+plot(x1, y1)
+@
+\end{center}
+Obviously, these are linearly correlated Gaussian data, so Pearson's product
+moment correlation coefficient \cite{Abdi07b,Pearson20} would be the optimal
+choice. We use these data anyway, only for illustration purposes. The function
+\texttt{rococo()} can be used to compute
+the robust rank correlation coefficient as follows:
+<<SimpleRococo>>=
+rococo(x1, y1)
+@
+To perform a robust rank correlation test, use the function
+\texttt{rococo.test}:
+<<SimpleRococoTest>>=
+rococo.test(x1, y1, alternative="two.sided")
+@
+The argument \texttt{alternative} works in the same way as for the standard
+function \texttt{cor.test()}.
+
+The function \texttt{rococo.test()} is a generic method that can be called on
+two numeric vectors (as above) or, alternatively, using a formula to
+conveniently extract two columns from a data frame:
+\begin{center}
+<<RoCoCoTestFormula,fig.width=5,fig.height=5.5,out.width='0.5\\textwidth'>>=
+data(iris)
+plot(~ Sepal.Length + Petal.Length, iris)
+rococo.test(~ Sepal.Length + Petal.Length, iris, alternative="two.sided")
+@
+\end{center}
+
+All examples above use default settings for the fuzzy orderings that are used
+to define the rank correlation coefficient. In the following section,
+we introduce the concept behind the robust gamma  rank correlation coefficient
+in greater depth and describe how to adjust the corresponding settings
+properly.
+
+\section{Adjusting Similarities and t-Norms}\label{sec:simt}
+
+\subsection{Background}
+
+The robust gamma rank correlation coefficient requires the definition of
+two {\em strict fuzzy orderings} \cite{BodenhoferDemirci08}, $R_X$ and $R_Y$.
+A strict fuzzy ordering is a two-place function that measures to which
+degree its second argument is strictly larger than its first argument. Given
+a data set consisting of $n$ pairs of observations
+(where $n\geq 2$)
+\begin{equation}\label{eq:pairs}
+(x_i,y_i)_{i=1}^n,
+\end{equation}
+$R_X$ is used for comparing $x$ observations and $R_Y$ is used for comparing $y$
+observations.
+
+Given a data set as in Eq.\ \eqref{eq:pairs}, the strict fuzzy orderings
+$R_X$ and $R_Y$ are used to compute two important numbers, the {\em
+number of concordant pairs $\tilde C$} and the number of {\em discordant
+pairs $\tilde D$}:
+\begin{align*}
+\tilde C &= \sum_{i=1}^n\sum_{j\not=i} \bar T(R_X(x_i,x_j),R_Y(y_i,y_j))\\
+\tilde D &= \sum_{i=1}^n\sum_{j\not=i} \bar T(R_X(x_i,x_j),R_Y(y_j,y_i))
+\end{align*}
+The function $\bar T$ is a triangular (t-norm) \cite{KlementMesiarPap00}
+that is used to aggregate degrees of relationships between pairs of
+$x$ observations and the corresponding degrees for $y$ observations (see below).
+The final {\em robust gamma rank correlation coefficient} is then computed as
+\[
+\tilde\gamma=\frac{\tilde C-\tilde D}{\tilde C+\tilde D}
+\]
+in perfect analogy to Goodman's and Kruskal's gamma \cite{GoodmanKruskal54}.
+
+\subsection{Choosing the Family of Similarities}
+
+It should be clear from the description above that the robust gamma rank
+correlation coefficient requires the following ingredients:
+\begin{enumerate}
+  \item A fuzzy ordering $R_X$ for the $x$ observations
+  \item A fuzzy ordering $R_Y$ for the $y$ observations
+  \item A t-norm $\bar T$ for aggregation.
+\end{enumerate}
+For $R_X$ and $R_Y$, the \RoCoCo\ package provides five possible choices which
+are identified by the {\em similarity} that is used to define the
+strict fuzzy ordering (for more details see
+\cite{BodenhoferDemirci08,BodenhoferKlawonn08}). Table \ref{tab:sim}
+provides an overview.
+
+\begin{table}
+\caption{Overview of strict fuzzy orderings implemented in the
+\RoCoCo\ package:}\label{tab:sim}
+\begin{center}\footnotesize
+\begin{tabular}{|c|c|c|}
+\hline
+\bf Setting & \bf Similarity & \bf Strict fuzzy ordering \\
+\hline
+\hline
+\rule[-3mm]{0pt}{9mm}\texttt{"linear"}
+& $E(x,x')=\max(0,1-\frac{1}{r}|x-x'|)$
+& $R(x, x')=\max(0,\min(1,\frac{1}{r}(x'-x)))$ \\
+\hline
+\rule[-3mm]{0pt}{9mm}\texttt{"exp"}
+& $E(x,x')=\exp(-\frac{1}{r}|x-x'|)$
+& $R(x, x')=\max(0,1-\exp(-\frac{1}{r}(x'-x)))$ \\
+\hline
+\rule[-6mm]{0pt}{15mm}\texttt{"gauss"}
+& $E(x,x')=\exp(-\frac{1}{2r^2}(x-x')^2)$
+& $R(x, x')=\begin{cases}
+1-\exp(-\frac{1}{2r^2}(x-x')^2) & \text{if } x\leq x'\\
+0 & \text{otherwise}
+\end{cases}$\\
+\hline
+\rule[-6mm]{0pt}{15mm}\texttt{"epstol"}
+& $E(x,x')=\begin{cases}
+1 & \text{if } |x-x'|\leq r \\
+0 & \text{otherwise}
+\end{cases}$
+& $R(x, x')=\begin{cases}
+1 & \text{if } x'>x+r \\
+0 & \text{otherwise}
+\end{cases}$\\
+\hline
+\rule[-6mm]{0pt}{15mm}\texttt{"classical"}
+& $E(x,x')=\begin{cases}
+1 & \text{if } x=x' \\
+0 & \text{otherwise}
+\end{cases}$
+& $R(x, x')=\begin{cases}
+1 & \text{if } x'>x \\
+0 & \text{otherwise}
+\end{cases}$\\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+Obviously, in all five cases, the strict fuzzy ordering $R$ is computed from the
+similarity $E$ in the following way:
+\[
+R(x,x')=\begin{cases}
+1-E(x,x') & \text{if } x' > x \\
+0 & \text{otherwise}
+\end{cases}
+\]
+Further note that the choices \texttt{"epstol"} and \texttt{"classical"} are
+not continuous. The former is the well-known $\varepsilon$-intolerant
+similarity that has been discussed widely in the context of the Poincar\'e
+paradox (note that this similarity is not a transitive relation). The latter
+setting \texttt{"classical"} corresponds to the classical Goodman and Kruskal
+gamma.
+
+The functions \texttt{rococo()} and \texttt{rococo.test()} choose
+the first variant \texttt{"linear"} by default, both for $x$ and $y$
+observations. If one wants to choose a different setting or two different
+strict fuzzy orderings for $x$ and $y$ observations, the \texttt{similarity}
+argument can be used. For demonstrating this, we create a noisy data set
+from a function $f$ that has a large flat area:
+\begin{center}
+<<FlatNoisyData,fig.width=5,fig.height=5.5,out.width='0.5\\textwidth'>>=
+x2 <- rnorm(15)
+f2 <- function(x) ifelse(x > 0.8, x - 0.8, ifelse(x < -0.8, x + 0.8, 0))
+y2 <- f2(x2) + rnorm(length(x2), sd=0.1)
+plot(x2, y2)
+@
+\end{center}
+As said before, \texttt{"linear"} is the default choice:
+<<FlatNoisyDefault>>=
+rococo.test(x2, y2, alternative="greater")
+@
+This default setting makes sense in particular if no information about the
+data, their distribution, or not even the noise distribution is known.
+Now let us try some different settings:
+<<FlatNoisyOther>>=
+rococo.test(x2, y2, similarity="gauss",
+            alternative="greater")
+rococo.test(x2, y2, similarity=c("classical", "gauss"),
+            alternative="greater")
+@
+Particularly note the latter of the two examples: different settings for
+$x$ and $y$ observations can be done by supplying a vector to the
+\texttt{similarity} argument, where the first element determines the choice
+for $x$ observations and the second element determines the choice for
+$y$ observations.
+
+\subsection{Parametrizing Similarities}
+
+So far, we have neglected that four of the five similarities/fuzzy orderings
+listed in Table \ref{tab:sim} require an additional parameter $r$. In all four
+cases, $r$ controls the importance of observations that are close to each
+other. The smaller $r$, the more similar observations are taken into
+account when computing the numbers of concordant and discordant pairs.
+This entails that, the smaller $r$, the easier noise can corrupt the result.
+The larger $r$, the less similar observations are considered, i.e.\ the more
+noise-tolerant the result will be. However, that does not mean that
+the largest possible $r$ is the best choice. An overly large $r$ can result
+in unspecific and unsignificant results. The \RoCoCo\ package allows
+for setting one $r$ for both $x$ and $y$ observations:
+<<FlatNoisySameR>>=
+rococo.test(x2, y2, similarity="gauss", r=0.1, alternative="greater")
+@
+It is also possible to specify different values of $r$ for $x$ and $y$ observations.
+Analogously to the parameter \texttt{similarity}, this can be done
+by supplying a two-element vector to the parameter \texttt{r}:
+<<FlatNoisyDifferentR>>=
+rococo.test(x2, y2, similarity=c("linear", "gauss"), r=c(0.05, 0.1),
+            alternative="greater")
+@
+It should be clear from the formulas in Table \ref{tab:sim} that $r=0$ is
+either invalid or does not make sense. The \RoCoCo\ package still admits
+choosing a zero value. In this case, \RoCoCo\ makes an {\em automatic
+adjustment} of $r$ to 10\% of the interquartile range (the
+difference between the 75\% and the 25\% quantile) of the observation
+under consideration:
+<<CheckIQR>>=
+rococo.test(x2, y2, similarity=c("linear", "gauss"), r=0,
+            alternative="greater")
+IQR(x2) * 0.1
+IQR(y2) * 0.1
+@
+In the results above, note the values \texttt{rx} and \texttt{ry} in the
+output of \texttt{rococo.test()}. These are the values that have been
+specified or that have been determined automatically. The computations
+of 10\% of the interquartile range should demonstrate that this is what takes
+place when $r$ is set to 0. Note that this is also done by default if the
+argument \texttt{r} is not specified.
+
+\subsection{Choosing the t-Norm for Aggregation}
+
+As mentioned above, the robust gamma rank correlation coefficient further
+requires to specify a t-norm $\bar T$ that is used for aggregation
+of the ordering measures from $x$ and $y$ observations. The \RoCoCo\ package
+offers three built-in t-norms that can be selected by specifying the
+\texttt{tnorm} argument when calling the functions \texttt{rococo()} and
+\texttt{rococo.test()}. Table \ref{tab:tnorm} provides an overview. Here is an
+example that uses the product t-norm for aggregation:
+<<CheckIQR2>>=
+rococo.test(x2, y2, similarity=c("linear", "gauss"), tnorm="prod",
+            alternative="greater")
+@
+
+
+\begin{table}
+\caption{Overview of strict fuzzy orderings implemented in the
+\RoCoCo\ package:}\label{tab:tnorm}
+\begin{center}
+\begin{tabular}{|c|c|}
+\hline
+\bf Setting & \bf t-Norm \\
+\hline
+\hline
+\rule[-3mm]{0pt}{9mm}\texttt{"min"} (default)
+& $\TM(x,y)=\min(x,y)$ \\
+\hline
+\rule[-3mm]{0pt}{9mm}\texttt{"prod"}
+& $\TP(x,y)=x\cdot y$\\
+\hline
+\rule[-3mm]{0pt}{9mm}\texttt{"lukasiewicz"}
+& $\TL(x,y)=\max(0,x+y-1)$ \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+The choice of the t-norm $\bar T$ is not particularly critical and should not
+have a strong influence on the significance of results. Most users will
+suffice with the default setting \texttt{"min"}. The choice \texttt{"prod"}
+produces similar, but slightly smoother results which may be suitable
+in combination with the only differentiable fuzzy ordering
+(\texttt{similarity="gauss"}).
+
+Even though the choice is not critical, the \RoCoCo\ package also offers
+the choice of user-defined t-norms by supplying a two-place function as
+\texttt{tnorm} argument. Here is an example with some Yager t-norm
+\cite{KlementMesiarPap00,Yager80b}:
+<<YagertNorm>>=
+DrastictNorm <- function(x, y)
+{
+    if (x == 1) y
+    else if (y == 1) x
+    else 0
+}
+YagertNorm <- function(lambda)
+{
+    fun <- function(x, y)
+    {
+        if (lambda == 0)
+            DrastictNorm(x, y)
+        else if (is.infinite(lambda))
+            min(x, y)
+        else
+            max(0, 1 - ((1 - x)^lambda + (1 - y)^lambda)^(1 / lambda))
+    }
+
+    attr(fun, "name") <- paste("Yager t-norm with lambda =", lambda)
+
+    fun
+}
+rococo(x2, y2, tnorm=YagertNorm(0.5))
+rococo.test(x2, y2, tnorm=YagertNorm(0.2))
+@
+
+Note that the \RoCoCo\ package performs only a few basic checks on a
+user-defined t-norm. It remains the duty of the user to ensure that the
+function is actually a valid t-norm.
+
+The three built-in t-norms (see Table\ \ref{tab:tnorm}) are efficiently
+implemented in C++ and called with the help of the \Rcpp\ package
+\cite{EddelbuettelFrancois11} while user-defined t-norms have to be evaluated in
+\R\ loops. Even though we use the \texttt{compiler} package (if available)
+to pre-compile the user-defined t-norm, this may still result in a
+drastic slowdown of computations, particularly for larger data sets or
+when using \texttt{rococo.test()} with \texttt{exact=TRUE} (see end of
+next section).
+
+\section{A Note on Permutation Testing}
+
+Classical rank correlation measures only depend on the sorting of $x$ and $y$
+observations. Thus, for a given number of samples $n$, one can deduce
+the distribution of the test statistic under the $\mathcal{H}_0$ hypothesis
+as a simple function of the number of samples $n$. We neither want
+to make any prior assumption about the distribution of data nor does the
+complex inner structure of the robust gamma rank correlation
+coefficient and the variety of possible parameter settings allow for an
+analytic deduction of the test statistic's distribution.
+Therefore, we use {\em permutation testing} for estimating the
+null distribution of the test statistic under the assumption of independence.
+This is done in the following way:
+For a given data set $(x_i,y_i)_{i=1}^n$, we first compute the
+robust rank correlation coefficient according to the specified parameters.
+Then we create $K$ random shuffles $(y'_i)_{i=1}^n$ of $(y_i)_{i=1}^n$ and compute
+the robust rank correlation coefficient for $(x_i,y'_i)_{i=1}^n$ according
+to the specified parameters. Due to the shuffling, $(x_i)_{i=1}^n$
+and  $(y'_i)_{i=1}^n$ are independent, where $(y'_i)_{i=1}^n$ has the same marginal
+distribution as $(y_i)_{i=1}^n$. Thus, the robust rank correlation coefficients
+obtained for a sufficiently large number of shuffles allows for estimating
+the distribution of the test statistics under the $\mathcal{H}_0$ hypothesis
+with given marginal distributions and we can estimate the test's $p$-value
+in the following simple way:
+\begin{itemize}
+  \item as the relative frequency the test statistics' absolute value
+    exceeded the absolute value of
+    the test statistic for the unshuffled data in case we perform a
+    two-sided test,
+  \item as the relative frequency the test statistic was greater than
+    the test statistic for the unshuffled data in case we perform a
+    one-sided test with alternative hypothesis that there is a positive
+    correlation, and
+   \item as the relative frequency the test statistic was less than
+    the test statistic for the unshuffled data in case we perform a
+    one-sided test with alternative hypothesis that there is a negative
+    correlation.
+\end{itemize}
+This $p$-value is contained in the slot \verb+p.value+ of the output
+object the test returns. This output object further contains a slot
+\verb+count+ that corresponds to the absolute number of times
+\begin{itemize}
+  \item the test statistics' absolute value exceeded the absolute value of
+    the test statistic for the unshuffled data in case we perform a
+    two-sided test,
+  \item the test statistic was greater than
+    the test statistic for the unshuffled data in case we perform a
+    one-sided test with alternative hypothesis that there is a positive
+    correlation, and
+   \item the test statistic was less than
+    the test statistic for the unshuffled data in case we perform a
+    one-sided test with alternative hypothesis that there is a negative
+    correlation.
+\end{itemize}
+
+Please note that these $p$-values are only estimates. The smaller
+the number of shuffles, the higher the variance of the estimates.
+This number of shuffles performed by \texttt{rococo.test()} is controlled by
+the parameter \texttt{numtests} (the default is 1000).
+We concur that 1000 samples are sufficient (at least with high probability) if
+one wants to test whether the association is significant with a significance
+threshold of 95\% or 99\%. If the user, however, is interested in much more
+exact estimates of the $p$-value or if he/she wants to test against much more
+stringest significance thresholds, it may be necessary to perform much higher
+numbers of shuffles. Needless to mention, this will also result in an
+increase of computation times, where the computation time grows linearly
+with the number of shuffles.
+
+Here is an example with 100,000 shuffles, where we use the option
+\texttt{storeValue=TRUE} to get access to the rank correlation values for
+all random shuffles:
+<<LargeNoShuffles,echo=TRUE>>=
+res <- rococo.test(x2, y2, numtests=100000, storeValues=TRUE)
+res
+@
+
+For small data sets (not more than 10 samples), the package further
+provides computations of {\em exact $p$-values}. This can be
+enforced by passing the argument \texttt{exact=TRUE} to \texttt{rococo.test()}.
+In this case, {\em all possible permutations} are considered (using the
+Steinhaus-Johnson-Trotter algorithm; see, e.g., \cite{Sedgewick77})
+and the exact $p$-value is computed as the quotient of the above count (slot
+\texttt{count}) over the number of trials (the factorial of the length of
+\texttt{x} and \texttt{y}):
+<<ExactpValueExample>>=
+rococo.test(x2[1:8], y2[1:8], exact=TRUE)
+@
+Using the exact test for 10 samples results in $10!=\Sexpr{factorial(10)}$
+permutations that have to be considered. For the built-in t-norms, such a
+computation should finish within a few seconds. However, in conjunction with
+a user-defined t-norm, computations may be significantly longer, in the
+range of several minutes.
+
+Kendall's rank correlation test is based on a normal approximation of the null
+distribution. The following picture suggests that a normal approximation may
+also be suitable for the robust rank correlation test (data from the above
+example with 100,000 shuffles):
+\begin{center}
+<<LargeNoShufflesPic,fig.width=8,fig.height=5.5,out.width='0.7\\textwidth'>>=
+hist(res@perm.gamma, breaks=100, probability=TRUE, xlab="gamma",
+     main="Distribution of gamma for random shuffles")
+plot(function(x) dnorm(x, mean=res@H0gamma.mu, sd=res@H0gamma.sd),
+     min(res@perm.gamma), max(res@perm.gamma), col="red", lwd=2, add=TRUE)
+@
+\end{center}
+However, statistical analyses have shown that the null distributions
+are seldom normal. Anyway, the \RoCoCo\ package also provides $p$-values
+based on the normal approximation in the slot \verb+p.value.approx+ of the resulting
+output object:
+<<LargeNoShufflespVal,echo=TRUE>>=
+res@p.value.approx
+@
+The user should be warned, however, that these $p$-values are systematically
+biased and that he/she is recommended to use the standard $p$-values as described
+above (for a sufficiently large number of shuffles).
+
+\section{The Gaussian Rank Correlation Estimator}
+
+The Gaussian rank correlation estimator \cite{BoudtCornelissenCroux12} is a simple and
+well-performing alternative to our proposed robust gamma rank correlation coefficient.
+Since, to our best knowledge, no R implementation has been available so far, we
+implemented this rank correlation measure and the corresponding test in the \RoCoCo\
+package. Example:
+<<SimpleGaussCorTest>>=
+gauss.cor(x1, y1)
+gauss.cor.test(x1, y1, alternative="two.sided")
+gauss.cor.test(~ Sepal.Length + Petal.Length, iris, alternative="two.sided")
+@
+
+\section{Change Log}
+
+\begin{description}
+\item[Version 1.1.5:] \hfill
+\begin{itemize}
+  \item registered C/C++ subroutines
+  \item cleanup and streamlining of C++ code
+\end{itemize}
+\item[Version 1.1.4:] \hfill
+\begin{itemize}
+  \item added special options for dealing with cases in which observables
+  do not show any variation
+  \item fixed automatic computation of tolerances for cases where IQR is 0
+\end{itemize}
+\item[Version 1.1.3:] \hfill
+\begin{itemize}
+  \item vignette engine changed from Sweave to knitr
+  \item fix of on-demand loading of \verb+compiler+ package
+  \item random number generation in compiled code switched to R API
+  \item moved \verb+NEWS+ to \verb+inst/NEWS+
+  \item namespace fixes
+\end{itemize}
+\item[Version 1.1.2:] \hfill
+\begin{itemize}
+  \item updated citation
+  \item adapted dependency and linking to Rcpp version 0.11.1
+    (to avoid issues on Mac OS)
+  \item minor correction of package namespace
+  \item improvements of consistency of error and warning messages
+  \item adaptations of help pages and package vignette
+\end{itemize}
+\item[Version 1.1.1:] \hfill
+\begin{itemize}
+  \item adapted dependencies and linking to Rcpp version 0.11.0
+  \item cleared up package dependencies
+\end{itemize}
+\item[Version 1.1.0:] \hfill
+  \begin{itemize}
+  \item estimation of $p$-values now based on relative frequencies
+  \item Gaussian rank correlation estimator and test added
+  \item corresponding adaptations of man pages and vignette
+  \item updated citation
+  \item moved vignette to '\verb+vignettes+' according to the new guidelines
+  \end{itemize}
+\item[Version 1.0.1:] \hfill
+  \begin{itemize}
+  \item improved estimation of $p$-values
+  \item added exact computation of $p$-values (only for 10 or less samples)
+  \item corresponding adaptations of man pages and vignette
+  \end{itemize}
+\item[Version 1.0.0:] first official release, released October 3, 2011
+\end{description}
+
+\subsection{Upgrading to Version 1.1.1 or newer}
+
+Users who upgrade to Version 1.1.1 (or newer)
+from an older version should be aware that
+the package now requires Rcpp Version 0.11.0 (or newer). This issue can simply
+be solved by re-installing Rcpp from CRAN using \verb+install.packages("Rcpp")+.
+
+\section{How to Cite This Package}
+
+If you use this package for research that is published later, you are kindly
+asked to cite it as follows:
+\begin{quotation}
+\noindent U. Bodenhofer, M. Krone, and F. Klawonn (2013).
+Testing noisy numerical data for monotonic association.
+{\em Inform. Sci.} {\bf 245}:21--37. DOI: 10.1016/j.ins.2012.11.026.\\[5mm]
+\noindent U.\ Bodenhofer  and F.\ Klawonn (2008).
+Robust rank correlation coefficients on the basis of
+fuzzy orderings: initial steps.
+{\em Mathware Soft Comput.} {\bf 15}(1):5--20.
+\end{quotation}
+To obtain a Bib\TeX\ entry of the reference, you can enter the following
+into your R session:
+<<GetBibTeX,eval=FALSE>>=
+toBibtex(citation("rococo"))
+@
+
+\section*{Acknowledgment}
+
+The core of this package was implemented during a short-term scientific mission
+of Martin Krone at the Institute of Bioinformatics, Johannes Kepler University,
+within the framework of {\em COST Action IC0702 ``SoftStat --- Combining Soft
+Computing Techniques and Statistical Methods to Improve Data Analysis
+Solutions''}. Therefore, the support of this project is gratefully acknowledged.
+
+%\bibliographystyle{plain}
+%\bibliography{BodenhoferPub,Bioinformatics,MathematicsMisc,%
+%ConnectivesOperators,FuzzySetsRelations,ComputerScienceMisc,Statistics}
+
+\begin{thebibliography}{10}
+
+\bibitem{Abdi07b}
+H.~Abdi.
+\newblock Coefficients of correlation, alienation and determination.
+\newblock In N.~J. Salkind, editor, {\em Encyclopedia of Measurement and
+  Statistics}. Sage, Thousand Oaks, CA, 2007.
+
+\bibitem{Abdi07}
+H.~Abdi.
+\newblock The {Kendall} rank correlation coefficient.
+\newblock In N.~J. Salkind, editor, {\em Encyclopedia of Measurement and
+  Statistics}. Sage, Thousand Oaks, CA, 2007.
+
+\bibitem{Bodenhofer00}
+U.~Bodenhofer.
+\newblock A similarity-based generalization of fuzzy orderings preserving the
+  classical axioms.
+\newblock {\em Internat. J. Uncertain. Fuzziness Knowledge-Based Systems},
+  8(5):593--610, 2000.
+
+\bibitem{BodenhoferDemirci08}
+U.~Bodenhofer and M.~Demirci.
+\newblock Strict fuzzy orderings with a given context of similarity.
+\newblock {\em Internat. J. Uncertain. Fuzziness Knowledge-Based Systems},
+  16(2):147--178, 2008.
+
+\bibitem{BodenhoferKlawonn08}
+U.~Bodenhofer and F.~Klawonn.
+\newblock Robust rank correlation coefficients on the basis of fuzzy orderings:
+  initial steps.
+\newblock {\em Mathware Soft Comput.}, 15(1):5--20, 2008.
+
+\bibitem{BodenhoferKroneKlawonn13}
+U.~Bodenhofer, M.~Krone, and F.~Klawonn.
+\newblock Testing noisy numerical data for monotonic association.
+\newblock {\em Inform. Sci.}, 245:21--37, 2013.
+
+\bibitem{BoudtCornelissenCroux12}
+K.~Boudt, J.~Cornelissen, and C.~Croux.
+\newblock The {G}aussian rank correlation estimator: robustness properties.
+\newblock {\em Stat. Comput.}, 22(2):471--483, 2012.
+
+\bibitem{EddelbuettelFrancois11}
+D.~Eddelbuettel and R.~Fran\c{c}ois.
+\newblock Rcpp: seamless {R} and {C++} integration.
+\newblock {\em J. Stat. Softw.}, 40(8):1--18, 2011.
+
+\bibitem{GoodmanKruskal54}
+L.~A. Goodman and W.~H. Kruskal.
+\newblock Measures of association for cross classifications.
+\newblock {\em J. Amer. Statist. Assoc.}, 49(268):732--764, 1954.
+
+\bibitem{HoehleBlanchard85}
+U.~H\"ohle and N.~Blanchard.
+\newblock Partial ordering in {$L$}-un\-der\-de\-ter\-mi\-nate sets.
+\newblock {\em Inform. Sci.}, 35:133--144, 1985.
+
+\bibitem{Kendall38}
+M.~G. Kendall.
+\newblock A new measure of rank correlation.
+\newblock {\em Biometrika}, 30:81--93, 1938.
+
+\bibitem{Kendall62}
+M.~G. Kendall.
+\newblock {\em Rank Correlation Methods}.
+\newblock Charles Griffin \&\ Co., London, third edition, 1962.
+
+\bibitem{KlementMesiarPap00}
+E.~P. Klement, R.~Mesiar, and E.~Pap.
+\newblock {\em Triangular Norms}, volume~8 of {\em Trends in Logic}.
+\newblock Kluwer Academic Publishers, Dordrecht, 2000.
+
+\bibitem{Kruskal58}
+W.~H. Kruskal.
+\newblock Ordinal measures of association.
+\newblock {\em J. Amer. Statist. Assoc.}, 53(284):814--861, 1958.
+
+\bibitem{Pearson20}
+K.~Pearson.
+\newblock Notes on the history of correlation.
+\newblock {\em Biometrika}, 13:25--45, 1920.
+
+\bibitem{Sedgewick77}
+R.~Sedgewick.
+\newblock Permutation generation methods.
+\newblock {\em ACM Comput. Surv.}, 9(2):137--164, 1977.
+
+\bibitem{Spearman04}
+C.~Spearman.
+\newblock The proof and measurement of association between two things.
+\newblock {\em Am. J. Psychol.}, 15(1):72--101, 1904.
+
+\bibitem{Spearman07}
+C.~Spearman.
+\newblock Demonstration of formulae for true measurement of correlation.
+\newblock {\em Am. J. Psychol.}, 18(2):161--169, 1907.
+
+\bibitem{Yager80b}
+R.~R. Yager.
+\newblock On a general class of fuzzy connectives.
+\newblock {\em Fuzzy Sets and Systems}, 4:235--242, 1980.
+
+\end{thebibliography}
+
+\end{document}

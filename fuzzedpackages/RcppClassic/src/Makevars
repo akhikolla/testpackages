@@ -1,0 +1,43 @@
+# -*- mode: Makefile; tab-width: 8 -*-
+#
+# Makevars for RcppClassic
+#
+# Copyright (C) 2008 - 2009  Dirk Eddelbuettel <edd@debian.org>
+# Copyright (C) 2008         Simon Urbanek <simon.urbanek@r-project.org>
+# Copyright (C) 2009 - 2010  Dirk Eddelbuettel and Romain Francois
+# Copyright (C) 2015 - 2019  Dirk Eddelbuettel <edd@debian.org>
+
+## $(SHLIB) is the usual default target that is built automatically from all source
+## files in this directory. userLibrary is an additional target for the second library
+## that will be installed in ../inst/lib$(R_ARCH) and which users can link against.
+
+all: 	        $(SHLIB) userLibrary
+
+## we place it inside the inst/ directory so that it gets installed by the package
+USERDIR =	../inst/lib
+
+USERLIB	=	libRcppClassic$(DYLIB_EXT)
+USERLIBST =	libRcppClassic.a
+
+PKG_CPPFLAGS =  -I../inst/include/
+
+userLibrary: 	$(USERLIB) $(USERLIBST)
+		-@if test ! -e $(USERDIR)$(R_ARCH); then mkdir -p $(USERDIR)$(R_ARCH); fi
+		cp $(USERLIB) $(USERDIR)$(R_ARCH)
+		cp $(USERLIBST) $(USERDIR)$(R_ARCH)
+		rm $(USERLIB) $(USERLIBST)
+
+$(USERLIB): 	$(OBJECTS)
+		$(SHLIB_CXXLD) -o $(USERLIB) $^ $(SHLIB_CXXLDFLAGS) $(ALL_LIBS)
+		@if test -e "/usr/bin/install_name_tool"; then /usr/bin/install_name_tool -id $(R_PACKAGE_DIR)/lib$(R_ARCH)/$(USERLIB) $(USERLIB); fi
+#		@if test -e "/usr/bin/strip" & test -e "/bin/uname" & [[ `uname` == "Linux" ]]; then /usr/bin/strip --strip-unneeded $(USERLIB); fi
+
+$(USERLIBST): 	$(OBJECTS)
+		$(AR) qc $(USERLIBST) $^
+		@if test -n "$(RANLIB)"; then $(RANLIB) $(USERLIBST); fi
+#		@if test -e "/usr/bin/strip" & test -e "/bin/uname" & [[ `uname` == "Linux" ]]; then /usr/bin/strip --strip-unneeded $(USERLIBST); fi
+
+.PHONY: 	all clean userLibrary
+
+clean:
+		rm -f $(OBJECTS) $(SHLIB) $(USERLIB) $(USERLIBST)

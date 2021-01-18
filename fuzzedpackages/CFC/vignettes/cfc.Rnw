@@ -1,0 +1,696 @@
+%\documentclass[nojss]{jss}
+%\documentclass[codesnippet]{jss}
+\documentclass{jss}
+\usepackage[latin1]{inputenc}
+%\pdfoutput=1
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{color}
+%\usepackage[toc]{appendix}
+\usepackage{amsthm}
+\usepackage{subfig}
+\usepackage{empheq}
+\usepackage[numbered]{algo}
+\usepackage{verbatim}
+\usepackage{subfig}
+
+%\VignetteIndexEntry{Cause-specific competing-risk survival analysis: The R Package CFC}
+%\VignetteKeyword{Gauss-Kronrod, Double-Exponential, Newton-Cotes}
+%\VignetteDepends{BSGW,Hmisc,randomForestSRC,RcppArmadillo}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Definitions 
+% Vectors, Tensors
+\def\vect#1{{\vec{#1}}}                               % Fancy vector
+\def\tensor#1{{\mathbf{#1}}}                          % 2nd rank tensor
+\def\mat#1{{\mathbf{#1}}}                        % matrix
+\def\dotP#1#2{\vect{#1}\cdot\vect{#2}}		      % Dot product
+% Derivatives
+\def\deriv#1#2{\frac{d{}#1}{d{}#2}}                   % derivtive
+\def\partderiv#1#2{\frac{\partial{}#1}{\partial{}#2}} % partial derivtive
+% Math functions
+\def\log#1{\text{log}\left(#1\right)}
+% Statistics
+\def\prob#1{\Prob\left(#1\right)}		      % probability
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% declarations for jss.cls %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% almost as usual
+
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\ee}{\mathrm{e}}
+\newcommand{\EE}[1]{\mathrm{E}[\, #1 \,]}
+\newcommand{\ttheta}{\boldsymbol{\theta}}
+\newcommand{\bbeta}{\boldsymbol{\beta}}
+\newcommand{\xx}{\boldsymbol{\mathrm{x}}}
+\newcommand{\DD}{\boldsymbol{D}}
+
+
+\author{Alireza S. Mahani\\ Scientific Computing \\ Sentrana Inc. \And
+Mansour T.A. Sharabiani\\ School of Public Health \\ Imperial College London}
+
+\title{Bayesian, and non-Bayesian, Cause-Specific Competing-Risk Analysis for Parametric and Non-Parametric Survival Functions: The \proglang{R} Package \pkg{CFC}}
+
+%% for pretty printing and a nice hypersummary also set:
+\Plainauthor{Alireza S. Mahani, Mansour T.A. Sharabiani} %% comma-separated
+\Plaintitle{Bayesian, and non-Byesian, cause-specific competing-risk analysis for parametric and non-parametric survival functions: The R Package CFC} %% without formatting
+\Shorttitle{Cause-specific competing-risk survival analysis: The \proglang{R} Package \pkg{CFC}} %% a short title (if necessary)
+
+%% an abstract and keywords
+\Abstract{ 
+The \proglang{R} package \pkg{CFC} performs cause-specific, competing-risk survival analysis by computing cumulative incidence functions from unadjusted, cause-specific survival functions. A high-level API in \pkg{CFC} enables end-to-end survival and competing-risk analysis, using a single-line function call, based on the parametric survival regression models in \pkg{survival} package. A low-level API allows users to achieve more flexibility by supplying their custom survival functions, perhaps in a Bayesian setting. Utility methods for summarizing and plotting the output allow population-average cumulative incidence functions to be calculated, visualized and compared to unadjusted survival curves. Numerical and computational optimization strategies are employed for efficient and reliable computation of the coupled integrals involved. To address potential integrable singularities caused by infinite cause-specific hazards, particularly near time-from-index of zero, integrals are transformed to remove their dependency on hazard functions, making them solely functions of cause-specific, unadjusted survival functions. This implicit variable transformation also provides for easier extensibility of \pkg{CFC} to handle custom survival models since it only requires the users to implement a maximum of one function per cause. The transformed integrals are numerically calculated using a generalization of Simpson's rule to handle the implicit change of variable from time to survival, while a generalized trapezoidal rule is used as reference for error calculation. An \proglang{OpenMP}-parallelized, efficient \proglang{C++} implementation -- using \pkg{Rcpp} and \pkg{RcppArmadillo} packages -- makes the application of \pkg{CFC} in Bayesian settings practical, where a potentially large number of samples represent the posterior distribution of cause-specific survival functions.
+}
+\Keywords{Newton-Cotes, adaptive quadrature, Monto Carlo Markov Chain}
+\Plainkeywords{numerical integration, Newton-Cotes, adaptive curvatures} %% without formatting
+%% at least one keyword must be supplied
+
+%% publication information
+%% NOTE: Typically, this can be left commented and will be filled out by the technical editor
+%% \Volume{50}
+%% \Issue{9}
+%% \Month{June}
+%% \Year{2012}
+%% \Submitdate{2012-06-04}
+%% \Acceptdate{2012-06-04}
+
+%% The address of (at least) one author should be given
+%% in the following format:
+\Address{
+Alireza S. Mahani\\
+Scientific Computing Group\\
+Sentrana Inc.\\
+1725 I St NW\\
+Washington, DC 20006\\
+E-mail: \email{alireza.s.mahani@gmail.com}\\
+}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+%%\SweaveOpts{concordance=TRUE}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+<<echo=FALSE, results=hide>>=
+options(prompt = "R> ", continue = "+  ", width = 80, useFancyQuotes = FALSE)
+@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Introduction}\label{section-introduction}
+\textbf{Motivation:} Consistent propagation and calculation of uncertainty using predictive posterior distributions is a key advantage of Bayesian frameworks~\citep{gelman2006data}, particularly in survival analysis, where predicted entities such as survival probability can be highly-nonlinear, time-dependent functions of estimated model parameters. In the absence of high-performance software for Bayesian \textit{prediction}, premature point-estimation of model parameters can only produce approximate -- sometimes grossly wrong -- mean values for predicted entities (Figure~\ref{fig-why-competing-risk}, left panel). The \proglang{R} package \pkg{CFC} seeks to address this void for Bayesian cause-specific competing-risk analysis.
+
+\begin{figure}
+\centering
+\includegraphics[]{fig1.pdf}
+\caption{Motivating Bayesian cause-specific competing-risk analysis. Left panel: Estimated survival probability, based on a Bayesian Weibull regression, at 614 days from index, for `ovarian' data set, available in \proglang{R} package \pkg{BSGW}~\citep{mahani2015bsgw}. The x axis corresponds to the `incorrect' (non-Bayesian) method of calculating the average of model coefficients, followed by calculation of survival probability using the coefficient averages. The y axis corresponds to the mean+/se values of the same survival probabilities, this time using the `correct' (Bayesian) method of calculating the probabilities once for each sample, and then averaging the probabilities. All survival probabilities are significantly over-estimated by the non-Bayesian method. The underlying MCMC run consisted of 5000 iterations, the first 2500 of which were discarded as burn-in. Right panel: Comparison of cumulative incidence probability, with and without competing-risk correction, for the `pcm' event in `mgus1' data set, taken from \proglang{R} package \pkg{survival}~\citep{therneau2015survival}. Compared to a naive Kaplan-Meyer estimate, competing-risk analysis removes cases lost to `death', thus reducing the pool of available subjects for `pcm', and therefore leading to a smaller estimate for cumulative incidence probability for `pcm'.}
+\label{fig-why-competing-risk}
+\end{figure}
+
+\textbf{Existing methods and tools for competing-risk procedure:} In survival analysis with multiple, mutually-exclusive, end-points, competing-risk techniques must be used to properly account for interaction among causes while estimating the expected percentage of population likely to experience events of a particular cause. Several techniques exist for competing-risk analysis, some of which have been implemented as open-source \proglang{R} packages. Among the more established technique are the cause-specific framework~\citep{prentice1978analysis}, sub-distribution hazard~\citep{fine1999proportional} (available in \pkg{cmprsk}~\citep{gray2014cmprsk}), mixture models~\citep{larson1985mixture} (available in \pkg{NPMLEcmprsk}~\citep{chen2015NPMLEcmprsk}), vertical modeling~\citep{nicolaie2010vertical}, and the method of pseudo-observations~\citep{andersen2003generalised} (available in \pkg{pseudo}~\citep{perme2012pseudo}). For an in-depth review and comparison of competing-risk methods, see \cite{haller2013applying}. More recently, machine learning techniques such as random forests~\citep{breiman2001random} and gradient boosting machines~\citep{friedman2001greedy} have been extended to survival models (available via \pkg{randomForestSRC}~\citep{ishwaran2015rfc} and \pkg{gbm}~\citep{ridgeway2015gbm}, respectively). The random forest survival implementation in \pkg{randomForestSRC} includes competing-risk analysis~\citep{ishwaran2014random}.
+
+\textbf{Cause-specific competing-risk analysis:} The cause-specific framework for competing-risk analysis (CFC) is a two-step process. First, independent survival models are constructed for each cause. In each cause-specific model, events due to alternative causes are treated as censoring. To arrive at cause-specific cumulative incidence functions, however, the population depletion due to competing risks must be taken into account, in order to avoid over-estimating the cause-specific incidence probabilities (Figure~\ref{fig-why-competing-risk}, right panel). This leads to a second step, where a set of coupled, first-order differential equations must be solved. A key advantage of CFC is that, by separating the two steps, it allows for full flexibility in using different survival models as input into the second step, including a combination of parametric and non-parametric model. The only requirement for each cause-specific survival model is the implementation of a function that returns the unadjusted survival probability at any given time from index. While the first step is straightforward, applying the second step - calculation of cumulative incidence functions from cause-specific survival models - is non-trivial due to numerical and computational challenges. These challenges are especially pronounced in Bayesian settings involving a large number of MCMC samples representing the posterior distribution of time-dependent functions for each subject. While a non-parametric version of the cause-specific framework is available in the \pkg{survival} package~\citep{therneau2015survival} via function \code{survfit}, no reliable and modular open-source software enables the application of CFC to arbitrary parametric models, Bayesian or non-Bayesian, despite the popularity and intuitive appeal of this approach to competing-risk analysis.
+
+\textbf{Our contribution:} The \proglang{R} package \pkg{CFC} provides -- to our knowledge -- the first open-source, general-purpose software for numerical calculation of cumulative incidence functions from cause-specific (unadjusted) survival functions (hereafter referred to as survival functions). Through a combination of algorithmic innovations, performance optimization techniques, and software design choices, \pkg{CFC} provides both an easy-to-use API for performing competing-risk analysis of standard parametric survival regression models (via integration with \pkg{survival} package) as well as the machinery for efficient and reliable application of CFC to arbitrary survival models, using both \proglang{R} and \proglang{C++} interfaces. The \proglang{C++} implementation and interface is based on the convenient framework of \pkg{Rcpp}~\citep{eddelbuettel2011rcpp} and \pkg{RcppArmadillo}~\citep{dirk2014rcpparmadillo} packages. As such, \pkg{CFC} should appeal to practitioners as well as package developers.
+
+\textbf{Paper outline:} The rest of this paper is organized as follows. In Section~\ref{section-theory} we discuss the challenges of -- and solutions for -- the numerical quadrature problem of Bayesian CFC. In Section~\ref{section-implementation}, we review the \pkg{CFC} package in some detail, including a description of its three usage modes. Section~\ref{section-using} presents several examples illustrating these usage modes and other features of \pkg{CFC}. %Section~\ref{section-performance} presents performance optimization techniques used in \pkg{CFC} and their impact. 
+Section~\ref{section-discussion} concludes with a summary of our work and pointers to pontential future research and development.
+
+\section{Bayesian CFC quadrature}\label{section-theory}
+This section provides the mathematical framework for CFC, discusses the shortcomings of existing quadrature techniques for the numerical integration involved in Bayesian CFC, and presents our alternative quadrature algorithm, the generalized Newton-Cotes framework.
+
+\subsection{Cause-specific competing-risk survival analysis}\label{subsection-cscr}
+The following set of $K$ coupled, first-order differential equations describe the time evolution of cause-specific cumulative incidence functions, $F_k(t)$:
+\begin{align}
+\frac{d F_k(t)}{dt} &= \left( 1 - \sum_{k'=1}^K F_{k'}(t) \right) \lambda_k(t), \label{eq-ci-de}
+\end{align}
+where $\lambda_k(t)$ ($ \geq 0, \,\, \forall t > 0$) refers to the $k$'th (non-negative) cause-specific hazard function. These equations can be decoupled and transformed into integrals. We do so by summing the two sides of Equation~\ref{eq-ci-de} over all $k$:
+\begin{subequations}
+\begin{align}
+& \sum_{k=1}^K \frac{d F_k(t)}{dt} = \left( 1 - \sum_{k'=1}^K F_{k'}(t) \right) \sum_{k=1}^K \lambda_k(t), \\
+\Longrightarrow  \,\, & \frac{d E(t)}{E(t)} = - \sum_k \lambda_k(t), \label{eq-diff-e(t)}
+\end{align}
+\end{subequations}
+where we have defined the event-free probability function, $E(t)$, as:
+\begin{align}
+E(t) \equiv 1 - \sum_{k=1}^K F_{k}(t), \label{eq-def-E}
+\end{align}
+Solving for $E(t)$ in Equation~\ref{eq-diff-e(t)}, we obtain:
+\begin{align}
+E(t) = \prod_{k=1}^K S_k(t), \label{eq-def-E-2}
+\end{align}
+where $S_k(t)$ stands for the unadjusted survival function for cause $k$. They are defined as:
+\begin{align}
+S_k(t) \equiv \exp \left( - \int_{t'=0}^t \lambda_k(t') \, dt' \right) \label{eq-s-in-h}
+\end{align}
+Since hazard functions are non-negative, we conclude that
+\begin{align}
+0 \leq S_k(t) \leq 1, \qquad \forall \,\, k=1,\hdots,K \,\, , \,\, t \geq 0, \label{eq-s-cond}
+\end{align}
+and also that $S_k(0) = 1$. These functions correspond to the naive, Kaplan-Meyer approach depicted in Figure~\ref{fig-why-competing-risk} (left panel). Substituting back into Equation~\ref{eq-ci-de} and integrating the two sides, we arrive at the following $K$, one-dimensional integral equations:
+\begin{align}
+F_k(t) = \int_{t'=0}^t \left( \prod_{k'=1}^K S_k(t') \right) \lambda_k(t') dt'. \label{eq-ci-int-lambda}
+\end{align}
+
+The integrals of Equation~\ref{eq-ci-int-lambda} do not generally have closed-form solutions. For example, in a Weibull survival model, we have
+\begin{subequations}
+\begin{align}
+\lambda_k(t) &= \alpha_k \, \gamma_k \, t^{\alpha_k - 1}, \label{eq-h-weibull} \\
+S_k(t) &= \exp(- \gamma_k t^{\alpha_k}),
+\end{align}
+\end{subequations}
+which leads to the following expression for cumulative incidence functions with two competing risks ($K = 2$):
+\begin{align}
+F_1(t) &= - \alpha_1 \gamma_1 \int_0^t u^{\alpha_1 - 1} \, \ee^{-(\gamma_1 u^{\alpha_1} + \gamma_2 u^{\alpha_2})} \, du,
+\end{align}
+and similarly for $F_2(t)$. In the absence of an exact solution, we must resolve to numerical integration.
+
+In most real-world problems, each of the $K$ integrals of Equation~\ref{eq-ci-int-lambda} must be evaluated more than once. For example, in regression settings each observation will have a distinct set of cause-specific hazard, survival, and cumulative incidence functions that are dependent on the value of the feature vector for that observation. Furthermore, in Bayesian settings where posteriors are approximated by MCMC samples, each combination of observation and cause will have as many integrals as samples. For example, in a competing-risk analysis with 3 causes, 1000 observations, and 5000 posterior samples, $3 \times 1000 \times 1000 = 3$ million cumulative incidence functions must be calculated. As a result, computational efficiency of the quadrature algorithm is of prime importance in Bayesian CFC.
+
+\subsection{Shortcomings of current quadrature techniques for Bayesian CFC}\label{subsection-improper}
+Most modern techniques for one-dimensional, numerical integration are based on function interpolation. Perhaps the most common set of techniques are Gaussian quadratures~\citep{stroud1966gaussian}, which approximate an integral by a weighted sum of function values evaluated on a pre-specified, irregular grid, often yielding exact results for polynomials. A particular flavor called Gauss-Kronrod quadrature~\citep{laurie1997calculation} allows function evaluations to be re-used in successive, adaptive iterations. The \pkg{QUADPACK} library~\citep{piessens2012quadpack}, ported to \proglang{R} via the \code{integrate} function in \pkg{stats} package, is based on Gauss-Kronrod, and augmented by Wynn's epsilon algorithm~\citep{wynn1966convergence} to accelerate convergence for end-point singularities.
+
+A direct application of this software to the Bayesian CFC quadrature problem, however, is inefficient due to several reasons. Firstly, and most importantly, users often expect a \textit{dense output} for cumulative incidence functions, i.e., $F_k(t)$'s in Equation~\ref{eq-ci-int-lambda} must be evaluated at multiple values of $t$. \pkg{QUADPACK}, on the other hand, is not designed to produce dense output, and therefore would require as many calls as the number of outputs desired. This can lead to an excessive number of function evaluations, which is particularly troubling in time-consuming, Bayesian problems. Secondly, there is a significant opportunity to share computational work across the $K$ integrals in CFC. This is due to the fact that the integrands in Equation~\ref{eq-ci-int-lambda} are various multiplicative permutations of cause-specific hazard and survival functions. Taking advantage of this opportunity, however, requires custom code that is designed for the particular structure of the CFC problem. Finally, direct calculation of each intergal in Equation~\ref{eq-ci-int-lambda} is suboptimal from a usability pespective, since it requires the user to supply two functions per cause: the hazard function, $\lambda_k(t)$,  and the survival function, $S_k(t)$. While the two functions are related by Equation~\ref{eq-s-in-h}, yet their conversion requires integration or differentiation. Also, in non-parametric survival models, the survival function is usually not differentiable (e.g., piece-wise step function) and hence the hazard function is unavailable. In the best case, requiring both functions adds a burden to the user and increases the possibility of mistakes. Numeric differentiation, e.g., using \pkg{numDeriv}~\citep{gilbert2012numderiv}, is an option, but it is computationally expensive.
+
+A second class of integration algorithms are quadrature by variable transformation~\citep[Chapter~4]{press2007numerical}, better known as double-exponential (DE) or Tanh-Sinh methods~\citep{takahasi1974double}. They combine a hyperbolic change-of-variable with trapezoidal rule to induce exponential convergence of the integral near end-point singularities. As such, they are better suited to handle such singularities compared to Gauss-Kronrod techniques. DE quadrature has recently been implemented in \proglang{R} via the package \pkg{deformula}~\citep{okamura2015deformula}. For an empirical comparison of quadrature techniques, see~\cite{bailey2005comparison}. Of the three problems with \pkg{QUADPACK} discussed above, the last two are equally applicable to DE methods. (The trapezoidal rule used in DE methods can produce cumulative integrals.) We therefore develop a custom quadrature algorithm for Bayesian CFC that addresses the shortcomings of existing techniques.
+
+\subsection{Implicit variable transformation quadrature using generalized Newton-Cotes}\label{subsection-generalized-nc} % consider changing the name to 'Implicit Variable Transformation' or IVT
+We transform Equation~\ref{eq-ci-int-lambda} to an equivalent form that removes the hazard function, thereby freeing it from potential singularities. To do so, we use the definition of $S_k(t)$ in Equation~\ref{eq-s-in-h} to get
+\begin{align}
+dS_k(t) &= d \left(\exp(- \int_0^t \lambda_{k'}(t') dt') \right) = - \lambda_k(t) S_k(t)
+\end{align}
+Solving for $\lambda_k(t)$, and inserting back into Equation~\ref{eq-ci-int-lambda}, we obtain:
+\begin{align}
+F_k(t) &= - \int_0^t \left( \prod_{k' \neq k} S_{k'}(t') \right) \, d S_k(t') , \,\,\, \forall \, k = 1, \hdots K. \label{eq-int-ds}
+\end{align}
+Thanks to the conditions described in~\ref{eq-s-cond}, the integrand is now bounded.
+
+The transformation from Equation~\ref{eq-ci-int-lambda} to Equation~\ref{eq-int-ds} is closely related to the DE method, with two notable differences: First, while in DE we use a double-exponential change of variable such as $t = \tanh(\frac{\pi}{2} \sinh(u))$, here we use a custom transformation, $t = S_k^{-1}(u)$. Secondly, rather than applying the transformation explicitly -- which would require the user to supply the inverse survival functions -- we leave it implicit. This allows us to handle cases where explicit derivation of inverse survival functions is impossible; it also makes the software user-friendly.
+
+Similar to the DE method, we apply Newton-Cotes techniques to the integrals of Equation~\ref{eq-int-ds}. However, in exchange for removing the singularity, the new form -- with variable transformation left implicit -- imposes limits such as inability to cheaply find interval midpoints on the scale of transformed variable, thus rendering the classical Newton-Cotes expressions invalid (with the exception of trapezoidal rule). We have thus developed a generalized Simpson's rule that applies to integrals with an implicit change of variable, such as in Equation~\ref{eq-int-ds}. Recall the standard Simpson's rule which approximates the integral of $f(t)$ in the interval $[a,b]$ via a quadratic approximation of the function: % argue why we use trapezoidal for error reference, rather than extend the method in DE
+\begin{align}
+\int_a^b f(t) \, dt \cong I_{ss}(f; \, a,b) \equiv \frac{b-a}{6} \left\{ f(a) + 4 f(\frac{a+b}{2}) + f(b) \right\}. \label{eq-standard-simpson}
+\end{align}
+In \textit{generalized Simpson}, we have:
+\begin{subequations}
+\begin{empheq}[box=\fbox]{align}
+%\begin{align}
+& \int_a^b f(t) \, d g(t) \cong  I_{gs}(f,g; \, a,b) \nonumber \\
+& \equiv \frac{g(b) - g(a)}{6} \, \frac{f(a) + 4 f(\frac{a + b}{2}) + f(b) + 2 r (f(a) - f(b)) - 3 r^2 (f(a) + f(b))}{1 - r^2}, \label{eq-gen-simpson} \\
+r &\equiv \frac{2 g(\frac{a + b}{2}) - g(a) - g(b)}{g(b) - g(a)}. \label{eq-gen-simpson-2}
+%\end{align}
+\end{empheq}
+\end{subequations}
+Proof is given in Appendix~\ref{appendix-gen-simpson}, which relies on a quadratic expansion of $f$ in terms of $g$ over the interval $[a,b]$. Note that if $g(t)$ is linear in $t$, then $r = 0$ and the generalized equation in~\ref{eq-gen-simpson} reduces to the standard form in Equation~\ref{eq-standard-simpson}. Also, in the corner cases where $g(a) = g((a + b)/2)$ or $g((a + b)/2)) = g(b)$ (leading to $r^2=1$), the above equation must be overridden in favor of a single trapezoidal step over the other half of the interval $[a, b]$. The implementation in \pkg{CFC} contains this protective measure, which is particularly useful for handling non-parametric survival functions.
+
+While it is possible to use the inequalities of~\ref{eq-s-cond} to derive firm upper bounds for integration error, such upper bounds are too pessimistic since they assume piece-wise constant survival curves. Instead, we opt for a common approach in adaptive quadrature literature, i.e., using the difference between our method, and the output of a less accurate technique as a proxy for integration error. In our case, we use the trapezoidal rule as reference, which is easily generalized to the implicit variable transformation method:
+\begin{align}
+\int_a^b f(t) \, d g(t) \cong I_{gt}(f,g; \, a,b) = \frac{g(b) - g(a)}{2} (f(a) + f(b)). \label{eq-gen-trap}
+\end{align}
+The advantage of using a generalized Newton-Cotes framework is that 1) it permits an adaptive subdivision scheme which reuses all previous integrand evaluations~\citep[Chapter~4]{press2007numerical}, and 2) in the process, we obtain dense output for the integral, i.e., at all subdivision boundaries. To provide dense output at arbitrary points requested by the user, we use interpolation. Pseudo-code for the CFC quadrature algorithm is listed below. (For simplicity, we focus on a single integration task, which is wrapped in a \code{for} loop, corresponding to observations and/or Bayesian samples.)
+
+\begin{algorithm}{CFC Quadrature Algorithm}[]
+{\label{algorithm-cfc-quadrature}
+\qinput{\{$S_k(.)\}, \,\,\, k=1, \hdots, K$ (cause-specific survival functions)}
+\qinput{$\mathbf{t}_{out}$} \,\,\, (dense output time vector)
+\qinput{$N_{max}$} \,\,\, (maximum number of adaptive subdivisions)
+\qinput{$\epsilon$} \,\,\, (relative error tolerance for integration)
+\qoutput{$\{\mathbf{I}_k\}, \,\,\, k=1, \hdots, K$} \,\,\, (cause-specific CI functions, each one evaluated at $\mathbf{t}_{out}$)
+}
+$t_{max}$ \qlet $\max(\mathbf{t}_{out})$ \\
+$\mathbf{t}$ \qlet $\left[ \begin{array}{cc} 0 & t_{max} \end{array} \right]$ (integration time grid) \\
+Apply generalized Simpson and trapezoidal to $\mathbf{t}$ to initialize CI estimates and errors. \\
+$e$ \qlet \,\, Maximum integration error across all causes at $t_{max}$ \\
+$N \qlet 1$ \\
+\qwhile ($e > \epsilon$) and ($N < N_{max}$) \\
+Identify time interval with maximum contribution towards integration error. \\
+Split the the identified interval in half. \\
+Update generalized Simpson and trapezoidal CI estimates and errors. \\
+$e$ \qlet \,\, Maximum integration error across all causes at $t_{max}$ \\
+$N$ \qlet $N + 1$
+\qelihw \\
+Interpolate generalized Simpson CI estimates over $\mathbf{t}$ to produce $\{\mathbf{I}_k\}$ for $\mathbf{t}_{out}$. \\
+\qreturn $\{\mathbf{I}_k\}$
+\end{algorithm} % we may want to show that generalized Simpson applied to CFC preserves zero-error for event-free probability
+% also add a graphic illustrating how this works, which also helps show the above property
+
+In implementing the above quadrature algorithm in \pkg{CFC}, we have used several performance optimization strategies, which are discussed next.
+
+\subsection[Performance optimization strategies in CFC]{Performance optimization strategies in \pkg{CFC}}\label{subsection-perf-opt}
+Since a key target application of \pkg{CFC} is Bayesian survival models, performance is an important consideration. We have adopted three performance optimization strategies in \pkg{CFC} for executing the quadrature algorithm described in Section~\ref{subsection-generalized-nc}: 1) \proglang{C++} implementation, 2) work sharing, and 3) parallel execution. Below we discuss each strategy.
+
+\textbf{\proglang{C++} implementation:} This includes two interconnected but distinct concepts, 1) implementation of the CFC quadrature algorithm in \proglang{C++}, and 2) API definition for user-supplied survival functions in \proglang{C++}. While it is possible to accept and call an \proglang{R} implementation of survival functions inside the \proglang{C++}-based quadrature algorithm, the data marshalling overhead of repeated calls from \proglang{C++} to \proglang{R} can more than nullify the benefits of porting the quadrature algorithm to \proglang{C++}~\citep{RcppDataMarshall}. In other words, if the survival function must be executed in \proglang{R}, it is best for the quadrature algorithm to also run in \proglang{R}. We rely on the framework provided by the \pkg{Rcpp} package~\citep{eddelbuettel2011rcpp} for our \proglang{C++} implementation, which facilitates the development and maintenance of \pkg{CFC} and also encourages more efficient \proglang{C++} implementations of survival functions by users and package developers. Details regarding the \proglang{C++} components of \pkg{CFC} are provided in Section~\ref{section-implementation}. 
+
+\textbf{Work sharing:} In most cases, evaluating the integrand is where a significant fraction, if not the majority, of time is spent in a quadrature algorithm. Therefore, minimizing the number of such function evaluations can be a rewarding performance optimization technique. In generalized Simpson (Equation~\ref{eq-gen-simpson}) and trapezoidal (Equation~\ref{eq-gen-trap}) steps applied to the CFC problem, we need to evaluate two types of entities: 1) individual survival functions ($S_k$'s), and 2) their leave-one-out products ($\prod_{k' \neq k} S_{k'}$). We use two types of optimizations to minimize unnecessary calculations: 1) calculation of $S_k$'s is shared across all causes, and 2) the full product $\prod_k S_k$ is calculated once, and divided by individual $S_k$ terms to arrive at leave-one-out terms.
+
+\textbf{Parallelization:} Calculation of cumulative incidence functions for different observations and/or samples is clearly an independent set of tasks, which can be executed in parallel. We use \proglang{OpenMP} in \proglang{C++}, and \pkg{doParallel}~\citep{RevAna2015doParallel} and \pkg{foreach}~\citep{RevAna2015foreach} packages in \proglang{R}, for this task parallelization. As long as the span of the iterator, which is typically the product of observation count and number of samples per observation (in Bayesian models), is sufficiently large, this parallelization scales well with the number of threads used (up to the physical/logical core count on the system). For an illustration of the impact of parallelization on performance, see Section~\ref{subsection-using-Cpp}.
+
+\section[CFC implementation and features]{\pkg{CFC} implementation and features}\label{section-implementation}
+This section introduces the \pkg{CFC} software and its components, including the three usage modes for cause-specific competing-risk analysis. Examples illustrating each usage mode will be provided in Section~\ref{section-using}. As usual, package documentation is the ultimate reference for all details.
+
+\subsection[Overview of CFC]{Overview of \pkg{CFC}}\label{subsection-algorithm}
+\pkg{CFC} functionalities can be categorized into three groups: 1) core functionality, 2) utilities, and 3) legacy code. The core functionality in \pkg{CFC} is numerical calculation of cause-specific, competing-risk differential equations in Eq.~\ref{eq-ci-de}, using the implicit variable transformation in Eq.\ref{eq-int-ds}, and based on the generalized Newton-Cotes method outlined in Eqs.~\ref{eq-gen-simpson} and \ref{eq-gen-trap}. There are two implementations of Algorithm~\ref{algorithm-cfc-quadrature} in \pkg{CFC}: the \proglang{R}-based function \code{cscr.samples.R}, and the \proglang{C++}-based function \code{cscr_samples_Cpp}. Both these functions are private, and exposed through a common interface, \code{cfc}, which dispatches the right method by inspecting the first argument. The \code{cfc} API provides the users and package developers with the capability to perform cause-specific, competing-risk analysis using their custom-built survival functions, as long as they conform to a pre-specified but flexible interface, which is described in Section~\ref{subsection-usage-modes}. These functions can be Bayesian or non-Bayesian, parametric or non-parametric.
+
+The utility methods in \pkg{CFC}, on the other hand, expose a convenient API for users to perform end-to-end survival and competing-risk analysis with minimal effort. The tradeoff is that the set of survival functions available through this API is limited to (non-Bayesian) parametric survival regression models of package \pkg{survival}. This still represents a core set of popular models, and should address the needs of many practitioners. The functions in this API are \code{cfc.survreg}, \code{summary.cfc.survreg}, \code{plot.summary.cfc.survreg}, \code{cfc.survreg.survprob} and \code{cfc.prepdata}. The last two functions are described in Section~\ref{subsection-usage-modes}, and all functions are illustrated via examples in Section~\ref{section-using}.
+
+Legacy functions in \pkg{CFC} (\code{cfc.tbasis} and \code{cfc.pbasis} and their associated \code{S3} methods) apply a composite trapezoidal rule to user-supplied survival \textit{curves}, i.e., evaluated at pre-determined time points. Here the choice of time intervals is not optimized, and no error analysis is performed. The use of legacy \pkg{CFC} is deprecated in favor of the new machinery described in this paper. Interested readers can refer to package documentation for further details on how to use the legacy code.
+
+\subsection[CFC usage modes]{\pkg{CFC} usage modes}\label{subsection-usage-modes}
+In order to achieve the dual objectives of user-friendliness \textit{and} flexibility, \pkg{CFC} offers three usage modes: 1) end-to-end survival and competing-risk analysis, using \code{cfc.survreg}, 2) competing-risk analysis of user-supplied survival functions, written in \proglang{R}, and 3) competing-risk analysis of user-supplied functions, written in \proglang{C++}. The last two usage modes are exposed through a common interface, i.e., the public function \code{cfc}. We review each usage mode below, with examples to follow in Section~\ref{section-using}.
+
+\textbf{Parametric survival regression and competing-risk analysis}: This is the most convenient usage mode, in which a one-line call to \code{cfc.survreg} performs both cause-specific survival regression and competing-risk analysis. More specifically, \code{cfc.survreg} executes three steps: i) parsing the survival formula to create cause-specific status columns and formulas; ii) calling the \code{survreg} function from \pkg{survival} package~\citep{therneau2013package} for each cause; iii) calling the internal \pkg{CFC} function, \code{cscr.samples.R}, to perform competing-risk analysis. To perform the first step, we use the (public) utility function \code{cfc.prepdata}. To perform the last step, the (unadjusted) survival function associated with the \code{survreg} models is needed, which we have implemented in \code{cfc.survreg.survprob}. This survival function is made public, so as to allow users to easily combine \code{survreg} models with other types of survival models. It contains a custom implementation of the survival functions needed by \code{cscr.samples.R}, using the \code{"dist"} field of the returned object from \code{survreg}, along with the definition of distributions made available via \code{survreg.distributions}. The implementation is a verbatim translation of the definition of location-scale family~\citep{datta2005location}. This usage mode trades off flexibility for user-friendliness, as it is restricted to the survival regression models covered in the \pkg{survival} package, as well as user-defined survival distributions following the conventions of that package. An example is provided in Section~\ref{subsection-using-survreg}.
+
+\textbf{CFC for user-supplied survival functions implemented in \proglang{R}}: If the \code{f.list} argument passed to \code{cfc} is a list of functions - implemented in \proglang{R} - then \code{cfc} dispatches \code{cscr.samples.R}. This is more flexible than using \code{cfc.survreg} since the user can supply any arbitrary survival function, as long as it conforms to the prototype expected by \code{cscr.samples.R}. However, it requires the user to implement one or more survival functions. These functions must follow this prototype:
+\begin{verbatim}
+func(t, args, n)
+\end{verbatim}
+where \code{t} is a vector of time-from-index (non-negative) values, \code{args} is a list of argument needed by the function, and \code{n} is an iterator that spans the observations and/or samples. It is the responsibility of function implementation to consistently interpret \code{n}, and map it from one dimension to multiple dimensions, e.g., to obtain observation and sample indices. Of course, we could have chosen to hide \code{n} inside \code{args}, but decided to make it explicit to draw attention to its special meaning. In Section~\ref{section-using} we will see several example implementations of survival functions conforming to the above prototype.
+
+\noindent \textbf{CFC for custom models - \proglang{C++} mode}: This usage mode offers the same functionality as the previous one, but requires the user to supply the survival functions in \proglang{C++}. This often leads to significant speedup; however, implementation is also more involved as it requires at least three functions per distinct cause-specific model: initializer, survival function, and resource de-allocator. An example is provided in Section~\ref{subsection-using-Cpp}, illustrating the impact of transition from \proglang{C++} to \proglang{R} implementation (of survival functions) on performance. To facilitate both package development and maintenance as well as survival-function implementation by users, we have adopted the framework of \pkg{Rcpp} (for data exchange with \proglang{R}) and \pkg{RcppArmadillo} (for linear algebra):
+\begin{verbatim}
+typedef arma::vec (*func)(arma::vec x, void* arg, int n);
+typedef void* (*initfunc)(Rcpp::List arg);
+typedef void (*freefunc)(void *arg);
+\end{verbatim}
+Note the use of \code{void*} pointer in function prototypes. This allows for a uniform API across all survival functions, leaving the casting and interpretation of this pointer to each implementation. See Example 3 in Section~\ref{subsection-using-Cpp}.
+
+\section[Using CFC]{Using \pkg{CFC}}\label{section-using}
+As discussed in Section~\ref{subsection-usage-modes}, \pkg{CFC} can be used in three modes, which progressively become more flexible but also require more significant programming effort. Examples 1-3 illustrate how each mode can be used. The final example illustrates a key advantage of the CFC framework, namely the logical separation of cause-specific survival analysis from the competing-risk analysis, which in turns allows for combining survival models of different kind in the same competing-risk analysis.
+
+\subsection{Example 1: end-to-end competing-risk analysis using Weibull regression}\label{subsection-using-survreg}
+In our first example, we illustrate the easiest usage mode in \pkg{CFC}, i.e., the \code{cfc.survreg} function. It first creates parametric survival regression models using the \code{survreg} function of the \pkg{survival} package, and passes these models to \code{cfc} for competing-risk analysis.
+
+We begin by setting up our environment, including a 70-30 split of our test data set, \code{bmt}, into training and prediction sets:
+<<eval=FALSE>>=
+library("CFC")
+data("bmt")
+rel.tol <- 1e-3
+seed.no <- 0
+set.seed(seed.no)
+idx.train <- sample(1:nrow(bmt), size = 0.7 * nrow(bmt))
+idx.pred <- setdiff(1:nrow(bmt), idx.train)
+nobs.train <- length(idx.train)
+nobs.pred <- length(idx.pred)
+@
+(In real-world applications, \code{rel.tol} must be set to a smaller number for better accuracy.) A one-line call to \code{sfc.survreg} is all we have to do:
+<<eval=FALSE>>=
+out.weib <- cfc.survreg(Surv(time, cause) ~ platelet + age + tcell, 
+  bmt[idx.train, ], bmt[idx.pred, ], rel.tol = rel.tol)
+@
+The output can be summarized for any subset of observations, using the \code{obs.idx} parameter:
+<<eval=FALSE>>=
+summ <- summary(out.weib, obs.idx = which(bmt$age[idx.pred] > 0))
+@
+and plotted:
+<<eval=FALSE>>=
+plot(summ, which = 1)
+@
+to produce and visualize the sub-population-average cumulative incidence functions for each cause (Figure~\ref{fig-summ-plot}).
+\begin{figure}
+\centering
+\includegraphics[]{fig2.pdf}
+\caption{Cause-specific cumulative incidence functions for the Weibull survival regression models built for \code{bmt} data set.}
+\label{fig-summ-plot}
+\end{figure}
+
+It is instructive to visualize the impact of competing-risk adjustment on cumulative incidence rates: % width parameter not working
+<<eval=FALSE>>=
+old.par <- par(mfrow=c(1,2)); plot(summ, which = 2); par(old.par)
+@
+\begin{figure}
+\centering
+\includegraphics[]{fig3.pdf}
+\caption{Comparison of adjusted and unadjusted cumulative incidence curves for Weibull survival regression models built for \code{bmt} data set.}
+\label{fig-summ-plot-2}
+\end{figure}
+
+We can see from Figure~\ref{fig-summ-plot-2} that the competing-risk adjustment, using the CFC framework, has a very significant corrective impact on the cumulative incidence probability for both causes.
+
+Users can switch from Weibull to other distributions through the parameter \code{dist}. For example, the following command switches the survival models from Weibull to exponential:
+<<eval=FALSE>>=
+out.expo <- cfc.survreg(Surv(time, cause) ~ platelet + age + tcell, 
+  bmt[idx.train, ], bmt[idx.pred, ],
+  dist = "exponential", rel.tol = rel.tol)
+@
+We can even use different distributions for each cause, by passing a vector as the \code{dist} argument:
+<<eval=FALSE>>=
+out.mix <- cfc.survreg(Surv(time, cause) ~ platelet + age + tcell, 
+  bmt[idx.train, ], bmt[idx.pred, ],
+  dist = c("weibull", "exponential"), rel.tol = rel.tol)
+@
+
+\subsection[Example 2: Bayesian CFC in R]{Example 2: Bayesian CFC in \proglang{R}}\label{subsection-using-R}
+Utilizing the function \code{cfc} requires that cause-specific, unadjusted survival functions be available or implemented, in \proglang{R} or \proglang{C++}. This is in contrast to \code{cfc.survreg} which has encapsulated the survival functions corresponding to the class of survival models in \pkg{survival} package.
+
+First, we use the utility function \code{cfc.prepdata} to prepare the \code{bmt} data set and set up formulas for cause-specific survival analysis:
+<<eval=FALSE>>=
+out.prep <- cfc.prepdata(Surv(time, cause) ~ platelet + age + tcell, bmt)
+f1 <- out.prep$formula.list[[1]]
+f2 <- out.prep$formula.list[[2]]
+dat <- out.prep$dat
+tmax <- out.prep$tmax
+@
+Next, we create cause-specific Bayesian Weibull survival regression models, using \pkg{BSGW} package~\citep{mahani2015bsgw}:
+<<eval=FALSE>>=
+library("BSGW")
+seed.no <- 0
+set.seed(seed.no)
+nsmp <- 10
+reg1 <- bsgw(f1, dat[idx.train, ],
+  control = bsgw.control(iter = nsmp),
+  ordweib = T, print.level = 0)
+reg2 <- bsgw(f2, dat[idx.train, ], 
+  control = bsgw.control(iter = nsmp),
+  ordweib = T, print.level = 0)
+@
+(In real-world problems, \code{nsmp} must be set to a larger number.) To perform CFC, we must take two interconnected steps: 1) implement the cause-specific survival functions for this model, 2) prepare arguments feeding into these survival functions. In this example, since we use the same model for both causes, we only need to implement one survival function:
+<<eval=FALSE>>=
+survfunc <- function(t, args, n) {
+  nobs <- args$nobs; natt <- args$natt; nsmp <- args$nsmp
+  alpha <- args$alpha; beta <- args$beta; X <- args$X
+  idx.smp <- floor((n - 1) / nobs) + 1
+  idx.obs <- n - (idx.smp - 1) * nobs
+  return (exp(- t ^ alpha[idx.smp] * 
+                exp(sum(X[idx.obs, ] * 
+                          beta[idx.smp, ]))));
+}
+f.list <- list(survfunc, survfunc)
+X.pred <- as.matrix(cbind(1, bmt[idx.pred, c("platelet", "age", "tcell")]))
+arg.1 <- list(nobs = nobs.pred, natt = 4, nsmp = nsmp,
+  X = X.pred, alpha = exp(reg1$smp$betas),
+  beta = reg1$smp$beta)
+arg.2 <- list(nobs = nobs.pred, natt = 4, nsmp = nsmp, 
+  X = X.pred, alpha = exp(reg2$smp$betas), 
+  beta = reg2$smp$beta)
+arg.list <- list(arg.1, arg.2)
+@
+The argument \code{n} is the single iterator that covers the joint space of observations (\code{nsmp}) and samples (\code{nobs}). The function must therefore extract the sample and observation indexes (\code{idx.smp} and \code{idx.ob}, respectively) from \code{n}. The same convention must be used while interpretting the returned arrays from \code{cfc}.
+<<eval=FALSE>>=
+rel.tol <- 1e-4
+tout <- seq(from = 0.0, to = tmax, length.out = 10)
+t.R <- proc.time()[3]
+out.cfc.R <- cfc(f.list, arg.list, nobs.pred * nsmp, tout,
+  rel.tol = rel.tol)
+t.R <- proc.time()[3] - t.R
+cat("t.R:", t.R, "sec\n")
+@
+<<echo=FALSE>>=
+t.R <- readRDS("t_R.rds")
+cat("t.R:", t.R, "sec\n")
+@
+
+\noindent \textbf{Summarizing and plotting}: One advantage of Bayesian techniques is their consistent representation and treatment of uncertainty. It is, therefore, useful for \pkg{CFC} to enable users to quantify and visualize the uncertainty associated with outputs produced by \code{cfc}. This can be done by calling \code{summary.cfc}.
+
+In Bayesian \pkg{CFC}, the cumulative incidence and survival arrays returned have three dimensions: 1) time, 2) cause, 3) \code{n} iterator (described above). In summarizing the arrays, we should not reduce/collapse the first two dimensions. The last dimension is often a flattened version of two dimensions: observations and MCMC samples. How this 2D space is mapped to the 1D iterator is left to the users in their specification of the survival function. We have similarly aimed for flexibility in designing the \code{summary.cfc} function, where the \code{f.reduce} argument is required from the user in order to determine how each sub-array of the 3D arrays returned by \code{cfc} must be processed/reduced, before being passed to the \code{quantile} function to determine the median and credible bands for each combination of time and cause. For the example provided in this section, a suitable reduction function can be defined as:
+<<eval=FALSE>>=
+my.f.reduce <- function(x, nobs, nsmp) {
+  return (colMeans(array(x, dim = c(nobs, nsmp))))
+}
+@
+This function calculates the population average (for each time, cause and MCMC sample). As such, when supplied to \code{summary.cfc}, it produces the credible bands for population-average values for cause-specific cumulative incidence and survival probabilities. The output of the \code{summary} function can be passed to the \code{plot} function to produce Figure~\ref{fig-summary-cfc}.
+<<eval=FALSE>>=
+my.cfc.summ <- summary(
+  out.cfc.R, f.reduce = my.f.reduce
+  , nobs = nobs.pred, nsmp = nsmp)
+oldpar <- par(mfrow = c(2, 2))
+plot(my.cfc.summ)
+par(oldpar)
+@
+\begin{figure}
+\centering
+\includegraphics[]{fig4.pdf}
+\caption{Median and 95\% credible bands for population-averaged cause-specific cumulative-incidence and survival probabilities, corresponding to Example 2.}
+\label{fig-summary-cfc}
+\end{figure}
+
+\noindent \textbf{Parallelization}: We saw that running CFC in \proglang{R} takes nearly \Sexpr{round(t.R)} seconds on our test server. (See Section~\ref{appendix-setup} for session information.) This is for a small data set (\code{nobs.pred=123}), a handful of samples (\code{nsmp=10}) and a lenient error tolerance (\code{rel.tol=1e-4}). By extrapolation, to perform CFC for a data set of size 1000, with 1000 samples, a somewhat more realistic scenario, we would need nearly 4.5 hours. (Note that execution time is nearly independent of the length of \code{tout}, since the latter only affects the last -- interpolation -- step, which is computationally cheap.) An easy way to improve performance is by using multi-threaded parallelization on a multicore machine. This can be done via the \code{ncore} parameter:
+<<eval=FALSE>>=
+ncores <- 2
+tout <- seq(from = 0.0, to = tmax, length.out = 10)
+t.R.par <- proc.time()[3]
+out.cfc.R.par <- cfc(f.list, arg.list, nobs.pred * nsmp, tout,
+  rel.tol = rel.tol, ncores = ncores)
+t.R.par <- proc.time()[3] - t.R.par
+cat("t.R.par:", t.R.par, "sec\n")
+@
+<<echo=FALSE>>=
+t.R.par <- readRDS("t_R_par.rds")
+@
+The speedup is close to linear, which is expected given the low amount of coordination needed among threads:
+<<eval=TRUE>>=
+cat("parallelization speedup - R:", t.R / t.R.par, "\n")
+@
+A more powerful to improve performance is by using the \proglang{C++} interface of \pkg{CFC}, which is illustrated next.
+
+\subsection[Example 3: High-performance Bayesian CFC (in C++)]{Example 3: High-performance Bayesian CFC (in \proglang{C++})}\label{subsection-using-Cpp}
+The first step is to implement the data structure needed by the survival model. For Bayesian Weibull regression, we have:
+\begin{verbatim}
+struct weib {
+  int nobs; // number of observations
+  int natt; // number of attributes
+  int nsmp; // number of MCMC samples
+  mat X; // nobs-by-natt
+  vec alpha; // nsmp
+  mat beta; // natt-by-nsmp
+};
+\end{verbatim}
+The initializer function is responsible for converting the incoming \code{List} from \proglang{R} to the \code{weib} structure:
+\begin{verbatim}
+void* weib_init(List arg) {
+  weib* myweib = new weib;
+  myweib->nobs = arg[0];
+  myweib->natt = arg[1];
+  myweib->nsmp = arg[2];
+  myweib->X = mat(REAL(arg[3]), myweib->nobs, myweib->natt, true, true);
+  myweib->alpha = vec(REAL(arg[4]), myweib->nsmp, true, true);
+  myweib->beta = mat(REAL(arg[5]), myweib->natt, myweib->nsmp, true, true);
+  return (void*)myweib;
+}
+\end{verbatim}
+By implementing the data structure in terms of \code{Armadillo} classes \code{vec} and \code{mat}, we isolate the dependence on \proglang{R} data structures to the initializer, which allows for easier porting of the survival model to other environments. We must also create an external pointer to the initializer, which will be supplied to \code{cfc}. This can be accomplished by calling the following function from \proglang{R}, as we will demonstrate later:
+\begin{verbatim}
+// [[Rcpp::export]]
+XPtr<initfunc> weib_getPtr_init() {
+  XPtr<initfunc> p(new initfunc(&weib_init), true);
+  return p;
+}
+\end{verbatim}
+Recall that the \code{initfunc} function pointer has been \code{typedef}'ed before. Since the initializer creates a new \code{weib} data structure on the heap, it is best practice to release this memory once we are finished. We do so by implementing a \code{freefunc}, as well as a companion function for creating an external pointer to it:
+\begin{verbatim}
+void weib_free(void *arg) {
+  delete (weib*)arg;
+}
+// [[Rcpp::export]]
+XPtr<freefunc> weib_getPtr_free() {
+  XPtr<freefunc> p(new freefunc(&weib_free), true);
+  return p;
+}
+\end{verbatim}
+Finally, the survival function itself must be implemented, which we do here by using \pkg{RcppArmadillo} linear algebra methods. Note a similar approach to the \proglang{R} implementation for extracting the observation and sample indexes (zero-based here) from the flat iterator \code{n}:
+\begin{verbatim}
+vec weib_sfunc(vec t, void *arg, int n) {
+  weib *argc = (weib*)arg;
+  int nsmp = argc->nsmp, nobs = argc->nobs, natt = argc->natt;
+  int idx_smp = n / nobs;
+  int idx_obs = n - idx_smp * nobs;
+  mat X = argc->X;
+  mat beta = argc->beta;
+  vec alpha = argc->alpha;
+  mat exbeta = exp(X.row(idx_obs) * beta.col(idx_smp));
+  return exp(- pow(t, alpha(idx_smp)) * exbeta(0,0));
+}
+// [[Rcpp::export]]
+XPtr<func> weib_getPtr_func() {
+  XPtr<func> p(new func(&weib_sfunc), true);
+  return p;
+}
+\end{verbatim}
+We can compile the entire \proglang{C++} code for this model by running \code{Rcpp::sourceCpp}, inside an \proglang{R} session, against the source file (\code{weib.cpp}). We are now ready to apply \code{cfc} to this \proglang{C++} implementation. The call looks similar to the \proglang{R} version, except for the first parameter \code{f.list}, which must now be a list of pointers to the survival function, the initializer function, and the free function:
+<<eval=FALSE>>=
+tout <- seq(from = 0.0, to = tmax, length.out = 10)
+library("Rcpp")
+Rcpp::sourceCpp("weib.cpp")
+f.list.Cpp.1 <- list(weib_getPtr_func(), weib_getPtr_init(),
+  weib_getPtr_free())
+f.list.Cpp <- list(f.list.Cpp.1, f.list.Cpp.1)
+t.Cpp <- proc.time()[3]
+out.cfc.Cpp <- cfc(f.list.Cpp, arg.list, nobs.pred * nsmp, tout,
+  rel.tol = rel.tol)
+t.Cpp <- proc.time()[3] - t.Cpp
+cat("t.Cpp:", t.Cpp, "sec\n")
+@
+<<echo=FALSE>>=
+t.Cpp <- readRDS(file = "t_Cpp.rds")
+cat("t.Cpp:", t.Cpp, "sec\n")
+@
+We can verify that the \proglang{C++} results are identical to the \proglang{R} results:
+<<eval=FALSE>>=
+all.equal(out.cfc.R, out.cfc.Cpp)
+@
+<<echo=FALSE>>=
+out.cfc.R <- readRDS(file = "out_cfc_R.rds")
+out.cfc.Cpp <- readRDS(file = "out_cfc_Cpp.rds")
+all.equal(out.cfc.R, out.cfc.Cpp)
+@
+Note the impressive speedup achieved by the \proglang{C++} implementation:
+<<eval=T>>=
+cat("C++-vs-R speedup:", t.R / t.Cpp, "\n")
+@
+This performance level makes it feasible to use more realistic parameters, e.g., \code{nsmp = 1000}:
+<<eval=FALSE>>=
+nsmp <- 1000
+reg1 <- bsgw(f1, dat[idx.train, ],
+  control = bsgw.control(iter = nsmp),
+  ordweib = T, print.level = 0)
+reg2 <- bsgw(f2, dat[idx.train, ], 
+  control = bsgw.control(iter = nsmp),
+  ordweib = T, print.level = 0)
+arg.1 <- list(nobs = nobs.pred, natt = 4, nsmp = nsmp,
+  X = X.pred, alpha = exp(reg1$smp$betas),
+  beta = reg1$smp$beta)
+arg.2 <- list(nobs = nobs.pred, natt = 4, nsmp = nsmp, 
+  X = X.pred, alpha = exp(reg2$smp$betas), 
+  beta = reg2$smp$beta)
+arg.list <- list(arg.1, arg.2)
+t.Cpp.1000 <- proc.time()[3]
+out.cfc.Cpp.1000 <- cfc(f.list.Cpp, arg.list, nobs.pred * nsmp, tout,
+  rel.tol = rel.tol)
+t.Cpp.1000 <- proc.time()[3] - t.Cpp.1000
+cat("t.Cpp - 1000 samples", t.Cpp.1000, "sec\n")
+@
+<<echo=FALSE>>=
+t.Cpp.1000 <- readRDS(file = "t_Cpp_1000.rds")
+cat("t.Cpp - 1000 samples", t.Cpp.1000, "sec\n")
+@
+Further speedup can be achieved by multi-threading, using the \code{ncores} parameter:
+<<eval=FALSE>>=
+ncores <- 2
+t.Cpp.1000.par <- proc.time()[3]
+out.cfc.Cpp.1000.par <- cfc(f.list.Cpp, arg.list, nobs.pred * nsmp, tout,
+  rel.tol = rel.tol, ncores = ncores)
+t.Cpp.par.1000.par <- proc.time()[3] - t.Cpp.1000.par
+cat("t.Cpp.par - 1000 samples:", t.Cpp.1000.par, "sec\n")
+@
+<<echo=FALSE>>=
+t.Cpp.1000.par <- readRDS(file = "t_Cpp_1000_par.rds")
+cat("t.Cpp.par - 1000 samples:", t.Cpp.1000.par, "sec\n")
+@
+The speedup for \code{nsmp=1000} remains quite acceptable:
+<<>>=
+cat("parallelization speedup - C++:", t.Cpp.1000 / t.Cpp.1000.par, "\n")
+@
+
+\subsection[Example 4: Combining parametric and non-parametric survival models in CFC]{Example 4: Combining parametric and non-parametric survival models in \pkg{CFC}}\label{subsection-mix-and-match}
+The logical separation of survival models and competing-risk analysis in CFC offers the flexibility to use entirely different type of models for different causes. We saw an example of this in Section~\ref{subsection-using-survreg}, where we used Weibull and exponential distributions in the \code{cfc.survreg} function. It is even possible to combine parametric and non-parametric survival models in CFC, as we illustrate next.
+
+The random forest survival model in \pkg{randomForestSRC} package produces discretized survival curves. When survival curves for all causes are discrete, combining them does not require integration, and the \code{survfit} function in \pkg{survival} package offers this functionality. However, if at least one cause has a continuous survival function, we can use \pkg{CFC} to produce continuous output. The key step is to write a wrapper function around the discrete survival functions that uses interpolation to create a continuous interface.
+
+As before, we begin by using the utility function \code{cfc.prepdata} to prepare the data for cause-specific survival analysis:
+<<eval=FALSE>>=
+prep <- cfc.prepdata(Surv(time, cause) ~ platelet + age + tcell, bmt)
+f1 <- prep$formula.list[[1]]
+f2 <- prep$formula.list[[2]]
+dat <- prep$dat
+tmax <- prep$tmax
+@
+We choose a parametric Weibull regression for the first cause, taking care to keep \code{x} for prediction:
+<<eval=FALSE>>=
+library("survival")
+reg1 <- survreg(f1, dat, x = TRUE)
+@
+For the second cause, we build a random forest survival model. This is followed by implementing a function to provide a continuous-output interface to the prediction function provided by the package:
+<<eval=FALSE>>=
+library("randomForestSRC")
+reg2 <- rfsrc(f2, dat)
+rfsrc.survfunc <- function(t, args, n) {
+  which.zero <- which(t < .Machine$double.eps)
+  ret <- approx(args$time.interest, args$survival[n, ], t, rule = 2)$y
+  ret[which.zero] <- 1.0
+  return (ret)
+}
+@
+Finally, we construct the function and argument lists for \code{cfc} and call the function:
+<<eval=FALSE>>=
+f.list <- list(cfc.survreg.survprob, rfsrc.survfunc)
+arg.list <- list(reg1, reg2)
+tout <- seq(0.0, tmax, length.out = 10)
+cfc.out <- cfc(f.list, arg.list, nrow(bmt), tout, rel.tol = 1e-4)
+@
+This \code{cfc} object can be summarized as before, but this time we will simply average across all observations, i.e., there will be no samples remaining since the framework was not Bayesian. See Figure~\ref{fig-summary-cfc-nonpar}. Note that, in this case, our reduction function isn't producing samples but point estimates, and therefore quantile calculation is meaningless.
+<<eval=FALSE>>=
+plot(summary(cfc.out, f.reduce = mean))
+@
+\begin{figure}
+\centering
+\includegraphics[]{fig5.pdf}
+\caption{Population-average, cause-specific cumulative incidence and survival functions corresponding to example 4.}
+\label{fig-summary-cfc-nonpar}
+\end{figure}
+
+
+\section{Discussion}\label{section-discussion}
+\textbf{Summary:} Bayesian techniques offer many, well-recognized methodological advantages -- particularly in survival analysis -- including a general estimation framework, consistent treatment and propagation of uncertainty, validity for small (and large) samples, ability to incorporate prior information, ease of model comparison and validation, and natural handling of missing data~\citep{ibrahim2005bayesian}. Translating this broad appeal into widespread \textit{adoption} of Bayesian techniques is critically dependent on the availability of software for their easy and efficient estimation and prediction. Most effort in developing high-performance Bayesian software, however, has been focused on the estimation side, with research covering areas such as efficient~\citep{girolami2011riemann,mahani2015sns}, self-tuning~\citep{homan2014no}, and parallel~\citep{mahani2015simd,gonzalez2011parallel} MCMC sampling, among others. In contrast, relatively little attention has been paid to providing techniques and tools for full Bayesian \textit{prediction}, leaving many practitioners with no choice but to use premature, point summaries of model parameters to produce approximate, mean values for predicted entities. (See, however, \cite{mahani2017mfu}.)
+
+We presented the \proglang{R} package \pkg{CFC} for Bayesian, and non-Bayesian, cause-specific competing-risk analysis of parametric and non-parametric surviva models with an arbitrary number of causes. Three usage modes available in \pkg{CFC} offer a combination of ease-of-use and extensibility: While a single-line call to \code{cfc.survreg} performs parametric survival regression followed by competing-risk analysis, the core function \code{cfc} allows users to include other survival models, including non-parametric ones, in cause-specific competing-risk analysis. The \proglang{R} interface can be used for small data sets and/or non-Bayesian models, where the computational workload is modest. It can also serve as a reference for implementing the \proglang{C++} version of the survival functions in order to significantly improve peformance for computationally-demanding problems. The quadrature algorithm used in \pkg{CFC} can be considered an implicit variable transformation method that circumvents potential end-point singularities, and also enhances usability by removing the need to supply the cause-specific hazard functions. In addition to the \proglang{C++} API, other performance optimization techniques in \pkg{CFC} such as cross-cause work-sharing and \proglang{OpenMP} parallelization have combined to put a full Bayesian approach to survival and competing-risk analysis within the reach of practitioners.
+
+\textbf{Potential future work:} According to Equations~\ref{eq-def-E} and \ref{eq-def-E-2}, we must have:
+\begin{align}
+\sum_k \Delta F_k = - \Delta E = - \Delta \prod_k S_k, \label{eq-conds}
+\end{align}
+where $\Delta$ refers to the change in a quantity during an integration time step. However, the generalized Simpson step (Equations~\ref{eq-gen-simpson} and \ref{eq-gen-simpson-2}), when applied to all causes, does not mathematically satisfy this condition. In other words, the sum of event-free probability and all cumulative incidence functions does not mathematically add up to 1 after discrete time evolutions. Similarly, the generalized trapezoidal rule of Equation~\ref{eq-gen-trap}, when applied to each cause in isolation, does not satisfy this property in general (but it does for $K=2$). It is possible to extend the trapezoidal step to satisfy this property, but without an equivalent extension of the Simpson rule, we would need to develop an alternative approach to error analysis. This is because, absent the Simpson rule as the main method, the trapezoidal step would change role from reference to main method to become the return value of the integral. Developing a coherent framework that satisfies Equation~\ref{eq-conds} and includes proper error analysis is an interesting potential area of research.
+
+In terms of software development, current implementation of \code{cfc.survreg} is \proglang{R} based. This is partially justified since the underlying models, from \pkg{survival} package, are non-Bayesian. Therefore, as long as data sizes are small, computational workloads in \code{cfc.survreg} remain manageable without porting to \proglang{C++}. However, for large data sets this will be inadequate, and therefore a high-performance implementation is warranted to cover the emerging, big-data use-cases.
+
+\proglang{OpenMP} parallelization of \code{cfc} provides an immediate and significant performance gain, but there are other, more advanced opportunities for performance optimization. For example, Single-Instruction, Multiple-Data (SIMD) parallelization has recently been successfully applied to Bayesian problems~\citep{mahani2015simd}. Given the increasing width of vector registers in modern CPUs~\citep{jeffers2013intel}, taking advantage of SIMD parallelization offers an opportunity for meaningful performance improvements. A second area of investigation, especially for large data sets with memory-bound performance ceilings, is reducing data movement throughout the memory hierarchy.
+%As we saw in Section~\ref{}, for large sample sizes in Bayesian problems, parallelization speedup may be sublinear, likely due to reduced cache utilization.
+Techniques such as improving data layout to permit unit-stride access, and NUMA-aware memory allocation to minimize cross-socket data transfer over slower bus interconnects~\citep{mahani2015simd} can help minimize data movement and improve cache and memory bandwidth utilization.
+
+\bibliography{cfc}
+
+\appendix
+
+\section{Proof of generalized Simpson rule}\label{appendix-gen-simpson}
+Our objective is to derive an approximation for $\int_{a}^{b} f(t) \, dg(t)$, using a second-order Taylor-series expansion of $f(t)$ in terms of $g(t)$ over the interval $[a,b]$:
+\begin{align}
+f(t) = f_a + \alpha \, (g(t) - g_a) + \frac{1}{2} \beta \, (g(t) - g_a)^2 \label{eq-quad-exp}
+\end{align}
+where $f_a \equiv f(t=a)$ and similarly for $f_b$, $g_a$ and $g_b$. To find $\alpha$ and $\beta$, we require that this quadratic function passes through $(f_a, g_a)$, $(f_b, g_b)$, and $(f_m, g_m)$, where $f_m \equiv f(m = (a + b) / 2)$, and similarly for $g_m$. Th first of three conditions, at $t=a$, is already satisfied in Equation~\ref{eq-quad-exp}. The next two conditions lead to
+\begin{subequations}
+\begin{align}
+f_b &= f_a + \alpha \, (g_b - g_a) + \frac{1}{2} \beta \, (g_b - g_a)^2, \\
+f_m &= f_a + \alpha \, (g_m - g_a) + \frac{1}{2} \beta \, (g_m - g_a)^2.
+\end{align}
+\end{subequations}
+Solving for $\alpha$ and $\beta$ leads to:
+\begin{subequations}
+\begin{align}
+\alpha &= \frac{(f_m - f_a)(g_b - g_a)^2 - (f_b - f_a)(g_m - g_a)^2}{(g_m - g_a)(g_b - g_m)(g_b - g_a)}, \label{eq-def-alpha} \\
+\beta &= \frac{2 \{ (f_b - f_a)(g_m - g_a) - (f_m - f_a)(g_b - g_a) \}}{(g_m - g_a)(g_b - g_m)(g_b - g_a)}. \label{eq-def-beta}
+\end{align}
+\end{subequations}
+Integrating Equation~\ref{eq-quad-exp} over $[a,b]$ leads to the following approximation:
+\begin{align}
+\int_a^b f(t) \, dg(t) \cong I_{gs}(f,g; a,b) = f_a (g_b - g_a) + \frac{1}{2} \alpha \, (g_b - g_a)^2 + \frac{1}{6} \beta \, (g_b - g_a)^2. \label{eq-Igs-1}
+\end{align}
+Substituting $\alpha$ and $\beta$ from Equations~\ref{eq-def-alpha} and \ref{eq-def-beta} into Equation~\ref{eq-Igs-1}, while defining $g_1 \equiv g_m - g_a$ and $g_2 \equiv g_b - g_m$, and some algebraic manipulation, leads to:
+\begin{align}
+I_{gs} = \frac{g_1 + g_2}{6 \, g_1 \, g_2} \left\{ f_a \, (2 \, g_1 \, g_2 - g_2^2) + f_m \, (g_1 + g_2)^2 + f_b \, (2 \, g_1 \, g_2 - g_1^2) \right\}.
+\end{align}
+A second change of variable, using $h \equiv g_1 + g_2 = g_b - g_a$ and $\delta \equiv g_1 - g_2 = 2 g_m - (g_a + g_b)$ allows us to re-express the above in the following form, after some further algebraic manipulations:
+\begin{align}
+I_{gs} = \frac{1}{6} \frac{h}{h^2 - \delta^2} \left\{ f_a (h^2 + 2 h \delta - 3 \delta^2) + 4 f_m h^2 + f_b (h^2 - 2 h \delta - 3 \delta^2) \right\}.
+\end{align}
+A final symbol definition, $r \equiv h / \delta$, readily leads to Equation~\ref{eq-gen-simpson}.
+
+\section{Setup}\label{appendix-setup}
+Below is the \proglang{R} session information used in producing \proglang{R} output in Section~\ref{section-using}.
+<<eval=FALSE>>=
+sessionInfo()
+@
+<<echo=FALSE>>=
+my.session <- readRDS(file = "session_info.RDS")
+print(my.session)
+@
+
+\end{document}

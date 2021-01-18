@@ -1,0 +1,62 @@
+---
+title: "The glmaag package: adaptive mixture network regularized generalized linear models"
+author: |
+  <center> Kaiqiao Li$^1$, Xuefeng Wang$^2$, and Pei Fen Kuan$^1$
+  <center> $^1$Department of Applied Mathematics and Statistics, Stony Brook University
+  <center> $^2$Department of Biostatistics and Bioinformatics, Moffitt Cancer Center
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+This package allows users to run adaptive mixture network regularized generalized linear models (Gaussian, logistic, and Cox regression). The model looks like
+$$argmax_{\beta}\left\{ \frac{1}{2n}l\left(\beta\right)-\lambda_{1}\sum_{i=1}^{p}w_{i}\left|\beta_{i}\right|-\frac{\lambda_{2}}{2}\left|\beta\right|^{T}L\left|\beta \right|\right\}.$$
+Usually we don't know the proper values for $\lambda_1$ and $\lambda_2$. Here we provided two ways to tune the parameters: cross validation and stability selection. To solve this problem we need a structure of the network. For example
+```{r}
+library(glmaag)
+data(sampledata)
+data(L0)
+y <- sampledata$Y_Gau
+x <- as.matrix(sampledata[, -(1:3)])
+mod <- cv_glmaag(y, x, L0)
+```
+However, in practice it is very common that we don't know the network structure in advance. To address this issue, we can preestimate the network structure
+```{r}
+L1 <- getS(x)
+```
+Or simply we ran the following code
+```{r}
+mod <- cv_glmaag(y, x)
+```
+If we don't specify any network structure, function cv_glmaag can estimate the network automaticaaly.If the user wants to use adaptive elastic net penalty rather than adaptive network penalty, he or she can still use our package with the following statement
+```{r}
+mod <- cv_glmaag(y, x, est = F)
+```
+If we have two network structures but not know which one to use, we can tune the two network by cross validation prdiction
+```{r}
+L <- tune_network(y, x, L0, L1)@est
+```
+If we have a known network and want to mix the known network with a network estimated from the data, we can run
+```{r}
+mod <- cv_glmaag(y, x, L0, tune = T)
+```
+If the user has enough time and want to have a better feature selection accuracy, he or she may perform stablity selection rather than cross validation. Usually we need 100 subsets, but here we do 5 subsets as an example.
+```{r}
+mod <- ss_glmaag(y, x, L0, nsam = 5)
+```
+If we want to get the coeffcients of the model, predict data and evaluate the model we can run the following codes
+```{r}
+coeffi <- coef(mod)
+ypre <- predict(mod)
+evaluate(ypre, y)
+evaluate_plot(ypre, y)
+```
+
+Now the users learn the basic operations of this package. If the user wants a visualized version, one can run the shiny app
+
+runtheExample()
+
+Enjoy the package!

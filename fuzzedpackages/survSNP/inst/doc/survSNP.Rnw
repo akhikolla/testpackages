@@ -1,0 +1,196 @@
+\documentclass[12pt]{article}
+\usepackage[paper=letterpaper,nohead,margin=1in]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+%\usepackage{ragged2e}
+%\VignetteEngine{knitr::knitr}
+%\VignetteIndexEntry{survSNP}
+%\VignetteDepends{lattice,foreach}
+\usepackage{url}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{2ex}
+
+\title{{\tt survSNP}: Power and Sample Size Calculations for SNP Association Studies with Censored Time to Event Outcomes}
+\author{Kouros Owzar \and Zhiguo Li \and Nancy Cox \and Sin-Ho Jung \and Chanhee Yi}
+
+\begin{document}
+\maketitle
+\section{Introduction}
+This vignette serves as a tutorial for using the {\tt survSNP}
+extension package for conducting power and sample size calculations
+for SNP association studies with censored time to event outcomes. 
+We begin by loading the package.
+<<loadpkg>>=
+library(survSNP)
+@ 
+\section{Example 1}
+In this example, we conduct power calculations for a SNP
+for which the relative allelic frequency for the risk allele {\it B}
+is $q=0.1$. The validation data set is assumed to consist of
+$n=500$ patients. The event rate (e.g., death rate) is assumed
+to be $\rho=0.75$ (i.e., \Sexpr{500*0.75} events among 500 patients).
+We hypothesize an effect size (genotype hazard ratio) $\Delta=1.25$.
+Finally, we assume that the median in the population is 1 unit of time
+(i.e., $P(\tilde{T}>t)=0.5$). 
+To find the asymptotic power, at the two-sided $\alpha=0.05$ level,
+the {\tt sim.snp.expsurv.power} function is used.
+<<ex1>>=
+res1<-sim.snp.expsurv.power(1.25, n=500, raf=0.1, erate=0.75, 
+                            pilm=0.5, lm=1, B=0,
+                            model="additive",test="additive",alpha=0.05)
+
+@ 
+Below, we show some of the relevant columns from the output.
+<<printex1run>>=
+res1[,c("n","GHR","erate","raf","B","alpha","pow0","pow","powB")]
+@
+The asymptotic power, at the two-sided $\alpha=0.05$ level,
+is \Sexpr{signif(res1$pow0,2)}.
+Note that we
+are assuming that the median for the survival function
+in the population is 1 unit of time (that is why we have
+set {\tt pilm=0.5} and {\tt lm=1}). If we had desired
+to set power the study based on a population whose 0.7
+quantile is say 2 units of time, we would have set
+ {\tt pilm=0.7} and {\tt lm=2}. 
+The current
+version of the package supports power calculations for
+additive models.
+\par
+By default, the asymptotic power based on the approximate asymptotic
+variance formula is computed. The corresponding column name is 
+{\tt pow0} in the output shown above. The asymptotic power
+based on the exact variance formula (column {\tt pow}) 
+or the empirical power (column {\tt powB}) can be computed
+by setting the arguments {\tt exactvar=TRUE} or {\tt B=b}
+where {\tt b} is a positive integer. Be sure to set a random number
+generation seed when calculating the empirical or the 
+asymptotic power based on the exact variance formula
+to get reproducible results.
+We illustrate these features next. 
+This example is based on $B=10000$
+simulation replicates.
+<<ex1b>>=
+set.seed(123)
+res1b<-sim.snp.expsurv.power(1.25, n=500, raf=0.25, erate=0.75, 
+                             pilm=0.5, lm=1, 
+                             exactvar=TRUE,B=10000,
+                             model="additive",test="additive",alpha=0.05)
+
+@
+The results are shown below.
+<<printex1brun>>=
+res1b[,c("n","GHR","erate","raf","B","alpha","pow0","pow","powB")]
+@
+\section{Example 2}
+For power calculations for SNP association studies with
+censored outcomes, it is generally desired to
+vary the effect size, sample size, event rate and
+the relative minor allele frequency.
+These are denoted by the variable names
+{\tt GHRs}, {\tt ns}, {\tt rafs} and {\tt erates}
+in this example.
+<<ex1setup>>=
+GHRs<-seq(1.05,1.5,by=0.05)
+ns<-c(100,500,700)
+rafs<-c(0.1,0.3,0.5)
+erates<-c(0.5,0.7,0.9)
+@ 
+The function {\tt survSNP.power.table} can be used to generate
+power calculations for this combination of parameters. This is
+a wrapper function for {\tt sim.snp.expsurv.power}.
+<<ex2run>>=
+res2<-survSNP.power.table(GHRs,ns,rafs,erates,
+                         pilm=0.5,lm=1,
+                         model="additive",test="additive",
+                         alpha=0.05)
+@ 
+
+\par
+We print selected columns from the first three rows of
+the previous object next. 
+<<printex2>>=
+res2[1:3,c("n","GHR","erate","raf","pow0","pow","powB")]
+@ 
+Next, we will consider illustrating the previous set of
+results
+using the {\tt lattice} package.
+The power is illustrated in Figure \ref{fig:ex2}. 
+A revised version of this illustration limiting the presentation
+to $n=$\Sexpr{ns[1]} and displaying the type I error rate
+$\alpha$ is shown in Figure \ref{fig:ex2b}.
+
+\begin{figure}[b]
+  \centering
+<<ex1plot>>=
+KEY=paste("q=",levels(factor(res2$raf)),sep="")
+KEY<-list(lines=list(col=1:length(KEY),lty=1:length(KEY)),
+          text=list(labels=paste("q=",levels(factor(res2$raf)),sep="")),
+          column=3)
+print(xyplot(pow0~GHR|factor(erate)*factor(n),group=factor(raf),
+             data=res2,type="l",lty=KEY$lines$lty,col=KEY$lines$col,
+             key=KEY,
+             xlab="Genotype Hazard Ratio",ylab="Power"))
+@   
+\caption{Power Illustration for Example 1.}
+\label{fig:ex2}
+\end{figure}
+
+\begin{figure}[b]
+  \centering
+<<ex2plot>>=
+print(xyplot(pow0~GHR|factor(erate),group=factor(raf),
+             data=subset(res2,n==ns[1]),
+             type="l",lty=KEY$lines$lty,col=KEY$lines$col,
+             key=KEY,
+             xlab="Genotype Hazard Ratio",ylab="Power",
+             sub=paste("n=",ns[1],", alpha=",round(unique(res2$alpha),2))))
+@   
+\caption{Power Illustration for Example 1 (restricted to $n=$\Sexpr{ns[1]}).}
+\label{fig:ex2b}
+\end{figure}
+
+\section{Example 3}
+We can also use the
+{\tt xtable} package to summarize the results in a table.
+For this illustration, we consider a subset of the rows
+from Example 2.
+<<res3>>=
+cols<-c("n","GHR","erate","raf","pow0")
+res3<-subset(res2,GHR==1.25&raf==0.3&n==500,select=cols)
+res3
+@ 
+The corresponding table generated by {\tt xtable} is
+shown in Table~\ref{tab:ex3}.
+\begin{table}[h]
+  \centering
+<<tab,results='asis'>>=
+print(xtable(res3,digits=c(0,0,1,1,1,3)),
+      include.rownames=FALSE,floating=FALSE)
+@ 
+\caption{Tabular summary of the results from Example 2}
+\label{tab:ex3}
+\end{table}
+
+
+
+\section{Miscellaneous}
+The function {\tt survSNP.power.table} is a straightforward implementation of nested {\tt foreach} loops. In oder to maintain reproducibility of the randomly generated simulations, the loops are executed sequentially. 
+A vignette in the {\tt doRNG} package provides simple examples of how the code could be modified to run in parallel, while maintaining reproducible random number generation \url{https://cran.r-project.org/web/packages/doRNG/vignettes/doRNG.pdf}. 
+[The {\tt doRNG} package itself is not required to implement this functionality]. Note that some consideration should be given as to which parameter(s) to parallelize across, in order to maximize use of available processing cores and minimize I/O overhead.
+\par
+The {\tt tikzDevice} and {\tt latticeExtra} packages can be used 
+to considerably refine the illustrations. The software development
+repository provides some examples
+\url{bitbucket.org/kowzar/survsnp/}.
+\par
+The session information for this vignette is provided in Table~\ref{tab:session}
+
+\begin{table}[b]
+<<sessioninfo,results='asis',echo=FALSE>>=
+print(toLatex(sessionInfo()))
+@ 
+\caption{Session Information}
+\label{tab:session}
+\end{table}
+\end{document}

@@ -1,0 +1,182 @@
+---
+title: Using \pkg{reticulate} to read and write \pkg{NumPy} files
+
+author:
+  - name: Dirk Eddelbuettel
+    affiliation: 1
+address:
+  - code: 1
+    address: http://dirk.eddelbuettel.com
+
+lead_author_surname: Eddelbuettel
+
+doi: "https://cran.r-project.org/package=RcppCNPy"
+
+abstract: |
+  This vignette shows how to use the \pkg{reticulate} package to directly
+  access the \pkg{NumPy} module for \proglang{Python}.
+
+footer_contents: "RcppCNPy Vignette"
+
+output: 
+    pinp::pinp:
+      collapse: true
+
+header-includes:
+  \newcommand{\proglang}[1]{\textsf{#1}}
+  \newcommand{\pkg}[1]{\textbf{#1}}
+  \newcommand{\R}{\proglang{R}\ } 
+  \newcommand{\Rns}{\proglang{R}} 
+
+bibliography: RcppCNPy.bib
+
+vignette: >
+  %\VignetteIndexEntry{RcppCNPy-reticulate}
+  %\VignetteKeywords{Python, NumPy, R, data transfer}
+  %\VignettePackage{RcppCNPy}
+  %\VignetteEngine{knitr::rmarkdown}
+---
+
+
+```{r echo = FALSE, message = FALSE}
+```{r echo = FALSE, message = FALSE}
+knitr::opts_chunk$set(python.reticulate = TRUE)
+if (identical(Sys.info()[['sysname']], "Windows")) {
+    knitr::opts_chunk$set(eval = FALSE)                                      
+    msg <- paste("Note: Some examples in this vignette require Python", 
+                 "but you are running this vignette on Windows where Python",
+                 "is much less likely to be present, or even known to be",
+                 "missing (i.e. win-builder) so examples will not be evaluated.")
+    msg <- paste(strwrap(msg), collapse="\n")
+    message(msg) 
+}
+options(width=50)
+```
+
+# Motivation
+
+The \pkg{RcppCNPy} package by \citet{JOSS:RcppCNPy} provides a simple and
+reliable access to \pkg{NumPy} files.  It does not require \proglang{Python} as it
+relies on the \pkg{cnpy} library which is connected to \proglang{R} with the help
+of \pkg{Rcpp} \pkg{Rcpp} \shortcites{CRAN:Rcpp}
+\citep{JSS:Rcpp,Eddelbuettel:2013:Rcpp,CRAN:Rcpp}.
+
+Now, thanks to the \pkg{reticulate} package by \citet{CRAN:reticulate}, we
+can consider an alternative which does not require \pkg{cnpy}--but which requires
+Python.  We can (on a correctly set up machine, how to do that is beyond the
+scope of this note but described in the reticulate documentation) use Python
+to read \pkg{NumPy} data via \pkg{reticulate}.  
+
+```{r prep, include=FALSE, eval=TRUE}
+file.copy("../tests/fmat.npy", ".")  
+file.copy("../tests/fmat.npy.gz", ".")  
+file.copy("../tests/fvec.npy", ".")  
+file.copy("../tests/imat.npy", ".")  
+file.copy("../tests/ivec.npy", ".")  
+```
+
+This short note reproduces all the examples in the primary \pkg{RcppCNPy}
+vignette, but using \pkg{reticulate} instead of \pkg{cnpy}.
+
+# Simple Examples
+
+```{r ex1}
+# load reticulate and use it to load numpy
+library(reticulate)    
+np <- import("numpy")
+
+# data reading
+mat <- np$load("fmat.npy")
+mat
+
+vec <- np$load("fvec.npy")
+vec
+```
+
+Integer data can be read the same way:
+
+```{r ex2}
+imat <- np$load("imat.npy")
+imat
+```
+
+# Compressed Files
+
+The gzip \proglang{Python} module allows us to access compressed files.
+
+```{r ex3}
+# use the gzip modules for compressed data  
+gz <- import("gzip")  
+# use it to create handle to uncompressed file 
+mat2 <- np$load(gz$GzipFile("fmat.npy.gz","r"))
+mat2
+```
+
+
+# Saving Files
+
+Similarly, files can be saved via reticulate access to \pkg{NumPy}.
+
+```{r ex4}
+tfile <- tempfile(fileext=".npy")
+set.seed(42)
+m <- matrix(sort(rnorm(6)), 3, 2)
+m
+np$save(tfile, m)
+
+m2 <- np$load(tfile)
+m2
+
+all.equal(m, m2)
+```
+
+
+# Savez Array Files
+
+We can also access `savez` files.  
+
+First we save two vectors two different ways:
+
+```{r ex5}
+x <- seq(1, 10)
+y <- sin(x)
+np$savez("file1.npz", x, y)
+np$savez("file2.npz", x=x, y=y)
+```
+
+We can access these files with and without names:
+
+```{r ex6}
+npz1 <- np$load("file1.npz")
+npz1$files
+npz1$f[["arr_0"]]
+npz1$f[["arr_1"]]
+```
+
+Ditto for the second file:
+
+```{r ex7}
+npz2 <- np$load("file2.npz")
+npz2$files
+npz2$f[["x"]]
+npz2$f[["y"]]
+```
+
+
+# Summary
+
+While the \pkg{RcppCNPy} package provides functions for the simple reading
+and writing of \pkg{NumPy} files, we can also use the \pkg{reticulate}
+package to access the \pkg{NumPy} functionality directly from \Rns.
+
+
+```{r cleanup, include=FALSE}
+unlink("fmat.npy")  
+unlink("fmat.npy.gz")  
+unlink("fvec.npy")  
+unlink("imat.npy")  
+unlink("ivec.npy")  
+unlink("file1.npz")  
+unlink("file2.npz")  
+```
+

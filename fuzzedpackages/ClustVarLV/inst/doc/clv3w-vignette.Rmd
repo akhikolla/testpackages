@@ -1,0 +1,114 @@
+---
+title: "CLV3W: Clustering around latent variables with Three-Way data"
+author: "Veronique Cariou"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Clustering Three-Way data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+# Clustering around latent variables in the scope of Three-Way data
+The functions associated with CLV3W are dedicated to the clustering around latent variables in the context of Three-Way data. Such data are structured as three-way arrays and the purpose is to cluster the second mode corresponding to the various variables (see Wilderjans and Cariou, 2016; Cariou and Wilderjans, 2018).
+
+```{r}
+library(ClustVarLV)
+#library(clv3w)
+```
+
+For illustration, we consider the "coffee" dataset which corresponds to consumer emotions associated with a variety of coffee aromas (Cariou and Wilderjans, 2018). 
+
+```{r}
+data(coffee)
+# 12 coffee aromas rated by 84 consumers on 15 emotion terms
+```
+
+
+## Clustering of the consumers 
+
+The aim is to find groups of consumers. Herein "directional" groups are sought.
+Each group is associated with a latent component which makes it possible to identify the underlying sensory dimensions.
+
+```{r, results="hide"}
+resclv3w_coffee<-CLV3W(coffee,mode.scale=2,NN=TRUE,moddendoinertie=TRUE,graph=TRUE,gmax=11,cp.rand=1)
+# option NN=TRUE means that consumers within a group must be positively correlated with its latent component, otherwise its loading is set to 0 
+
+# Print of the 'clv3W' object 
+print(resclv3w_coffee)
+```
+
+```{r, fig.width=3, fig.height=3}
+# Dendrogram of the CLV3W hierarchical clustering algorithm :
+plot(resclv3w_coffee,"dendrogram")
+# Graph of the variation of the associated clustering criterion
+plot(resclv3w_coffee,"delta")
+```
+
+The graph of the variation of the clustering criterion between a partition into K clusters and a partition into (K-1) clusters (after consolidation) is useful for determining the number of clusters to be retained.
+Because the criterion clearly jumps when passing from 3 to 2 groups,  a partition into 2 groups is retained.
+
+
+```{r}
+# Summary the CLV3W results for a partition into 2 groups
+summary(resclv3w_coffee,K=2)
+```
+
+The function plot\_var.clv3w() allows us to describe the groups of variables into a two dimensional space obtained by Candecomp Parafac. 
+Several options are available for the choice of the axes, for adding labels, producing a plot without colours but symbols, having only one plot or a plot by groups of variables. When mode3 is set to TRUE, an additional plot is displayed corresponding to the coordinates of the mode1 elements on the global scores of Parafac together with a projection of the mode 3 elements on it.
+
+```{r, fig.width=4, fig.height=4}
+# Representation of the group membership for a partition into 4 groups
+plot_var.clv3w(resclv3w_coffee,K=2,labels=TRUE,cex.lab=0.8,beside=TRUE,mode3=FALSE)
+```
+or
+```{r, fig.width=6, fig.height=6}
+plot_var.clv3w(resclv3w_coffee,K=2,labels=TRUE,cex.lab=0.8,beside=FALSE,mode3=TRUE)
+```
+
+Additional functions :
+```{r, results="hide"}
+# Extract the group membership of each variable
+get_partition(resclv3w_coffee,2)
+
+# Extract the group latent variables 
+get_comp(resclv3w_coffee,2)
+
+# Extract the vector of loadings of the variables 
+get_loading(resclv3w_coffee,2)
+
+# Extract the vector of weights associated with mode3
+get_weight(resclv3w_coffee,2)
+
+```
+
+## Using the CLV3W_kmeans function
+
+This procedure is less time consuming with a large number of variables (mode2).
+The number of clusters needs to be fixed (e.g.2). 
+
+The initialization of the algorithm  can be made at random, "init" times, while
+the number of starts associated with Candecomp Parafac is set up with cp.rand :
+```{r}
+res.clv3wkm.rd<-CLV3W_kmeans(coffee,2,mode.scale=2,NN=TRUE,init=20,cp.rand=2)
+```
+It is possible to compare the partitions according to the procedure used :
+```{r}
+table(get_partition(resclv3w_coffee,K=2),get_partition(res.clv3wkm.rd,K=2)) 
+```
+
+## References
+
+Cariou, V., & Wilderjans, T. F. (2018). Consumer segmentation in multi-attribute product evaluation by means of non-negatively constrained CLV3W. _Food Quality and Preference_, 67, 18-26.
+
+
+Wilderjans, T. F., & Cariou, V. (2016). CLV3W: A clustering around latent variables approach to detect panel disagreement in three-way conventional sensory profiling data. _Food Quality and Preference_, 47, 45-53.
+
+

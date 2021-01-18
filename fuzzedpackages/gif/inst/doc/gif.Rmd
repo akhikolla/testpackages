@@ -1,0 +1,124 @@
+---
+title: "gif: Graphical Independence Filtering for Learning Large-Scale Sparse Graphical Models"
+author: "Shiyun Lin, linshy27@mail2.sysu.edu.cn"
+date: "May 15, 2020"
+
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{gif: Graphical Independence Filtering for Learning Large-Scale Sparse Graphical Models}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(comment = "#", warning = FALSE, eval = TRUE, message = FALSE)
+set.seed(1)
+library(gif)
+```
+
+## Introduction
+One of the fundamental problems in data mining and statistical analysis is to detect the relationships among a set of variables. To this end, researchers apply undirected graphical models in work, which combine graph theory and probability theory to create networks that model complex probabilistic relationships. By estimating the underlying graphical model, one can capture the direct dependence between variables. In the last few decades, undirected graphical models have attracted numerous attention in various areas such as [genetics](https://www.e-ceo.org/journal/Figure.php?xn=ceo-8-345.xml&id=F2-ceo-8-345&number=394&p_name=1044_394), [neuroscience](http://blog.myesr.org/mri-reveals-the-human-connectome/), [finance](https://networkdatascience.ceu.edu/article/2017-03-13/shock-propagation-and-regulation-interacting-economic-networks), [social science](https://www.sciencedirect.com/topics/computer-science/social-network-analysis) and [machine learning](http://clockworkchaos.com/project7/?q=taxonomy/term/8).
+
+<img src="application.png" width="700">
+
+When the data is multivariate Gaussian distributed, detecting the graphical model is equivalent to estimating the inverse covariance matrix. **gif** package provides efficient solutions for this problem. The core functions in **gif** package are **hgt** and **sgt**.
+
+These functions based on graphical independence filtering have several advantages:
+
+- It's applicable to high-dimensional multivariate data and is comparable to or better than the state-of-the-art methods in respect to both graph structure recovery and parameter estimation.
+
+- The program is very efficient and can provide solutions for problem with over 10,000 variables in less than one minute. The following table shows the time comparison of **gif** functions and other efficient approaches. 
+
+| Method  | \(p = 1000\) | \(p = 4000\) | \(p = 10000\) | 
+| ------  | ------------ | ------------ | ------------- | 
+|  hgt    | 0.395s       | 6.668s       | 46.993s       | 
+|  sgt    | 0.225s       | 3.099s       | 21.454s       | 
+|  QUIC   | 1.580s       | 117.041s     | 1945.648s     | 
+|fastclime| 62.704s      | ***          | ***           | 
+
+- It has comparable performance when dealing with continuous data under various distributions though it was designed for multivariate Gaussian distribution.
+
+Particularly, **hgt** provides a solution for best subset selection problem in Gaussian graphical models and **sgt** offers closed-form solution equivalent to *graphical lasso* when the graph structure is acyclic.
+
+       
+
+## Installation        
+### CRAN version         
+To install the **gif** R package from CRAN, just run:     
+```{r,eval=FALSE}
+install.packages("gif")
+```
+
+### Github version       
+To install the development version from Github, run:
+```{r, eval=FALSE}
+library(devtools)
+install_github("Mamba413/gif/R-package", build_vignettes = TRUE)
+```
+
+*Windows* user will need to install [Rtools](https://cran.r-project.org/bin/windows/Rtools/) first. 
+```{r, echo=FALSE}
+library(gif)
+```
+
+## Usage
+Take a synthetic dataset as a simple example to illustrate how to use **hgt** and **sgt** to estimate the underlying graphical model.
+
+### Simulated Data
+Using the function **ggm.generator**, we extract 200 samples from the graphical model with \(p = 100\) and whose graph structure is the so-called *AR(1)*. A sketch of the example could be seen in the following picture.
+
+```{r}
+set.seed(1)
+n <- 200
+p <- 100
+Omega <- diag(1, p, p)
+for(i in 1:(p - 1)) {
+  Omega[i, i + 1] <- 0.5
+  Omega[i + 1, i] <- 0.5
+}
+x <- ggm.generator(n, Omega)
+```
+
+<img src="example.png" width="500"> 
+
+### **hgt**
+For *Hard Graphical Thresholding* algorithm, users could choose to estimate the underlying model with given model size or given active entries. 
+
+When the model size in given, the program would return a \(p \times p\) matrix with number of non-zero off-diagonal entries equal to the given model size and a \(K \times 2\) matrix marks down the corresponding active entries.
+
+```{r}
+non_zero_num <- sum(Omega != 0) - p
+res <- hgt(x, size = non_zero_num / 2)
+Omega_hat <- as.matrix(res[["Omega"]])
+head(Omega_hat[, 1:6])
+active.entry <- res[["active.entry"]]
+head(active.entry)
+```
+
+When the active entries are given directly, the model fitting procedure is the so-called covariance selection and the program would return a \(p \times p\) matrix whose non-zero off-diagonal entries correspond to the given active entries.
+
+```{r, eval=FALSE}
+non_zero_index <- which(as.matrix(Omega) != 0, arr.ind = TRUE)
+active.entry <- non_zero_index[which(non_zero_index[,1] < non_zero_index[,2]),]
+res <- hgt(x, active.entry = active.entry)
+```
+
+### **sgt**
+For *Soft Graphpical Thresholding* algorithm, users could choose to estimate the underlying model with given model size or given regularization parameter \(\lambda\). In the *return*, we not only provide the parameter matrix and the corresponding active entries mentioned above, but also a boolean flag indicating whether the estimated graph structure is acyclic or not, since the solution would be equivalent to *graphical lasso* if the graph is acyclic.
+
+The usage is similar to **hgt** when model size is given, and when regularization parameter is given, users could proceed as follows.
+
+```{r}
+res <- sgt(x, lambda = 0.01)
+res[["is.acyclic"]]
+```
+
+## License
+GPL (>= 2)
+
+## Reference
+- Luo, Shikai, Rui Song, and Daniela Witten (2014). [Sure Screening for Gaussian Graphical Models](https://arxiv.org/abs/1407.7819). arXiv preprint arXiv:1407.7819. 
+- Dempster, A.P. (1972). [Covariance Selection](https://www.jstor.org/stable/2528966). Biometrics, 28(1), 157-175. 
+- Fattahi, Salar, and Somayeh Sojoudi. [Graphical Lasso and Thresholding: Equivalence and Closed-form Solutions](http://jmlr.org/papers/v20/17-501.html). Journal of Machine Learning Research 20.10 (2019): 1-44. 

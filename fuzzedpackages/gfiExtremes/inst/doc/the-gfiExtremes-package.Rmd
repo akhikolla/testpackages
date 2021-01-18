@@ -1,0 +1,116 @@
+---
+title: "The 'gfiExtremes' package"
+output: 
+  rmarkdown::html_vignette:
+    css: vignette.css
+vignette: >
+  %\VignetteIndexEntry{The 'gfiExtremes' package}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 6,
+  fig.height = 5
+)
+```
+
+The 'gfiExtremes' package offers two main functions: `gfigpd1` and `gfigpd2`. 
+Each of them generates simulations from the fiducial distribution of a model 
+involving the generalized Pareto distribution. The difference is that the 
+threshold $\mu$ of the generalized Pareto distribution is assumed to be known 
+by `gfigpd1`, whereas `gfigpd2` estimates this threshold. 
+
+The algorithms are implemented in C++. They are translated from the original R
+code written by the authors of the reference paper. 
+
+### Note 
+
+The package allows to run some MCMC chains in parallel. In the examples below, 
+as well as in the examples of the package documentation, I set `nthreads = 2L` 
+because of CRAN restrictions: CRAN does not allow more than two R processes in 
+parallel and then it would not accept the package if a higher number of threads 
+were set.
+
+```{r setup, message=TRUE}
+library(gfiExtremes)
+```
+
+## The model with a known threshold
+
+When the threshold $\mu$ is known, it is assumed that the data are independent 
+realizations of a random variable $X$ which follows a generalized Pareto 
+distribution $GP(\mu,\gamma,\sigma)$ conditionally to $X \geqslant \mu$. On the 
+event $X < \mu$, no distributional assumption is made.
+
+Then the algorithm performed by the `gfigpd1` function produces some simulations
+of the fiducial distributions of $\gamma$, $\sigma$ and of the 
+$100\beta\%$-quantiles of $X$ at the requested values of $\beta$. These are 
+MCMC chains.
+
+For example, assume that $X$ follows the $GP(\mu,\gamma,\sigma)$ distribution 
+(so $X < \mu$ never happens). 
+
+```{r gfigpd1}
+set.seed(666L)
+X <- rgpareto(200L, mu = 10, gamma = 0.3, sigma = 2)
+gf1 <- gfigpd1(
+  X, beta = c(0.99, 0.995, 0.999), threshold = 10, iter = 10000L,
+  nchains = 4L, nthreads = 2L
+)
+```
+
+The output of `gfigpd1` is a R object ready for analysis with the 'coda' 
+package. In particular, it has a `summary` method.
+
+```{r summary_gfigpd1}
+summary(gf1)
+# compare with the true quantiles:
+qgpareto(c(0.99, 0.995, 0.999), mu = 10, gamma = 0.3, sigma = 2)
+```
+
+Every parameter is very well estimated by the median of its fiducial 
+distribution.
+
+We can get the shortest fiducial confidence intervals with the 'coda' function 
+`HPDinterval`:
+
+```{r hpd_gfigpd1}
+HPDinterval(joinMCMCchains(gf1))
+```
+
+
+## The model with an unknown threshold
+
+When the threshold $\mu$ is unknown, it is also assumed that the data are
+independent realizations of a random variable $X$ which follows a generalized
+Pareto distribution $GP(\mu,\gamma,\sigma)$ conditionally to $X \geqslant \mu$, 
+but there are additional assumptions. 
+
+These additional assumptions have no meaningful interpretation but this is not 
+important in order to estimate the quantiles of $X$: it is possible that the
+parameters $\gamma$ and $\sigma$ cannot be estimated (it is always possible if 
+$X$ strictly follows the unrealistic assumptions of the model) but $\mu$ can 
+always be estimated and the fiducial distributions of the quantiles are 
+available.
+
+Let's assume for example that $X$ follows a log-normal distribution:
+
+```{r gfigpd2}
+set.seed(666L)
+X <- rlnorm(400L, meanlog = 1)
+gf2 <- gfigpd2(
+  X, beta = c(0.99, 0.995, 0.999), iter = 10000L, burnin = 10000L,
+  nchains = 4L, nthreads = 2L
+)
+summary(gf2)
+# compare with the true quantiles:
+qlnorm(c(0.99, 0.995, 0.999), meanlog = 1)
+```
+
+As you can see, the inference on the quantiles is good.

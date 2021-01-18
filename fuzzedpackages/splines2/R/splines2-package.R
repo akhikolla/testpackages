@@ -1,0 +1,47 @@
+##
+## R package splines2 by Wenjie Wang and Jun Yan
+## Copyright (C) 2016-2020
+##
+## This file is part of the R package splines2.
+##
+## The R package splines2 is free software: You can redistribute it and/or
+## modify it under the terms of the GNU General Public License as published by
+## the Free Software Foundation, either version 3 of the License, or any later
+## version (at your option). See the GNU General Public License at
+## <https://www.gnu.org/licenses/> for details.
+##
+## The R package splines2 is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+##
+
+##' splines2: Regression Spline Functions and Classes
+##'
+##' This package provides functions to construct basis matrix of
+##' \itemize{
+##' \item B-splines
+##' \item M-splines
+##' \item I-splines
+##' \item convex splines (C-splines)
+##' \item generalized Bernstein polynomials
+##' \item their integrals (except C-splines) and derivatives of given order by
+##' close-form recursive formulas
+##' }
+##'
+##' In addition to the R interface, it also provides a C++ header-only library
+##' integrated with \pkg{Rcpp}, which allows construction of spline basis matrix
+##' directly in C++ with the help of \pkg{Rcpp} and \pkg{RcppArmadillo}.  So it
+##' can also be treated as one of the \pkg{Rcpp*} packages.  A toy example
+##' package that uses the C++ interface is available at
+##' <https://github.com/wenjie2wang/example-pkg-Rcpp-splines2>.
+##'
+##' It is named after the \pkg{splines} package:
+##' "Regression Spline Functions and Classes". The tailing number two is simply
+##' "too" (and by no means for the generation two).
+##'
+##' @importFrom Rcpp sourceCpp
+##' @useDynLib splines2
+##'
+##' @docType package
+##' @name splines2
+NULL

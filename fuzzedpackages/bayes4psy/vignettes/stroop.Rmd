@@ -1,0 +1,147 @@
+---
+  title: "Analysis of the Stroop experiment data using the Bayesian t-test"
+  author: "Jure Demšar, Erik Štrumbelj and Grega Repovš"
+  date: "`r Sys.Date()`"
+  output:
+    html_vignette:
+    toc: yes
+---
+
+<!--
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteIndexEntry{b_ttest: Bayesian t-test}
+-->
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# knitr options
+knitr::opts_chunk$set(fig.width=6, fig.height=4.5)
+options(width=800)
+```
+
+# Introduction
+
+The Stroop test showed that when the stimuli is incongruent -- the name of a color is printed in different ink than the one denoted by its name -- naming the color takes longer and is more error-prone than naming the color of a rectangle or a set of characters that does not form a word.
+
+In our version of the Stroop test participants were faced with four types of conditions:
+
+* Reading neutral -- the name of the color was printed in black ink, the participant had to read the color's name.
+* Naming neutral -- string XXXXX was written in colored ink (red, green or blue), the participant had to name the ink color.
+* Reading incongruent -- name of the color was printed in incongruent ink, the participant had to read the written name of the color.
+* Naming incongruent -- name of the color was printed in incongruent ink, the participant had to name the ink color.
+
+In each of the listed conditions the participants had to name or read 100 stimuli presented on an A4 sheet of paper organized in 5 columns of 20 stimuli as quickly as possible. The specific order of the stimuli was pseudo-random and balanced across the sheet. We recorded the time to complete each sheet. 
+
+We are primarily interested in expected task completion times. Since our data is composed from averaged reading times we can use the Bayesian t-test. The nature of the Stroop test requires the use of t-test for dependent samples. This example first shows how to execute the Bayesian t-test for dependent samples and in the second part for illustrative purposes only also how to execute the Bayesian t-test for independent samples. The example for independent samples also shows how to use \pkg{bayes4psy} to compare multiple groups simultaneously, such a comparison makes sense only when working with independent groups.
+
+To execute the Bayesian t-test for dependent samples we first have to calculate the difference between the samples and then perform Bayesian modelling on those differences. The example below compares reading times between neutral and incongruent cases. Note that all fitting processes use an extremely small amount of iterations (100 warmup and 100 sampling). To increase the building speed of vignettes we greatly reduced the amount of iterations, use an appropriate amount of iterations when executing actual analyses!
+
+```{r, message=FALSE, warning=FALSE, results = 'hide'}
+# libs
+library(bayes4psy)
+library(ggplot2)
+
+# load data
+data <- stroop_simple
+
+# reading incongruent vs reading neutral
+ri_vs_rn <- data$reading_incongruent - data$reading_neutral
+
+# fit
+fit_ri_vs_rn <- b_ttest(ri_vs_rn,
+                        iter=200, warmup=100, chains=1)
+
+# traceplot
+#plot_trace(fit_ri_vs_rn)
+```
+
+Once we fit the Bayesian t-test model to the differences between the reading neutral and reading incongruent conditions, we can compare whether the means differ from 0.
+
+```{r, message=FALSE, warning=FALSE}
+# libs
+# compare the fit with 0
+comparison <- compare_means(fit_ri_vs_rn, mu=0)
+```
+
+Since the 95\% HDI of means ([2.03, 3.94]) lies above 0 we can confidently claim that subject's read neutral stimuli faster than incongruent stimuli. In a similar fashion we can also execute a comparison between other pairs of conditions.
+
+The examples that follow are for illustrative purposes only, they analyze the Stroop data under the assumption that the sample are independent. This example is included mainly to explain how we can use this package to compare multiple groups simultaneously. This example also includes priors, we based them on our previous experience with similar tasks -- participants finish the task in approximately 1 minute and the typical standard deviation for a participant is less than 2 minutes.
+
+```{r, message=FALSE, warning=FALSE, results = 'hide'}
+# priors
+mu_prior <- b_prior(family="normal", pars=c(60, 30))
+sigma_prior <- b_prior(family="uniform", pars=c(0, 120))
+priors <- list(c("mu", mu_prior),
+               c("sigma", sigma_prior))
+
+# fit
+fit_reading_neutral <- b_ttest(data$reading_neutral,
+                               priors=priors,
+                               iter=200, warmup=100, chains=1)
+
+fit_reading_incongruent <- b_ttest(data$reading_incongruent,
+                                   priors=priors,
+                                   iter=200, warmup=100, chains=1)
+
+fit_naming_neutral <- b_ttest(data$naming_neutral,
+                              priors=priors,
+                              iter=200, warmup=100, chains=1)
+
+fit_naming_incongruent <- b_ttest(data$naming_incongruent,
+                                  priors=priors,
+                                  iter=200, warmup=100, chains=1)
+```
+
+Next we perform MCMC diagnostics and visual checks of model fits.
+
+```{r, message=FALSE, warning=FALSE}
+# trace plots
+#plot_trace(fit_reading_neutral)
+#plot_trace(fit_reading_incongruent)
+#plot_trace(fit_naming_neutral)
+plot_trace(fit_naming_incongruent)
+
+# check fit
+# the commands below are commented out for the sake of brevity
+#print(fit_reading_neutral)
+#print(fit_reading_incongruent)
+#print(fit_naming_neutral)
+#print(fit_naming_incongruent)
+
+# visual inspection
+#plot(fit_reading_neutral)
+#plot(fit_reading_incongruent)
+#plot(fit_naming_neutral)
+plot(fit_naming_incongruent)
+```
+
+There were no reasons for concern, several commands in the example above are commented out for brevity. In practice, we should of course always perform these steps. We proceed by cross-comparing several fits with a single line of code.
+
+```{r, message=FALSE, warning=FALSE}
+# join all fits but the first in a list
+fit_list <- c(fit_reading_incongruent,
+              fit_naming_neutral,
+              fit_naming_incongruent)
+
+# compare all fits simultaneously
+multiple_comparison <- compare_means(fit_reading_neutral,
+                                     fits=fit_list)
+```
+
+When we compare more than 2 fits, we also get an estimate of the probabilities that a group has the largest or the smallest expected value. Based on the above output, the participants are best at the reading neutral task (Group 1), followed by the reading incongruent task (Group 2) and the naming neutral task (Group 3). They are the worst at the naming incongruent task (Group 4). This ordering is true with very high probability, so we can conclude that both naming and incongruency of stimuli increase response times of subjects, with naming having a bigger effect. We can also visualize this in various ways, either as distributions of mean times needed to solve the given tasks (with the **plot_means** function) or as a difference between these means (with the **plot_means_difference** function).
+
+```{r, message=FALSE, warning=FALSE}
+plot_means(fit_reading_neutral, fits=fit_list) +
+  scale_fill_hue(labels=c("Reading neutral",
+                          "Reading incongruent",
+                          "Naming neutral",
+                          "Naming incongruent")) +
+  theme(legend.title=element_blank())
+```
+Above is a visualization of means for all four types of Stroop tasks X-axis (value) denotes task completion time. Naming and incongruency conditions make the task more difficult, with naming having a bigger effect.
+
+```{r, message=FALSE, warning=FALSE, fig.height=9, fig.width=8}
+plot_means_difference(fit_reading_neutral, fits=fit_list) 
+```
+
+The figure above visualizes the differences in the mean task completion times for the four conditions. Row and column 1 represent the reading neutral task, row and column 2 the reading incongruent task, row and column 3 the naming neutral task and row and column 4 the naming incongruent task. Since 95% HDI intervals in all cases exclude 0 we are confident that the task completion times are different.

@@ -1,0 +1,99 @@
+Rcpp_object <- Rcpp::cppFunction('NumericVector simFunction(NumericVector pars, double tstart, double tstop, IntegerVector u) { 
+
+    // initialise variables
+    double tstar = 0.0, u_tmp = 0.0, totrate = 0.0, cumrate = 0.0;
+    int i = 0;
+    
+    // initialise time and rates of the system
+    double t = tstart;
+    NumericVector rates(2);
+
+    // update rates
+    rates[0] = pars[0]*u[0]*u[1];
+    rates[1] = pars[1]*u[1];
+    totrate = sum(rates);
+    
+    // check states
+    for(i = 0; i < u.size(); i++){
+        if(u[i] < 0) {
+            stop("Some states less than zero");
+        }
+    }
+    
+    // check rates
+    for(i = 0; i < rates.size(); i++){
+        if(R_FINITE(rates[i])) {
+            if(rates[i] < 0.0) {
+                stop("Some rates less than zero or non-finite");
+            }
+        } else {
+            stop("Some rates are non-finite");
+        }
+    }
+
+    // set up output vector
+    NumericVector out(u.size() + 2);
+    
+    // sample next event time
+    if(totrate > 0.0) {
+        tstar = t + R::rexp(1.0 / totrate);
+        while(tstar < tstop){
+            // update event type
+            u_tmp = R::runif(0.0, totrate);
+            cumrate = rates[0];
+            if(u_tmp < cumrate) {
+                u[0]--;
+                u[1]++;
+            } else {
+                u[1]--;
+                u[2]++;
+            }
+        
+            // update rates
+            rates[0] = pars[0]*u[0]*u[1];
+            rates[1] = pars[1]*u[1];
+            totrate = sum(rates);
+            
+            // check states
+            for(i = 0; i < u.size(); i++){
+                if(u[i] < 0) {
+                    stop("Some states less than zero");
+                }
+            }
+            
+            // check rates
+            for(i = 0; i < rates.size(); i++){
+                if(R_FINITE(rates[i])) {
+                    if(rates[i] < 0.0) {
+                        stop("Some rates less than zero or non-finite");
+                    }
+                } else {
+                    stop("Some rates are non-finite");
+                }
+            }
+            
+            // update time
+            t = tstar;
+            
+            // sample next event time
+            if(totrate > 0.0) {
+                tstar = t + R::rexp(1.0 / totrate);
+            } else {
+                tstar = tstop;
+            }
+        }
+    }
+    
+    // record final event time
+    if(totrate > 0.0) {
+        t = tstop;
+    }
+    
+    // set output
+    out[0] = (totrate == 0.0 ? 1:0);
+    out[1] = t;
+    out[Range(2, u.size() + 1)] = as<NumericVector>(u);
+    
+    // return output
+    return out;
+}')

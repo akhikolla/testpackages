@@ -1,0 +1,194 @@
+---
+title: "Cox Mixed-Effects Models for Genome-Wide Association Studies"
+author: "Liang He"
+date: "`r Sys.Date()`"
+bibliography: "references.bib"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Cox Mixed-Effects Model for Genome-Wide Association Studies}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+# library(knitcitations)
+# cleanbib()
+# options("citation_format" = "pandoc")
+# r<-citep("10.1534/genetics.119.302940")
+# write.bibtex(file="references.bib")
+```
+
+
+## Overview
+
+Time-to-event is one of the most important phenotypes in genetic epidemiology. The R-package, "coxmeg", provides a set of utilities to fit a Cox mixed-effects model and to efficiently perform genome-wide association analysis of time-to-event phenotypes using a Cox mixed-effects model. More details can be found in [@He_2020].
+
+## Installation
+
+### Most-recent version
+```{r,eval=FALSE}
+install.packages("coxmeg", repos="http://R-Forge.R-project.org")
+```
+
+## Functions
+
+The current version provides four functions.
+
+  *  `coxmeg`: Fit a Cox mixed-effects model.
+  *  `coxmeg_m`: Perform a GWAS using a genotype matrix.
+  *  `coxmeg_plink`: Perform a GWAS using plink files.
+  *  `fit_ppl`: Estimate HRs given a variance component.
+
+## Fit a Cox mixed-effects model with a sparse relatedness matrix
+
+We illustrate how to use coxmeg to fit a Cox mixed-effects model with a sparse relatedness matrix. We first simulate a block-diagonal relatedness matrix for a cohort consisting of 200 families, each of which has five members.
+
+```{r,echo=TRUE}
+library(coxmeg)
+library(MASS)
+library(Matrix)
+n_f <- 200
+mat_list <- list()
+size <- rep(5,n_f)
+offd <- 0.5
+for(i in 1:n_f)
+{
+  mat_list[[i]] <- matrix(offd,size[i],size[i])
+  diag(mat_list[[i]]) <- 1
+}
+sigma <- as.matrix(bdiag(mat_list))
+sigma = as(sigma,'dgCMatrix')
+
+```
+
+We use 'dgCMatrix' to save memory. Next, we simulate random effects and time-to-event outcomes assuming a constant baseline hazard function. We assume that the variance component is 0.2. We also simulate a risk factor with log(HR)=0.1. 
+
+```{r,echo=TRUE}
+n = nrow(sigma)
+tau_var <- 0.2
+x <- mvrnorm(1, rep(0,n), tau_var*sigma)
+pred = rnorm(n,0,1)
+myrates <- exp(x+0.1*pred-1)
+y <- rexp(n, rate = myrates)
+cen <- rexp(n, rate = 0.02 )
+ycen <- pmin(y, cen)
+outcome <- cbind(ycen,as.numeric(y <= cen))
+head(outcome)
+sigma[1:5,1:5]
+
+```
+
+We fit a Cox mixed-effects model using the ```coxmeg``` function. Here, we set ```type='bd'``` because the relatedness matrix is a block-diagonal matrix. Note that ```type='bd'``` should be used only for a block-diagonal matrix or a sparse matrix of which its inverse matrix is also sparse. For a general sparse relatedness matrix of which its inverse is not sparse, it is recommended that ```type='sparse'``` be used. When ```type='sparse'``` is specified, the relatedness matrix will not be inverted during the estimation procedure. The function will automatically treat the relatedness matrix as dense if there are more than 50% non-zero elements in the matrix. The argument ```X``` is a design matrix of the predictors, which can be produced by e.g., the function ```model.matrix```. The design matrix for the Cox model does not include the intercept term. The columns in ```X``` should be linear independent; otherwise the function will stop with an error indicating sigularity.    
+
+
+```{r,echo=TRUE}
+re = coxmeg(outcome,sigma,type='bd',X=pred,order=1,detap='diagonal')
+re
+```
+
+In the above result, ```tau``` is the estimated variance component, and ```int_ll``` is -2*log(lik) of the integrated/marginal likelihood of tau. 
+
+We give more details about specifying ```order``` and ```detap```. We set ```order=1``` (also by default) to use the first-order approximation of the inverse Hessian matrix in the optimization. By ```detap='diagonal'```, we tell ```coxmeg``` to use a diagonal approximation to compute the determinant, which is much faster under this setting, when estimating the variance component. By default (```detap='NULL'```), ```coxmeg``` will automatically select a method for computing the determinant based on ```type```, the sample size, and whether the relatedness matrix is symmetric positive definite (SPD).
+
+It should be noted that when the relatedness matrix is SPD, ```coxmeg``` will make use of the sparsity by setting ```type='sparse'``` or ```type='bd'``` regardless of whether the relatedness matrix or its inverse is sparse. However, when the relatedness matrix is symmetric positive semidefinite (SPSD), ```coxmeg``` can make use of the sparsity only when its inverse is sparse. When the relatedness matrix is SPSD and its inverse is dense, setting ```type='sparse'``` may result in worse performance. In such a case, it would be better to use ```type='dense'``` or to convert the relatedness matrix to SPD or block-diagonal if possible.    
+
+We compare the results with coxme, which are slightly different due to different approximation of the log-determinant used in the estimation of the variance component. Also, the integrated log-likelihoods cannot be compared directly because different approximation of log-determinant is used.
+
+```{r,echo=TRUE}
+library(coxme)
+bls <- c(1)
+for(i in (size[1]-1):1)
+{bls <- c(bls, c(rep(offd,i),1))}
+tmat <- bdsmatrix(blocksize=size, blocks=rep(bls,n_f),dimnames=list(as.character(1:n),as.character(1:n)))
+re_coxme = coxme(Surv(outcome[,1],outcome[,2])~as.matrix(pred)+(1|as.character(1:n)), varlist=list(tmat),ties='breslow')
+re_coxme
+```
+
+In GWAS, we may split the procedure into two separate steps, (1) estimate the variance component under the null model, and (2) estimate the coefficients for the predictors using the estimated variance component. This can be carried out in the following way.
+```{r,echo=TRUE}
+re = coxmeg(outcome,sigma,type='bd',order=1,detap='diagonal')
+tau = re$tau
+print(tau)
+re2 = fit_ppl(pred,outcome,sigma,type='bd',tau=tau,order=1)
+re2
+```
+
+## Perform GWAS of an age-at-onset phenotype with a sparse relatedness matrix
+
+We illustrate how to perform a GWAS using the ```coxmeg_plink``` function. This function supports plink bed files. We provide example files in the package. The example plink files include 20 SNPs and 3000 subjects from 600 families. The following code performs a GWAS for all SNPs in the example bed files. The ```coxmeg_plink``` function will write a temporary .gds file for the SNPs in the folder specified by ```tmp_dir```. The user needs to specify a ```tmp_dir``` to store the temporary file when ```bed``` is provided. The temporary file is removed after the analysis is done. 
+
+```{r,echo=TRUE}
+library(coxmeg)
+bed = system.file("extdata", "example_null.bed", package = "coxmeg")
+bed = substr(bed,1,nchar(bed)-4)
+pheno = system.file("extdata", "ex_pheno.txt", package = "coxmeg")
+cov = system.file("extdata", "ex_cov.txt", package = "coxmeg")
+
+## building a relatedness matrix
+n_f <- 600
+mat_list <- list()
+size <- rep(5,n_f)
+offd <- 0.5
+for(i in 1:n_f)
+{
+  mat_list[[i]] <- matrix(offd,size[i],size[i])
+  diag(mat_list[[i]]) <- 1
+}
+sigma <- as.matrix(bdiag(mat_list))
+
+re = coxmeg_plink(pheno,sigma,type='bd',bed=bed,tmp_dir=tempdir(),cov_file=cov,verbose=FALSE)
+re
+```
+
+The above code first retrieves the full path of the files. If the full path is not given, ```coxmeg_plink``` will search the current working directory. The file name of the bed file should not include the suffix (.bed). The phenotype and covariate files have the same format as used in plink, and the IDs must be consistent with the bed files. Specifically, the phenotype file should include four columns including family ID, individual ID, time, and status. The covariate file always starts with two columns, family ID and individual ID. Missing values in the phenotype and covariate files are denoted by -9 and NA, respectively. In the current version, the ```coxmeg_plink``` function does not impute genotypes itself, and only SNPs without missing values will be analyzed, so it will be better to use imputed genotype data. 
+
+The ```coxmeg_plink``` function fist estimates the variance component with only the covariates, and then uses it to analyze each SNP after filtering. These two steps can be done separately as follows. The first command without ```bed``` only esitmates the variance component tau, and the second command uses the estimated tau to analyze the SNPs. 
+
+```{r,eval=FALSE}
+re = coxmeg_plink(pheno,sigma,type='bd',cov_file=cov,verbose=FALSE)
+re = coxmeg_plink(pheno,sigma,type='bd',bed=bed,tmp_dir=tempdir(),tau=re$tau,cov_file=cov,verbose=FALSE)
+```
+
+When the genotypes of a group of SNPs are stored in a matrix, the function ```coxmeg_m``` can be used to perform GWAS for each of the SNPs. Similarly, ```coxmeg_m``` first estimates the variance component without the SNPs. In the following example, we simulate 10 independent SNPs, and use ```coxmeg_m``` to perform association analysis.
+
+```{r,echo=TRUE}
+geno = matrix(rbinom(nrow(sigma)*10,2,runif(nrow(sigma)*10,0.05,0.5)),nrow(sigma),10)
+pheno_m = read.table(pheno)
+re = coxmeg_m(geno,pheno_m[,3:4],sigma,type='bd',verbose=FALSE)
+re
+```
+
+By default, ```coxmeg_m``` and ```coxmeg_plink``` will choose an optimal ```order``` between 1 and 10 for analyzing the SNPs when ```order``` is not specified. 
+
+## Perform GWAS of an age-at-onset phenotype with a dense relatedness matrix
+
+When the relatedness matrix is dense and large (>5000), ```type='dense'``` should be used. In thise case, it will be more efficient to use preconditioned conjugate gradiant (PCG) (e.g., by explicitly specifying ```solver=2```) and stochastic lanczos quadrature (SLQ) ```detap='slq'``` in the optimization. These can be specified as follows.
+
+```{r,echo=TRUE}
+re = coxmeg_plink(pheno,sigma,type='dense',bed=bed,tmp_dir=tempdir(),cov_file=cov,detap='slq',verbose=FALSE,solver=2)
+re
+```
+
+If ```solver``` is not specified, ```coxmeg_plink``` will by default choose PCG as a solver when ```type='dense'```. If ```detap``` is not specified, ```coxmeg_plink``` will by default use ```detap='slq'``` for a dense matrix when the sample size exceeds 3000. The number of Monte Carlo samples in the SLQ can be specified by ```mc``` (by default ```mc=100```).  
+
+The above command estimates HRs and reports p-values.  Instead, a score test, which is computationally much more efficient, can be used by specifying ```score=TRUE```.  
+
+```{r,echo=TRUE}
+re = coxmeg_plink(pheno,sigma,type='dense',bed=bed,tmp_dir=tempdir(),tau=re$tau,cov_file=cov,detap='slq',verbose=FALSE,solver=2,score=TRUE)
+re
+```
+
+In the results, the column ```score_test``` is the score test statistics, which follow a chi-square distribution.
+
+## Handle positive semidefinite relatedness matrices
+
+We now assume that the first two subjects in the sample are monozygotic twins. In this case, the relatedness matrix becomes positive semidefinite. Specifying ```spd=FALSE``` will tell ```coxmeg_plink``` to handle a positive semidefinite relatedness matrix.
+
+```{r,echo=TRUE}
+sigma[2,1] = sigma[1,2] = 1
+re = coxmeg_plink(pheno,sigma,type='bd',cov_file=cov,verbose=FALSE,spd=FALSE)
+re
+```
+
+The warning indicates that the relatedness matrix is not full rank. Because there is a twin pair in the sample, the rank of the relatedness matrix is less than the sample size. If the user is not sure whether the relatedness matrix is positive definite or positive semidefinite, it is better to use ```spd=FALSE``` although it is slower because coxmeg will perform a eigenvalue decomposition under this setting. In the current version, instead of using the previously proposed GPPL in [@He_2020], coxmeg uses a modified PPL by turning all zero eigenvalues of the relatedness matrix to a small value (1e-6). This modification makes coxmeg suitable for twin cohorts. 
+

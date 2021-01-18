@@ -1,0 +1,403 @@
+---
+title: Using trustOptim for Unconstrained Nonlinear Optimization with Sparse Hessians
+author:  Michael Braun
+date:  "`r Sys.Date()`"
+output:  rmarkdown::html_vignette
+bibliography:  trustOptim.bib
+vignette: >
+  %\VignetteIndexEntry{Using trustOptim}
+  %\VignetteEngine{knitr::rmarkdown}
+  \usepackage[utf8]{inputenc}
+---
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(collapse = FALSE, comment = "#", message=FALSE)
+```
+
+Much of this vignette was originally published as
+@R_trustOptim. Please cite that article when using this package in
+your own research.  This version of the vignette is abridged with
+respect to the underlying theory, and the comparison with other
+methods.  It has more of a focus on how to use the package.
+
+# Why use trustOptim?
+
+
+The need to optimize continuous nonlinear functions occurs frequently
+in statistics, most notably in maximum likelihood and _maximum a
+  posteriori_ (MAP) estimation.  Users of **R**
+have a choice of dozens of optimization algorithms.  The most readily
+available algorithms are those that are accessed from the `optim`
+function in the base *R* distribution, and from the many contributed
+packages that are described
+in the CRAN Task View for _Optimization and Mathematical Programming_
+[@R_OptimTaskView]. Any particular algorithm may be more
+appropriate for some problems than for others, and having such a large
+number of alternatives allows the informed **R** user to choose
+the best tool for the task at hand.
+
+One limitation of most of these algorithms is that they can be
+difficult to use when there is a large number of decision
+variables. Search methods can be inefficient with a
+massive number of parameters because the search space is large, and
+they do not exploit information about slope and curvature to speed up
+the time to convergence.  Conjugate gradient and quasi-Newton methods trace the curvature of
+the function by using successive gradients to approximate the inverse
+Hessian.  However, if the algorithm stores the entire dense
+inverse Hessian, its use is resource-intensive when the number of
+parameters is large.  For example, the Hessian for a 50,000 parameter
+model requires 20GB of RAM to store it as a standard, dense base
+**R** matrix.
+
+The *trustOptim* package provides a trust region algorithm that is optimized for problems for which the
+Hessian is sparse.  Sparse Hessians occur when a large number of the
+cross-partial derivatives of the objective function are zero. For
+example, suppose we want to find the mode of a log posterior density
+for a Bayesian hierarchical model.  If we assume that individual-level
+parameter vectors $\beta_i$ and $\beta_j$ are conditionally
+independent, the cross-partial derivatives between all elements of
+$\beta_i$ and $\beta_j$ are zero.  If the model includes a large
+number of heterogeneous units, and a relatively small number of
+population-level parameters, the proportion of non-zero entries in the
+Hessian will be small.  Since we know up front which elements of the
+Hessian are non-zero, we need to compute, store, and operate on only
+those non-zero elements.  By storing sparse Hessians in a compressed
+format, and using a library of numerical algorithms that are efficient
+for sparse matrices, we can run the optimization algorithms faster,
+with a smaller memory footprint, than algorithms that operate on dense
+Hessians.
+
+The details of the trust region algorithm are included at
+the end of this vignette. The vignette for the *sparseHessianFD*
+package includes a more detailed discussion of Hessian sparsity patterns.
+
+
+# Example function
+
+Before going into the details of how to use the package, let's
+consider the following example of an objective function with a sparse Hessian.
+ Suppose we have a dataset of $N$ households, each with $T$ opportunities to purchase a particular product.  Let $y_i$ be the number of times household $i$ purchases the product, out of the $T$ purchase opportunities.  Furthermore, let $p_i$ be the probability of purchase; $p_i$ is the same for all $T$ opportunities, so we can treat $y_i$ as a binomial random variable.  The purchase probability $p_i$ is heterogeneous, and depends on both $k$ continuous covariates $x_i$, and a heterogeneous coefficient vector $\beta_i$, such that
+$$
+  p_i=\frac{\exp(x_i'\beta_i)}{1+\exp(x_i'\beta_i)},~i=1 ... N
+$$
+
+The coefficients can be thought of as sensitivities to the covariates, and they are distributed across the population of households following a multivariate normal distribution with mean $\mu$ and covariance $\Sigma$.   We assume that we know $\Sigma$, but we do not know $\mu$.  Instead, we place a multivariate normal prior on $\mu$, with mean $0$ and covariance $\Omega_0$.  Thus, each $\beta_i$, and $\mu$ are $k-$dimensional vectors, and the total number of unknown variables in the model is $(N+1)k$.
+
+The log posterior density, ignoring any normalization constants, is
+$$
+  \log \pi(\beta_{1:N},\mu|Y, X, \Sigma_0,\Omega_0)=\sum_{i=1}^Np_i^{y_i}(1-p_i)^{T-y_i}
+  -\frac{1}{2}\left(\beta_i-\mu\right)'\Sigma^{-1}\left(\beta_i-\mu\right)
+-\frac{1}{2}\mu'\Omega_0^{-1}\mu
+$$
+
+```{r, echo=FALSE}
+require(Matrix)
+require(trustOptim)
+N <- 6
+k <- 2
+nv1 <- (N+1)*k
+nels1 <- nv1^2
+nnz1 <- (N+1)*k^2 + 2*N*k^2
+nnz1LT <- (N+1)*k*(k+1)/2 + N*k^2
+Q <- 1000
+nv2 <- (Q+1)*k
+nels2 <- nv2^2
+nnz2 <- (Q+1)*k^2 + 2*Q*k^2
+nnz2LT <- (Q+1)*k*(k+1)/2 + Q*k^2
+options(scipen=999)
+```
+
+Since the $\beta_i$ are drawn iid from a multivariate normal,
+$\dfrac{\partial^2\log\pi }{\partial\beta_i\beta_j}=0$ for all $i\neq
+j$.  We also know that all of the $\beta_i$ are correlated with
+$\mu$.  The structure of the Hessian depends on how the variables are
+ordered within the vector. One such ordering is to group all of the
+coefficients for each unit together.
+
+$$
+\beta_{11},...,\beta_{1k},\beta_{21},...,\beta_{2k},...~,~...~,~\beta_{N1}~,~...~,~\beta_{Nk},\mu_1,...,\mu_k
+$$
+
+In this case, the Hessian has a "block-arrow" structure.  For example,
+if $N=`r N`$ and $k=`r k`$, then there are `r nv1` total variables, and the Hessian will have the following pattern.
+
+```{r, echo=FALSE}
+M <- as(kronecker(diag(N),matrix(1,k,k)),"lMatrix")
+M <- rbind(M, Matrix(TRUE,k,N*k))
+M <- cbind(M, Matrix(TRUE, k*(N+1), k))
+print(M)
+```
+
+There are `r nels1` elements in this symmetric matrix, but only  `r nnz1` are
+non-zero, and only `r nnz1LT` values are unique.  Although the reduction in
+RAM from using a sparse matrix structure for the Hessian may be
+modest, consider what would happen if $N=`r Q`$ instead.  In that case,
+there are `r nv2` variables in the problem, and more than $`r floor(nels2/10^6)`$ million
+elements in the Hessian.  However, only $`r nnz2`$ of those elements are
+non-zero.  If we work with only the lower triangle of the Hessian we only need to work with
+only `r nnz2LT` values.
+
+
+
+
+# Using the package
+
+The functions for computing the objective function, gradient and
+Hessian for this example are in the R/binary.R file.  The package
+also includes a sample dataset with simulated data from the binary
+choice example. This dataset can be access with the `data(binary)` call.
+
+To start, we load the data, set some dimension parameters, set prior
+values for $\Sigma^{-1}$ and $\Omega^{-1}$, and simulate a
+vector of variables at which to evaluate the function.
+
+```{r}
+set.seed(123)
+data(binary)
+str(binary)
+N <- length(binary$Y)
+k <- NROW(binary$X)
+nvars <- as.integer(N*k + k)
+start <- rnorm(nvars) ## random starting values
+priors <- list(inv.Sigma = rWishart(1,k+5,diag(k))[,,1],
+               inv.Omega = diag(k))
+```
+
+This dataset represents the simulated choices for $N= `r N`$ customers
+over $T= `r binary$T`$ purchase opportunties, where the probability of purchase
+is influenced by $k= `r k`$ covariates.
+
+The objective function for the binary choice example is `binary.f`, the gradient function is
+`binary.grad`, and the Hessian function is `binary.hess`. The first
+argument to both is the variable vector, and
+the argument lists must be the same for both.  For this example, we
+need to provide the data list "binary" ($X$, $Y$ and $T$) and the prior
+parameter list ($\Sigma^{-1}$ and $\Omega^{-1}$). The `binary.hess`
+function returns the Hessian as a `dgCMatrix` object, which is a
+compressed sparse matrix class defined in the Matrix package.
+
+
+
+```{r}
+
+opt <- trust.optim(start, fn=binary.f,
+                   gr = binary.grad,
+                   hs = binary.hess,
+                   method = "Sparse",
+                   control = list(
+                       start.trust.radius=5,
+                       stop.trust.radius = 1e-7,
+                       prec=1e-7,
+                       report.precision=1L,
+                       maxit=500L,
+                       preconditioner=1L,
+                       function.scale.factor=-1
+                   ),
+                   data=binary, priors=priors
+                   )
+```
+
+
+
+## Control parameters
+
+The `control` argument takes a list of options, all of which
+are described in the package manual.  Most of these arguments are
+related to the internal workings of the trust region algorithm, such
+as how close a step needs to be to the border of the trust region
+before the region expands.  However, there are a few arguments that
+deserve some special attention.
+
+### Scaling the objective function
+
+The algorithms in the package _minimize_ the objective function by
+default.  When the `function.scale.factor` option is specified, the
+objective function, gradient and Hessian are all multiplied by that
+value throughout the optimization procedure.  If
+`function.scale.factor=-1`, then then `trust.optim` will maximize the
+objective function.
+
+
+### Stopping criteria
+
+The `trust.optim` function will stop when the Euclidean norm of the
+gradient is less that `sqrt(nvars) * prec`, where `nvars` is the
+length of the parameter vector, and `prec` is specified in the control
+list (the default is `sqrt(.Machine\$double.eps)`, which is the square root
+of the computer's floating point precision.  However, sometimes the
+algorithm cannot get the gradient to be that flat.  When that occurs,
+the trust region will shrink, until its radius is less than the value
+of the `stop.trust.radius` parameter.  The algorithm will then stop with
+the message "Radius of trust region is less than `stop.trust.radius`."
+This event is not necessarily a problem if the norm of the gradient is
+still small enough that the gradient is flat for all practical
+purposes.  For example, suppose we set `prec` to be $10^{-7}$
+and that, for numerical reasons, the norm of the gradient simply
+cannot get below $10^{-6}$.  If the norm of the gradient were the only
+stopping criterion, the algorithm would continue to run, even though
+it is probably close enough to the local optimum.  With this alternative stopping
+criterion, the algorithm will also stop when it is clear that the
+algorithm can no longer take a step that leads to an improvement in
+the objective function.
+
+There is, of course, a third stopping criterion.  The `maxit` argument
+is the maximum number of iterations the algorithm should run before
+stopping.  However, keep in mind that if the algorithm stops at
+`maxit`, it is almost certainly not at a local optimum.
+
+>> Note that many other nonlinear optimizers, including `optim`, do
+not use the norm of the gradient as a stopping criterion.  Instead,
+they stop when the
+absolute or relative changes in the objective function are less than
+some tolerance value.  This often causes those optimizers to stop prematurely, when the estimates of the gradient
+and/or Hessian are not precise, or if there are some regions of the
+domain where the objective function is nearly flat. In theory, this
+should never happen, but in reality, it happens _all the time_.
+For an unconstrained optimization problem, there is no reason why the
+norm of the gradient should not be zero (within numerical precision)
+before the algorithm stops.
+
+
+## Preconditioners
+Currently, the package offers two preconditioners: an identity
+preconditioner (no preconditioning), and an inexact modified Cholesky
+preconditioner, as in Algorithm 7.3 of @NocedalWright2006.  The identity
+and diagonal preconditioners are available for all of the methods.
+For the *Sparse* method, the modified Cholesky preconditioner
+will use a positive definite matrix that is close to the potentially
+indefinite Hessian (`trust.optim` does _not_ require that
+the objective function be positive definite). For *BFGS*, the modified
+Cholesky preconditioner is available because *BFGS* updates are
+always positive definite.  If the user selects a modified Cholesky
+preconditioner for *SR1*, the algorithm will use the identity
+preconditioner instead.
+
+There is no general rule for selecting preconditioners.  There will be
+a tradeoff between the number of iterations needs to solve the problem
+and the time it takes to compute any particular preconditioner.  In
+some cases, the identity preconditioner may even solve the problem in
+fewer iterations than a modified Cholesky preconditioner.
+
+## Result object
+
+The call ot `trust.optim` returns a list of values.
+
+-  **fval**: the value of the objective function at the optimum
+-  **solution**:  the optimum
+-  **gradient**:  the gradient of the objective function at the
+optimum (all elements should be very close to zero)
+-  **hessian**: the Hessian of the objective function at the optimum,
+as an object of class *dsCMatrix*.
+-  **iterations**:  number of iterations
+-  **status**:  A status message (should be "Success"), or possibly a
+note that the trust region radius is less than `stop.trust.region`.
+-  **trust.radius**: trust region radius when the algorithm stopped.
+-  **nnz**:  number of nonzero elements in the lower triangle of the
+Hessian
+-  **method**:  the optimization method that was used (Sparse, SR1 or
+BFGS).
+-  **nnz**:  for the Sparse method only, the number of nonzero
+   elements in the Hessian.
+
+See the package manual for more details.
+
+
+# Algorithmic details
+
+Consider $f(x)$, an objective function over a $P$-dimensional vector
+that we want to minimize.  Let $g$ be the gradient, and let $B$ be the
+Hessian.  The goal is to find a local minimum of $f(x)$, with no
+constraints on $x$, within some window of numerical precision (i.e.,
+where $\|g\|_2 / \sqrt{p}<\epsilon$ for small $\epsilon>0$).  We will
+assume that $B$ is positive definite at the local optimum, but not
+necessarily at other values of $x$.  Iterations are indexed by $t$.
+
+## Trust region methods for nonlinear optimization
+
+The details of trust region methods are described in both
+@NocedalWright2006 and @ConnGould2000, and the following
+exposition borrows heavily from both sources.  At each iteration of a
+trust region algorithm, we construct a quadratic approximation to the
+objective function at $x_t$, and minimize that approximation, subject
+to a constraint that the solution falls within a trust region with
+radius $d_t$.  More formally, each iteration of the trust region
+algorithm involves solving the "trust region subproblem," or TRS.
+
+$$
+\begin{align}
+\tag{TRS}\label{eq:TRS}
+\min_{s\in R^p} f^*(s)& = f(x_t) + g_t^\top s + \frac{1}{2}s^\top B_ts\qquad\text{s.t. }\|s\|_M\leq d_t\\
+s_t&=\arg\min_{s\in R^p} f^*(s) \qquad\text{s.t. }\|s\|_M\leq d_t
+\end{align}
+$$
+
+The norm $\|\cdot\|_M$ is a Mahalanobis norm with respect to some positive definite matrix $M$.
+
+Let $s_t$ be the solution to the \ref{eq:TRS} for iteration $t$, and consider the ratio
+\begin{align}
+  \label{eq:2}
+  \rho_t=\frac{f(x_t)-f(x_t+s_t)}{f^*(x_t)-f^*(x_t+s_t)}
+\end{align}
+This ratio is the improvement in the objective function that we would
+get from a move from $x_t$ to $x_{t+1}$, where $x_{t+1}=x_t+s_t$,
+relative to the improvement that is predicted by the quadratic
+approximation.  Let $\eta_1$ be the minimum value of $\rho_t$ for
+which we deem it "worthwhile" to move from $x_t$ to $x_{t+1}$, and
+let $\eta_2$ be the maximum $\rho_t$ that would trigger a shrinkage in
+the trust region.  If $\rho_t < \eta_2$, or if $f(x_t+s_t)$ is not
+finite, we shrink the trust region by reducing $d_t$ by some
+predetermined factor, and compute a new $s_t$ by solving the
+\ref{eq:TRS} again.  If $\rho_t>\eta_1$, we move to $x_{t+1}=x_t+s_t$.
+Also, if we do accept the move, and $s_t$ is on the border of the
+trust region, we expand the trust region by increasing $d_t$, again by
+some predetermined factor.  The idea is to not move to a new $x$ if
+$f(x_{t+1})$ would be worse than $f(x_t)$.  By expanding the trust
+region, we can propose larger jumps, and potentially reach the optimum
+more quickly.  We want to propose only moves that are among those that
+we "trust" to give reasonable values of $f(x)$.  If it turns out
+that a move leads to a large improvement in the objective function,
+and that the proposed move was constrained by the radius of the trust
+region, we want to expand the trust region so we can take larger
+steps.  If the proposed move is bad, we should then reduce the size of
+the region we trust, and try to find another step that is closer to
+the current iterate.  Of course, there is no reason that the trust
+region needs to change after a particular iteration, especially if
+the solution to the TRS is at an internal point.
+
+There are a number of different ways to solve the TRS;
+@ConnGould2000 is authoritative and encyclopedic in this area.
+The *trustOptim* package uses the method described in
+@Steihaug1983.  The Steihaug algorithm is, essentially, a
+conjugate gradient solver for a constrained quadratic program.  If
+$B_t$ is positive definite, the Steihaug solution to the \ref{eq:TRS}
+will be exact, up to some level of numerical precision.  However, if
+$B_t$ is indefinite, the algorithm could try to move in a direction of
+negative curvature. If the algorithm happens to stumble on such a
+direction, it goes back to the last direction that it moved, runs in
+that direction to the border of the trust region, and returns that
+point of intersection with the trust region border as the "solution"
+to the \ref{eq:TRS}.  This solution is not necessarily the true
+minimizer of the \ref{eq:TRS}, but it still might provide sufficient
+improvement in the objective function such that $\rho_t>\eta_1$. If
+not, we shrink the trust region and try again.  As an alternative to
+the Steihaug algorithm for solving the \ref{eq:TRS},
+@ConnGould2000 suggest using the Lanczos algorithm.  The
+Lanczos approach may be more likely to find a better solution to the
+TRS when $B_t$ is indefinite, but at some additional
+computational cost.  We include only the Steihaug algorithm for now,
+because it still seems to work well, especially for sparse problems.
+
+As with other conjugate gradient methods, one way to speed up the
+Steihaug algorithm is to rescale the trust region subproblem with a
+preconditioner $M$. Note that the constraint in \ref{eq:TRS} is
+expressed as an $M$-norm, rather than an Euclidean norm.  The positive
+definite matrix $M$ should be close enough to the Hessian that
+$M^{-1}B_t\approx I$, but still cheap enough to compute that the cost
+of using the preconditioner does not exceed the benefits. Of course,
+the ideal preconditioner would be $B_t$ itself, but $B_t$ is not
+necessarily positive definite, and we may not be able to estimate it
+fast enough for preconditioning to be worthwhile.  In this case, one
+could use a modified Cholesky decomposition, as described in
+@NocedalWright2006.
+
+# References

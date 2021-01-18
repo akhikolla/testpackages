@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Using autograd</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+<script>// Hide empty <a> tag within highlighted CodeBlock for screen reader accessibility (see https://github.com/jgm/pandoc/issues/6352#issuecomment-626106786) -->
+// v0.0.1
+// Written by JooYoung Seo (jooyoung@psu.edu) and Atsushi Yasumoto on June 1st, 2020.
+
+document.addEventListener('DOMContentLoaded', function() {
+  const codeList = document.getElementsByClassName("sourceCode");
+  for (var i = 0; i < codeList.length; i++) {
+    var linkList = codeList[i].getElementsByTagName('a');
+    for (var j = 0; j < linkList.length; j++) {
+      if (linkList[j].innerHTML === "") {
+        linkList[j].setAttribute('aria-hidden', 'true');
+      }
+    }
+  }
+});
+</script>
+<style type="text/css">
+a.anchor-section {margin-left: 10px; visibility: hidden; color: inherit;}
+a.anchor-section::before {content: '#';}
+.hasAnchor:hover a.anchor-section {visibility: visible;}
+</style>
+<script>// Anchor sections v1.0 written by Atsushi Yasumoto on Oct 3rd, 2020.
+document.addEventListener('DOMContentLoaded', function() {
+  // Do nothing if AnchorJS is used
+  if (typeof window.anchors === 'object' && anchors.hasOwnProperty('hasAnchorJSLink')) {
+    return;
+  }
+
+  const h = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+
+  // Do nothing if sections are already anchored
+  if (Array.from(h).some(x => x.classList.contains('hasAnchor'))) {
+    return null;
+  }
+
+  // Use section id when pandoc runs with --section-divs
+  const section_id = function(x) {
+    return ((x.classList.contains('section') || (x.tagName === 'SECTION'))
+            ? x.id : '');
+  };
+
+  // Add anchors
+  h.forEach(function(x) {
+    const id = x.id || section_id(x.parentElement);
+    if (id === '') {
+      return null;
+    }
+    let anchor = document.createElement('a');
+    anchor.href = '#' + id;
+    anchor.classList = ['anchor-section'];
+    x.classList.add('hasAnchor');
+    x.appendChild(anchor);
+  });
+});
+</script>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    for (var j = 0; j < rules.length; j++) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") continue;
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') continue;
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Using autograd</h1>
+
+
+
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">library</span>(torch)</span></code></pre></div>
+<p>So far, all we’ve been using from torch is <em>tensors</em>, but we’ve been performing all calculations ourselves – the computing the predictions, the loss, the gradients (and thus, the necessary updates to the weights), and the new weight values. In this chapter, we’ll make a significant change: Namely, we spare ourselves the cumbersome calculation of gradients, and have torch do it for us.</p>
+<p>Before we see that in action, let’s get some more background.</p>
+<div id="automatic-differentiation-with-autograd" class="section level2">
+<h2>Automatic differentiation with autograd</h2>
+<p>Torch uses a module called <em>autograd</em> to record operations performed on tensors, and store what has to be done to obtain the respective gradients. These actions are stored as functions, and those functions are applied in order when the gradient of the output (normally, the loss) with respect to those tensors is calculated: starting from the output node and <em>propagating</em> gradients <em>back</em> through the network. This is a form of <em>reverse mode automatic differentiation</em>.</p>
+<p>As users, we can see a bit of this implementation. As a prerequisite for this “recording” to happen, tensors have to be created with <code>requires_grad = TRUE</code>. E.g.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1"></a>x &lt;-<span class="st"> </span><span class="kw">torch_ones</span>(<span class="dv">2</span>,<span class="dv">2</span>, <span class="dt">requires_grad =</span> <span class="ot">TRUE</span>)</span></code></pre></div>
+<p>To be clear, this is a tensor <em>with respect to which</em> gradients have to be calculated – normally, a tensor representing a weight or a bias, not the input data <a href="#fn1" class="footnote-ref" id="fnref1"><sup>1</sup></a>. If we now perform some operation on that tensor, assigning the result to <code>y</code></p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1"></a>y &lt;-<span class="st"> </span>x<span class="op">$</span><span class="kw">mean</span>()</span></code></pre></div>
+<p>we find that <code>y</code> now has a non-empty <code>grad_fn</code> that tells torch how to compute the gradient of <code>y</code> with respect to <code>x</code>:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1"></a>y<span class="op">$</span>grad_fn</span></code></pre></div>
+<p>Actual computation of gradients is triggered by calling <code>backward()</code> on the output tensor.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1"></a>y<span class="op">$</span><span class="kw">backward</span>()</span></code></pre></div>
+<p>That executed, <code>x</code> now has a non-empty field <code>grad</code> that stores the gradient of <code>y</code> with respect to <code>x</code>:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1"></a>x<span class="op">$</span>grad</span></code></pre></div>
+<p>With a longer chain of computations, we can peek at how torch builds up a graph of backward operations.</p>
+<p>Here is a slightly more complex example. We call <code>retain_grad()</code> on <code>y</code> and <code>z</code> just for demonstration purposes; by default, intermediate gradients – while of course they have to be computed – aren’t stored, in order to save memory.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1"></a>x1 &lt;-<span class="st"> </span><span class="kw">torch_ones</span>(<span class="dv">2</span>,<span class="dv">2</span>, <span class="dt">requires_grad =</span> <span class="ot">TRUE</span>)</span>
+<span id="cb7-2"><a href="#cb7-2"></a>x2 &lt;-<span class="st"> </span><span class="kw">torch_tensor</span>(<span class="fl">1.1</span>, <span class="dt">requires_grad =</span> <span class="ot">TRUE</span>)</span>
+<span id="cb7-3"><a href="#cb7-3"></a>y &lt;-<span class="st"> </span>x1 <span class="op">*</span><span class="st"> </span>(x2 <span class="op">+</span><span class="st"> </span><span class="dv">2</span>)</span>
+<span id="cb7-4"><a href="#cb7-4"></a>y<span class="op">$</span><span class="kw">retain_grad</span>()</span>
+<span id="cb7-5"><a href="#cb7-5"></a>z &lt;-<span class="st"> </span>y<span class="op">$</span><span class="kw">pow</span>(<span class="dv">2</span>) <span class="op">*</span><span class="st"> </span><span class="dv">3</span></span>
+<span id="cb7-6"><a href="#cb7-6"></a>z<span class="op">$</span><span class="kw">retain_grad</span>()</span>
+<span id="cb7-7"><a href="#cb7-7"></a>out &lt;-<span class="st"> </span>z<span class="op">$</span><span class="kw">mean</span>()</span></code></pre></div>
+<p>Starting from <code>out$grad_fn</code>, we can follow the graph all back to the leaf nodes:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1"></a><span class="co"># how to compute the gradient for mean, the last operation executed</span></span>
+<span id="cb8-2"><a href="#cb8-2"></a>out<span class="op">$</span>grad_fn</span>
+<span id="cb8-3"><a href="#cb8-3"></a><span class="co"># how to compute the gradient for the multiplication by 3 in z = y$pow(2) * 3</span></span>
+<span id="cb8-4"><a href="#cb8-4"></a>out<span class="op">$</span>grad_fn<span class="op">$</span>next_functions</span>
+<span id="cb8-5"><a href="#cb8-5"></a><span class="co"># how to compute the gradient for pow in z = y.pow(2) * 3</span></span>
+<span id="cb8-6"><a href="#cb8-6"></a>out<span class="op">$</span>grad_fn<span class="op">$</span>next_functions[[<span class="dv">1</span>]]<span class="op">$</span>next_functions</span>
+<span id="cb8-7"><a href="#cb8-7"></a><span class="co"># how to compute the gradient for the multiplication in y = x * (x + 2)</span></span>
+<span id="cb8-8"><a href="#cb8-8"></a>out<span class="op">$</span>grad_fn<span class="op">$</span>next_functions[[<span class="dv">1</span>]]<span class="op">$</span>next_functions[[<span class="dv">1</span>]]<span class="op">$</span>next_functions</span>
+<span id="cb8-9"><a href="#cb8-9"></a><span class="co"># how to compute the gradient for the two branches of y = x * (x + 2),</span></span>
+<span id="cb8-10"><a href="#cb8-10"></a><span class="co"># where the left branch is a leaf node (AccumulateGrad for x1)</span></span>
+<span id="cb8-11"><a href="#cb8-11"></a>out<span class="op">$</span>grad_fn<span class="op">$</span>next_functions[[<span class="dv">1</span>]]<span class="op">$</span>next_functions[[<span class="dv">1</span>]]<span class="op">$</span>next_functions[[<span class="dv">1</span>]]<span class="op">$</span>next_functions</span>
+<span id="cb8-12"><a href="#cb8-12"></a><span class="co"># here we arrive at the other leaf node (AccumulateGrad for x2)</span></span>
+<span id="cb8-13"><a href="#cb8-13"></a>out<span class="op">$</span>grad_fn<span class="op">$</span>next_functions[[<span class="dv">1</span>]]<span class="op">$</span>next_functions[[<span class="dv">1</span>]]<span class="op">$</span>next_functions[[<span class="dv">1</span>]]<span class="op">$</span>next_functions[[<span class="dv">2</span>]]<span class="op">$</span>next_functions</span></code></pre></div>
+<p>After calling <code>out$backward()</code>, all tensors in the graph will have their respective gradients created. Without our calls to <code>retain_grad</code> above, <code>z$grad</code> and <code>y$grad</code> would be empty:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1"></a>out<span class="op">$</span><span class="kw">backward</span>()</span>
+<span id="cb9-2"><a href="#cb9-2"></a>z<span class="op">$</span>grad</span>
+<span id="cb9-3"><a href="#cb9-3"></a>y<span class="op">$</span>grad</span>
+<span id="cb9-4"><a href="#cb9-4"></a>x2<span class="op">$</span>grad</span>
+<span id="cb9-5"><a href="#cb9-5"></a>x1<span class="op">$</span>grad</span></code></pre></div>
+<p>Thus acquainted with autograd, we’re ready to modify our example.</p>
+</div>
+<div id="the-simple-network-now-using-autograd" class="section level2">
+<h2>The simple network, now using autograd</h2>
+<p>For a single new line calling <code>loss$backward()</code>, now a number of lines (that did manual backprop) are gone:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1"></a><span class="co">### generate training data -----------------------------------------------------</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a><span class="co"># input dimensionality (number of input features)</span></span>
+<span id="cb10-3"><a href="#cb10-3"></a>d_in &lt;-<span class="st"> </span><span class="dv">3</span></span>
+<span id="cb10-4"><a href="#cb10-4"></a><span class="co"># output dimensionality (number of predicted features)</span></span>
+<span id="cb10-5"><a href="#cb10-5"></a>d_out &lt;-<span class="st"> </span><span class="dv">1</span></span>
+<span id="cb10-6"><a href="#cb10-6"></a><span class="co"># number of observations in training set</span></span>
+<span id="cb10-7"><a href="#cb10-7"></a>n &lt;-<span class="st"> </span><span class="dv">100</span></span>
+<span id="cb10-8"><a href="#cb10-8"></a><span class="co"># create random data</span></span>
+<span id="cb10-9"><a href="#cb10-9"></a>x &lt;-<span class="st"> </span><span class="kw">torch_randn</span>(n, d_in)</span>
+<span id="cb10-10"><a href="#cb10-10"></a>y &lt;-<span class="st"> </span>x[,<span class="dv">1</span>]<span class="op">*</span><span class="fl">0.2</span> <span class="op">-</span><span class="st"> </span>x[..,<span class="dv">2</span>]<span class="op">*</span><span class="fl">1.3</span> <span class="op">-</span><span class="st"> </span>x[..,<span class="dv">3</span>]<span class="op">*</span><span class="fl">0.5</span> <span class="op">+</span><span class="st"> </span><span class="kw">torch_randn</span>(n)</span>
+<span id="cb10-11"><a href="#cb10-11"></a>y &lt;-<span class="st"> </span>y<span class="op">$</span><span class="kw">unsqueeze</span>(<span class="dt">dim =</span> <span class="dv">1</span>)</span>
+<span id="cb10-12"><a href="#cb10-12"></a><span class="co">### initialize weights ---------------------------------------------------------</span></span>
+<span id="cb10-13"><a href="#cb10-13"></a><span class="co"># dimensionality of hidden layer</span></span>
+<span id="cb10-14"><a href="#cb10-14"></a>d_hidden &lt;-<span class="st"> </span><span class="dv">32</span></span>
+<span id="cb10-15"><a href="#cb10-15"></a><span class="co"># weights connecting input to hidden layer</span></span>
+<span id="cb10-16"><a href="#cb10-16"></a>w1 &lt;-<span class="st"> </span><span class="kw">torch_randn</span>(d_in, d_hidden, <span class="dt">requires_grad =</span> <span class="ot">TRUE</span>)</span>
+<span id="cb10-17"><a href="#cb10-17"></a><span class="co"># weights connecting hidden to output layer</span></span>
+<span id="cb10-18"><a href="#cb10-18"></a>w2 &lt;-<span class="st"> </span><span class="kw">torch_randn</span>(d_hidden, d_out, <span class="dt">requires_grad =</span> <span class="ot">TRUE</span>)</span>
+<span id="cb10-19"><a href="#cb10-19"></a><span class="co"># hidden layer bias</span></span>
+<span id="cb10-20"><a href="#cb10-20"></a>b1 &lt;-<span class="st"> </span><span class="kw">torch_zeros</span>(<span class="dv">1</span>, d_hidden, <span class="dt">requires_grad =</span> <span class="ot">TRUE</span>)</span>
+<span id="cb10-21"><a href="#cb10-21"></a><span class="co"># output layer bias</span></span>
+<span id="cb10-22"><a href="#cb10-22"></a>b2 &lt;-<span class="st"> </span><span class="kw">torch_zeros</span>(<span class="dv">1</span>, d_out,<span class="dt">requires_grad =</span> <span class="ot">TRUE</span>)</span>
+<span id="cb10-23"><a href="#cb10-23"></a><span class="co">### network parameters ---------------------------------------------------------</span></span>
+<span id="cb10-24"><a href="#cb10-24"></a>learning_rate &lt;-<span class="st"> </span><span class="fl">1e-4</span></span>
+<span id="cb10-25"><a href="#cb10-25"></a><span class="co">### training loop --------------------------------------------------------------</span></span>
+<span id="cb10-26"><a href="#cb10-26"></a><span class="cf">for</span> (t <span class="cf">in</span> <span class="dv">1</span><span class="op">:</span><span class="dv">200</span>) {</span>
+<span id="cb10-27"><a href="#cb10-27"></a></span>
+<span id="cb10-28"><a href="#cb10-28"></a>    <span class="co">### -------- Forward pass -------- </span></span>
+<span id="cb10-29"><a href="#cb10-29"></a>    y_pred &lt;-<span class="st"> </span>x<span class="op">$</span><span class="kw">mm</span>(w1)<span class="op">$</span><span class="kw">add</span>(b1)<span class="op">$</span><span class="kw">clamp</span>(<span class="dt">min =</span> <span class="dv">0</span>)<span class="op">$</span><span class="kw">mm</span>(w2)<span class="op">$</span><span class="kw">add</span>(b2)</span>
+<span id="cb10-30"><a href="#cb10-30"></a>    <span class="co">### -------- compute loss -------- </span></span>
+<span id="cb10-31"><a href="#cb10-31"></a>    loss &lt;-<span class="st"> </span>(y_pred <span class="op">-</span><span class="st"> </span>y)<span class="op">$</span><span class="kw">pow</span>(<span class="dv">2</span>)<span class="op">$</span><span class="kw">mean</span>()</span>
+<span id="cb10-32"><a href="#cb10-32"></a>    <span class="cf">if</span> (t <span class="op">%%</span><span class="st"> </span><span class="dv">10</span> <span class="op">==</span><span class="st"> </span><span class="dv">0</span>) <span class="kw">cat</span>(t, <span class="kw">as_array</span>(loss), <span class="st">&quot;</span><span class="ch">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb10-33"><a href="#cb10-33"></a>    <span class="co">### -------- Backpropagation -------- </span></span>
+<span id="cb10-34"><a href="#cb10-34"></a>    <span class="co"># compute the gradient of loss with respect to all tensors with requires_grad = True.</span></span>
+<span id="cb10-35"><a href="#cb10-35"></a>    loss<span class="op">$</span><span class="kw">backward</span>()</span>
+<span id="cb10-36"><a href="#cb10-36"></a> </span>
+<span id="cb10-37"><a href="#cb10-37"></a>    <span class="co">### -------- Update weights -------- </span></span>
+<span id="cb10-38"><a href="#cb10-38"></a>    </span>
+<span id="cb10-39"><a href="#cb10-39"></a>    <span class="co"># Wrap in torch.no_grad() because this is a part we DON&#39;T want to record for automatic gradient computation</span></span>
+<span id="cb10-40"><a href="#cb10-40"></a>    <span class="kw">with_no_grad</span>({</span>
+<span id="cb10-41"><a href="#cb10-41"></a>      </span>
+<span id="cb10-42"><a href="#cb10-42"></a>      w1<span class="op">$</span><span class="kw">sub_</span>(learning_rate <span class="op">*</span><span class="st"> </span>w1<span class="op">$</span>grad)</span>
+<span id="cb10-43"><a href="#cb10-43"></a>      w2<span class="op">$</span><span class="kw">sub_</span>(learning_rate <span class="op">*</span><span class="st"> </span>w2<span class="op">$</span>grad)</span>
+<span id="cb10-44"><a href="#cb10-44"></a>      b1<span class="op">$</span><span class="kw">sub_</span>(learning_rate <span class="op">*</span><span class="st"> </span>b1<span class="op">$</span>grad)</span>
+<span id="cb10-45"><a href="#cb10-45"></a>      b2<span class="op">$</span><span class="kw">sub_</span>(learning_rate <span class="op">*</span><span class="st"> </span>b2<span class="op">$</span>grad)</span>
+<span id="cb10-46"><a href="#cb10-46"></a>      </span>
+<span id="cb10-47"><a href="#cb10-47"></a>      <span class="co"># Zero the gradients after every pass, because they&#39;d accumulate otherwise</span></span>
+<span id="cb10-48"><a href="#cb10-48"></a>      w1<span class="op">$</span>grad<span class="op">$</span><span class="kw">zero_</span>()</span>
+<span id="cb10-49"><a href="#cb10-49"></a>      w2<span class="op">$</span>grad<span class="op">$</span><span class="kw">zero_</span>()</span>
+<span id="cb10-50"><a href="#cb10-50"></a>      b1<span class="op">$</span>grad<span class="op">$</span><span class="kw">zero_</span>()</span>
+<span id="cb10-51"><a href="#cb10-51"></a>      b2<span class="op">$</span>grad<span class="op">$</span><span class="kw">zero_</span>()</span>
+<span id="cb10-52"><a href="#cb10-52"></a>    </span>
+<span id="cb10-53"><a href="#cb10-53"></a>    })</span>
+<span id="cb10-54"><a href="#cb10-54"></a>    </span>
+<span id="cb10-55"><a href="#cb10-55"></a>}</span>
+<span id="cb10-56"><a href="#cb10-56"></a> </span></code></pre></div>
+<p>We still manually compute the forward pass, and we still manually update the weights. In the last two chapters of this section, we’ll see how these parts of the logic can be made more modular and reusable, as well.</p>
+</div>
+<div class="footnotes">
+<hr />
+<ol>
+<li id="fn1"><p>Unless we <em>want</em> to change the data, as in adversarial example generation<a href="#fnref1" class="footnote-back">↩︎</a></p></li>
+</ol>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

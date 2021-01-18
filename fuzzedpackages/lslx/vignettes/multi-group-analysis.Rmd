@@ -1,0 +1,93 @@
+---
+title: "Multi-Group Factor Analysis"
+author: "Po-Hsien Huang"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Multi-Group Factor Analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+```{r comment = "", message = FALSE, setup, include=FALSE}
+options(digits = 3)
+options(width = 100)
+```
+In this example, we will show how to use `lslx` to conduct multi-group factor analysis.
+The example uses data `HolzingerSwineford1939` in the package `lavaan`.
+Hence, `lavaan` must be installed.
+
+## Model Specification
+In the following specification, `x1` - `x9` is assumed to be measurements of 3 latent factors: `visual`, `textual`, and `speed`.
+```{r comment = "", message = FALSE}
+model_mgfa <- "visual  :=> 1 * x1 + x2 + x3 
+               textual :=> 1 * x4 + x5 + x6 
+               speed   :=> 1 * x7 + x8 + x9"
+```
+The operator `:=>` means that the LHS latent factors is defined by the RHS observed variables.
+In this model, `visual` is mainly measured by `x1` - `x3`, `textual` is mainly measured by `x4` - `x6`, and `speed` is mainly measured by `x7` - `x9`.
+Loadings of `x1`, `x4`, and `x7` are fixed at 1 for scale setting.
+The above specification is valid for both groups.
+Details of model syntax can be found in the section of Model Syntax via `?lslx`.
+
+## Object Initialization
+`lslx` is written as an `R6` class.
+Everytime we conduct analysis with `lslx`, an `lslx` object must be initialized.
+The following code initializes an `lslx` object named `lslx_mgfa`.
+```{r comment = "", message = FALSE}
+library(lslx)
+lslx_mgfa <- lslx$new(model = model_mgfa,
+                    data = lavaan::HolzingerSwineford1939,
+                    group_variable = "school",
+                    reference_group = "Pasteur")
+```
+Here, `lslx` is the object generator for `lslx` object and `new` is the build-in method of `lslx` to generate a new `lslx` object.
+The initialization of `lslx` requires users to specify a model for model specification (argument `model`) and a data set to be fitted (argument `sample_data`).
+The data set must contain all the observed variables specified in the given model.
+Because in this example a multi-group analysis is considered, variable for group labeling (argument `group_variable`) must be specified.
+In lslx, two types of parameterization can be used in multi-group analysis. 
+The first type is the same with the traditional multi-group SEM, which treats model parameters in each group separately.
+The second type sets one group as reference and treats model parameters in other groups as increments with respect to the reference.
+Under the second type of parameterization, the group heterogeneity can be efficiently explored if we treat the increments as penalized parameters.
+In this example, `Pasteur` is set as reference.
+Hence, the parameters in `Grant-White` now reflect differences from the reference.
+
+
+
+## Model Respecification
+After an `lslx` object is initialized, the heterogeneity of a multi-group model can be quickly respecified by `$free_heterogeneity()`, `$fix_heterogeneity()`, and `$penalize_heterogeneity()` methods.
+The following code sets `x2<-visual`, `x3<-visual`, `x5<-textual`, `x6<-textual`, `x8<-speed`, `x9<-speed`, and 
+`x2<-1`, `x3<-1`, `x5<-1`, `x6<-1`, `x8<-1`, `x9<-1` in `Grant-White` as penalized parameters.
+Note that parameters in `Grant-White` now reflect differences since `Pasteur` is set as reference.
+```{r comment = "", message = FALSE}
+lslx_mgfa$penalize_heterogeneity(block = c("y<-1", "y<-f"), group = "Grant-White")
+```
+Since the homogeneity of latent factor means may not be a reasonable assumption when examining measurement invariance, the following code relaxes this assumption
+```{r comment = "", message = FALSE}
+lslx_mgfa$free_block(block = "f<-1", group = "Grant-White")
+```
+To see more methods to modify a specified model, please check the section of Set-Related Method via `?lslx`. 
+
+
+
+
+## Model Fitting
+After an `lslx` object is initialized, method `$fit_mcp()` can be used to fit the specified model into the given data with MCP.
+```{r comment = "", message = FALSE}
+lslx_mgfa$fit_mcp()
+```
+All the fitting result will be stored in the `fitting` field of `lslx_mgfa`.
+
+
+## Model Summarizing
+Unlike traditional SEM analysis, `lslx` fits the model into data under all the penalty levels considered.
+To summarize the fitting result, a selector to determine an optimal penalty level must be specified.
+Available selectors can be found in the section of Penalty Level Selection via `?lslx`.
+The following code summarize the fitting result under the penalty level selected by Haughton’s Bayesian information criterion (HBIC).
+```{r comment = "", message = FALSE, fig.width = 24, fig.height = 14}
+lslx_mgfa$summarize(selector = "hbic")
+```
+In this example, we can see that all of the loadings are invariant across the two groups.
+However, the intercepts of `x3` and `x7` seem to be not invariant.
+The `$summarize()` method also shows the result of significance tests for the coefficients.
+In `lslx`, the default standard errors are calculated based on sandwich formula whenever raw data is available.
+It is generally valid even when the model is misspecified and the data is not normal.
+However, it may not be valid after selecting an optimal penalty level.

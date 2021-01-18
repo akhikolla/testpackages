@@ -1,0 +1,108 @@
+---
+title: "Bayesian Mediation Analysis in R"
+author: "Alexander Rix <alexrix@umich.edu>"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Bayesian Mediation Analysis in R}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+Perform mediation analysis in the presence of high-dimensional
+mediators based on the potential outcome framework. Bayesian Mediation
+Analysis (BAMA), developed by Song et al (2019), relies on two Bayesian sparse
+linear mixed models to simultaneously analyze a relatively large number of
+mediators for a continuous exposure and outcome assuming a small number of
+mediators are truly active. This sparsity assumption also allows the  extension
+of univariate mediator analysis by casting the identification of active
+mediators as a variable selection problem and applying Bayesian methods with
+continuous shrinkage priors on the effects.
+
+## Installation
+You can install `bama` from CRAN
+```{r, eval = FALSE}
+install.packages("bama")
+
+```
+
+or from Github via `devtools`
+```{r, eval = FALSE}
+# install.packages(devtools)
+devtools::install_github("umich-cphds/bama", built_opts = c())
+```
+`bama` requires the R packages `Rcpp` and `RcppArmadillo`, so you may want to
+install / update them before downloading. If you decide to install `bama` from
+source (eg github), you will need a C++ compiler that supports C++11. On Windows
+this can accomplished by installing
+[Rtools](https://cran.r-project.org/bin/windows/Rtools/), and
+[Xcode](https://apps.apple.com/us/app/xcode/id497799835?mt=12) on MacOS.
+
+The Github version may contain new features or bug fixes not yet present on
+CRAN, so if you are experiencing issues, you may want to try the Github
+version of the package.
+## Example problem
+`bama` contains a semi-synthetic example data set, `bama.data` that is used in
+this example. `bama.data` contains a continuous response `y` and a continuous
+exposure `a` that is mediated by 100 mediators, `m[1:100]`.
+
+```{r}
+library(bama)
+# print just the first 10 columns
+head(bama.data[,1:10])
+```
+
+The mediators have an internal correlation structure that is based off the
+covariance matrix from the Multi-Ethnic Study of Atherosclerosis (MESA) data.
+However, `bama` does not model internal correlation between mediators.
+Instead, `bama` employs continuous Bayesian shrinkage priors to select mediators
+and assumes that all the potential mediators contribute small effects
+in mediating the exposure-outcome relationship, but only a small proportion of
+mediators exhibit large effects.
+
+We use no adjustment covariates in this example, so we just include the
+intercept. Also, in a real world situation, it may be beneficial to normalize
+the input data.
+
+```{r}
+
+Y <- bama.data$y
+A <- bama.data$a
+
+# grab the mediators from the example data.frame
+M <- as.matrix(bama.data[, paste0("m", 1:100)])
+
+# We just include the intercept term in this example.
+C1 <- matrix(1, nrow(M), 1)
+C2 <- matrix(1, nrow(M), 1)
+
+# Initial guesses for coefficients
+beta.m  <- rep(0, ncol(M))
+alpha.a <- rep(0, ncol(M))
+
+set.seed(12345)
+# It is recommended to pick a larger number for burnin.
+bama.out <- bama(Y, A, M, C1, C2, beta.m, alpha.a, burnin = 3000, ndraws = 100)
+
+# rank the mediators by PIP and return the highest 10
+summary(bama.out, rank = T)[1:10,]
+```
+
+Here, the summary function calculates the posterior inclusion probability (PIP)
+`r1 = r3 = 1 | Data`, and ranks each mediator by its PIP. Each mediator's
+estimate and 95\% credible interval is also calculated.
+
+## Reference
+Song, Y, Zhou, X, Zhang, M, et al. Bayesian shrinkage estimation of high
+dimensional causal mediation effects in omics studies. Biometrics. 2019;
+1-11. [doi:10.1111/biom.13189](https://doi.org/10.1111/biom.13189)
+
+## Contact
+If you would like to report a bug, ask questions, or suggest something, please
+e-mail Alexander Rix at `alexrix@umich.edu`.

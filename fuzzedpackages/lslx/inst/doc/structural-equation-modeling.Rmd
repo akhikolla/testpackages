@@ -1,0 +1,99 @@
+---
+title: "Semi-Confirmatory Structural Equation Modeling"
+author: "Po-Hsien Huang"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Semi-Confirmatory Structural Equation Modeling}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+```{r comment = "", message = FALSE, setup, include=FALSE}
+options(digits = 3)
+options(width = 100)
+```
+In this example, we will show how to use `lslx` to conduct semi-confirmatory structural equation modeling.
+The example uses data `PoliticalDemocracy` in the package `lavaan`.
+Hence, `lavaan` must be installed.
+
+## Model Specification
+In the following specification, `x1` - `x3` and `y1` - `y8` is assumed to be measurements of 3 latent factors: `ind60`, `dem60`, and `dem65`.
+```{r comment = "", message = FALSE}
+model_sem <- "fix(1) * x1 + x2 + x3      <=: ind60
+              fix(1) * y1 + y2 + y3 + y4 <=: dem60
+              fix(1) * y5 + y6 + y7 + y8 <=: dem65
+              dem60 <= ind60
+              dem65 <= ind60 + dem60"
+```
+The operator `<=:` means that the RHS latent factors is defined by the LHS observed variables.
+In particular, the loadings are freely estimated.
+In this model, `ind60` is measured by `x1` - `x3`, `dem60` is mainly measured by `y1` - `y4`, and `dem65` is mainly measured by `y5` - `y8`.
+The operator `<=` means that the regression coefficients from the RHS variables to the LHS variables are freely estimated.
+In this model, `dem60` is influenced by `ind60` and `dem65` is influenced by `dem60` and `ind60`.
+Details of model syntax can be found in the section of Model Syntax via `?lslx`.
+
+## Object Initialization
+`lslx` is written as an `R6` class.
+Everytime we conduct analysis with `lslx`, an `lslx` object must be initialized.
+The following code initializes an `lslx` object named `lslx_sem`.
+```{r comment = "", message = FALSE}
+library(lslx)
+lslx_sem <- lslx$new(model = model_sem,
+                    sample_cov = cov(lavaan::PoliticalDemocracy),
+                    sample_size = nrow(lavaan::PoliticalDemocracy))
+```
+Here, `lslx` is the object generator for `lslx` object and `$new()` is the build-in method of `lslx` to generate a new `lslx` object.
+The initialization of `lslx` requires users to specify a model for model specification (argument `model`) and a sample moments to be fitted (argument `sample_cov` and `sample_size`).
+The sample moment must contain all the observed variables specified in the given model.
+
+
+## Model Respecification
+After an `lslx` object is initialized, model can be respecified by `$free_coefficient()`, `$fix_coefficient()`, and `$penalize_coefficient()` methods.
+The following code sets `y1<->y5`, `y2<->y4`, `y2<->y6`, `y3<->y7`, `y4<->y8`, and `y6<->y8` as penalized parameters.
+```{r comment = "", message = FALSE}
+lslx_sem$penalize_coefficient(name = c("y1<->y5",
+                                       "y2<->y4",
+                                       "y2<->y6",
+                                       "y3<->y7",
+                                       "y4<->y8",
+                                       "y6<->y8"))
+```
+To see more methods for respecifying model, please check the section of Set-Related Method via `?lslx`. 
+
+
+## Model Fitting
+After an `lslx` object is initialized, method `$fit_lasso()` can be used to fit the specified model into the given data with LASSO penalty function.
+```{r comment = "", message = FALSE}
+lslx_sem$fit_lasso()
+```
+The `$fit_lasso()` requires users to specify the considered penalty levels (argument `lambda_grid`).
+In this example, the lambda grid is automatically initialized by default.
+Note that MCP with `delta = Inf` is equivalent to the LASSO penalty.
+All the fitting result will be stored in the `fitting` field of `lslx_sem`.
+
+
+## Model Summarizing
+Unlike traditional SEM analysis, `lslx` fit the model into data under all the penalty levels considered.
+To summarize the fitting result, a selector to determine an optimal penalty level must be specified.
+Available selectors can be found in the section of Penalty Level Selection via `?lslx`.
+The following code summarize the fitting result under the penalty level selected by adjusted Bayesian information criterion (ABIC).
+```{r comment = "", message = FALSE, fig.width = 24, fig.height = 14}
+lslx_sem$summarize(selector = "abic")
+```
+In this example, we can see that the PL estimate under the selected penalty level doesn't contain any zero value, which indicates that all of the covariance of measurements are relevant.
+The `$summarize()` method also shows the result of significance tests for the coefficients.
+In `lslx`, the default standard errors are calculated based on sandwich formula whenever raw data is available.
+In this example, because raw data is not used for `lslx` object initialization, standard error is calculated by using observed Fisher information matrix.
+It may not be valid when the model is misspecified and the data are not normal.
+Also, it is generally invalid after choosing a penalty level.
+
+
+## Objects Extraction
+In `lslx`, many quantities related to SEM can be extracted by extract-related method.
+For example, the coefficient estimate and its asymptotic variance can be obtained by
+```{r comment = "", message = FALSE, fig.width = 8, fig.height = 4, dpi=300, out.width=600, out.height=300}
+lslx_sem$extract_coefficient(selector = "abic", type = "effective")
+```
+```{r comment = "", message = FALSE, fig.width = 8, fig.height = 4, dpi=300, out.width=600, out.height=300}
+diag(lslx_sem$extract_coefficient_acov(selector = "abic", type = "effective"))
+```
+Here, the `type` argument is used to specify which types of parameters are used to calculate related quantities. `type = "effective"` indicates that only freely estimated and penalized non-zero parameters are used. By default, `type = "all"`

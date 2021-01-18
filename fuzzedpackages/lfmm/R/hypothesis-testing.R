@@ -1,0 +1,29 @@
+## Hypothesis testing with lm
+hypothesis_testing_lm <- function(dat, X, lambda) {
+
+  d <- ncol(X)
+  p <- ncol(dat$Y)
+  effective.degree.freedom <- nrow(dat$Y) - ncol(X)
+
+  res <- list()
+  ## B
+  Af <- function(x) {
+    t(dat$productYt(x))
+  }
+  res$B <- compute_B_ridge(Af, X, lambda)
+
+  ## compute Var(E)
+  res$epsilon.sigma2 <- dat$sigma2_lm(X, res$B, effective.degree.freedom)
+
+  ## compute Var(B)
+  aux <- solve(crossprod(X) + diag(lambda, ncol(X), ncol(X)))
+  res$B.sigma2 <- t(matrix(diag(aux), d, 1) %*% matrix(res$epsilon.sigma2, 1, p))
+
+  ## compute zscore
+  res$score <- res$B / sqrt(res$B.sigma2)
+
+  ## compute pvalue
+  res$pvalue <- compute_pvalue_from_tscore(res$score, df = effective.degree.freedom)
+
+  res
+}

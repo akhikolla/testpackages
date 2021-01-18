@@ -1,0 +1,157 @@
+Rcpp_object <- Rcpp::cppFunction('List simFunction(NumericVector pars, double tstart, double tstop, IntegerVector u, NumericVector tspan) { 
+
+    // initialise variables
+    double tstar = 0.0, u_tmp = 0.0, totrate = 0.0, cumrate = 0.0;
+    int i = 0;
+    
+    // initialise time and rates of the system
+    double t = tstart;
+    NumericVector rates(2);
+
+    // update rates
+    rates[0] = pars[0]*u[0]*u[1];
+    rates[1] = pars[1]*u[1];
+    totrate = sum(rates);
+    
+    // check states
+    for(i = 0; i < u.size(); i++){
+        if(u[i] < 0) {
+            stop("Some states less than zero");
+        }
+    }
+    
+    // check rates
+    for(i = 0; i < rates.size(); i++){
+        if(R_FINITE(rates[i])) {
+            if(rates[i] < 0.0) {
+                stop("Some rates less than zero or non-finite");
+            }
+        } else {
+            stop("Some rates are non-finite");
+        }
+    }
+
+    // set up output vector
+    NumericMatrix out(tspan.size() + 1, u.size() + 2);
+
+    // check tspan
+    for(i = 1; i < tspan.size(); i++){
+        if(tspan[i] <= tspan[i - 1]) {
+            stop("tspan not ordered");
+        }
+        if(tstart >= tspan[0]){
+            stop("tstart >= tspan[0]");
+        }
+        if(tstop < tspan[tspan.size() - 1]){
+            stop("tstop < tspan[n]");
+        }
+    }
+
+    // update tspan
+    int k = 0;
+    while(tspan[k] < t && k < tspan.size()) {
+        out(k, 0) = NA_REAL;
+        out(k, 1) = tspan[k];
+        for(i = 0; i < u.size(); i++) {
+            out(k, i + 2) = (double) u[i];
+        }
+        for(i = u.size() / 2; i < u.size(); i++) {
+            u[i] = 0;
+        }
+        k++;
+    }
+    
+    // sample next event time
+    if(totrate > 0.0) {
+        tstar = t + R::rexp(1.0 / totrate);
+        while(tstar < tstop){
+
+            // update tspan
+            while(tspan[k] < tstar && k < tspan.size()) {
+                out(k, 0) = NA_REAL;
+                out(k, 1) = tspan[k];
+                for(i = 0; i < u.size(); i++) {
+                    out(k, i + 2) = (double) u[i];
+                }
+                for(i = u.size() / 2; i < u.size(); i++) {
+                    u[i] = 0;
+                }
+                k++;
+            }
+            // update event type
+            u_tmp = R::runif(0.0, totrate);
+            cumrate = rates[0];
+            if(u_tmp < cumrate) {
+                u[0]--;
+                u[1]++;
+                u[4]++;
+            } else {
+                u[1]--;
+                u[2]++;
+                u[5]++;
+            }
+        
+            // update rates
+            rates[0] = pars[0]*u[0]*u[1];
+            rates[1] = pars[1]*u[1];
+            totrate = sum(rates);
+            
+            // check states
+            for(i = 0; i < u.size(); i++){
+                if(u[i] < 0) {
+                    stop("Some states less than zero");
+                }
+            }
+            
+            // check rates
+            for(i = 0; i < rates.size(); i++){
+                if(R_FINITE(rates[i])) {
+                    if(rates[i] < 0.0) {
+                        stop("Some rates less than zero or non-finite");
+                    }
+                } else {
+                    stop("Some rates are non-finite");
+                }
+            }
+            
+            // update time
+            t = tstar;
+            
+            // sample next event time
+            if(totrate > 0.0) {
+                tstar = t + R::rexp(1.0 / totrate);
+            } else {
+                tstar = tstop;
+            }
+        }
+    }
+    
+    // record final event time
+    if(totrate > 0.0) {
+        t = tstop;
+    }
+    
+    // set output
+    while(k < tspan.size()) {
+        out(k, 0) = NA_REAL;
+        out(k, 1) = tspan[k];
+        for(i = 0; i < u.size(); i++) {
+            out(k, i + 2) = (double) u[i];
+        }
+        for(i = u.size() / 2; i < u.size(); i++) {
+            u[i] = 0;
+        }
+        k++;
+    }
+    out(tspan.size(), 0) = (totrate == 0.0 ? 1:0);
+    out(tspan.size(), 1) = t;
+    for(i = 0; i < u.size(); i++) {
+        out(tspan.size(), i + 2) = (double) u[i];
+    }
+    
+    // return output
+    List out1(2);
+    out1[0] = out(tspan.size(), _);
+    out1[1] = out(Range(0, tspan.size() - 1), Range(1, out.ncol() - 1));
+    return out1;
+}')

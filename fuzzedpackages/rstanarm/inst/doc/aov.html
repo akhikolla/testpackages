@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<meta name="author" content="Jonah Gabry and Ben Goodrich" />
+
+<meta name="date" content="2020-07-19" />
+
+<title>Estimating ANOVA Models with rstanarm</title>
+
+
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css" data-origin="pandoc">
+a.sourceLine { display: inline-block; line-height: 1.25; }
+a.sourceLine { pointer-events: none; color: inherit; text-decoration: inherit; }
+a.sourceLine:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode { white-space: pre; position: relative; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+code.sourceCode { white-space: pre-wrap; }
+a.sourceLine { text-indent: -1em; padding-left: 1em; }
+}
+pre.numberSource a.sourceLine
+  { position: relative; left: -4em; }
+pre.numberSource a.sourceLine::before
+  { content: attr(title);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; pointer-events: all; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {  }
+@media screen {
+a.sourceLine::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    for (var j = 0; j < rules.length; j++) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") continue;
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') continue;
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Estimating ANOVA Models with rstanarm</h1>
+<h4 class="author">Jonah Gabry and Ben Goodrich</h4>
+<h4 class="date">2020-07-19</h4>
+
+
+<div id="TOC">
+<ul>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#likelihood">Likelihood</a></li>
+<li><a href="#priors">Priors</a></li>
+<li><a href="#example">Example</a></li>
+<li><a href="#conclusion">Conclusion</a></li>
+</ul>
+</div>
+
+<!--
+%\VignetteEngine{knitr::rmarkdown}
+%\VignetteIndexEntry{stan_aov: ANOVA Models}
+-->
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb1-1" title="1"><span class="kw">library</span>(ggplot2)</a>
+<a class="sourceLine" id="cb1-2" title="2"><span class="kw">library</span>(bayesplot)</a>
+<a class="sourceLine" id="cb1-3" title="3"><span class="kw">theme_set</span>(bayesplot<span class="op">::</span><span class="kw">theme_default</span>())</a></code></pre></div>
+<div id="introduction" class="section level1">
+<h1>Introduction</h1>
+<p>This vignette explains how to estimate ANalysis Of VAriance (ANOVA) models using the <code>stan_aov</code> function in the <strong>rstanarm</strong> package</p>
+<p>The four steps of a Bayesian analysis are</p>
+<ol style="list-style-type: decimal">
+<li>Specify a joint distribution for the outcome(s) and all the unknowns, which typically takes the form of a marginal prior distribution for the unknowns multiplied by a likelihood for the outcome(s) conditional on the unknowns. This joint distribution is proportional to a posterior distribution of the unknowns conditional on the observed data</li>
+<li>Draw from posterior distribution using Markov Chain Monte Carlo (MCMC).</li>
+<li>Evaluate how well the model fits the data and possibly revise the model.</li>
+<li>Draw from the posterior predictive distribution of the outcome(s) given interesting values of the predictors in order to visualize how a manipulation of a predictor affects (a function of) the outcome(s).</li>
+</ol>
+<p>Steps 3 and 4 are covered in more depth by the vignette entitled <a href="rstanarm.html">“How to Use the <strong>rstanarm</strong> Package”</a>. This vignette focuses on Step 1 when the likelihood is the product of independent normal distributions. We also demonstrate that Step 2 is not entirely automatic because it is sometimes necessary to specify some additional tuning parameters in order to obtain optimally efficient results.</p>
+</div>
+<div id="likelihood" class="section level1">
+<h1>Likelihood</h1>
+<p>The likelihood for one observation under a linear model can be written as a conditionally normal PDF <span class="math display">\[\frac{1}{\sigma_{\epsilon} \sqrt{2 \pi}} 
+  e^{-\frac{1}{2} \left(\frac{y - \mu}{\sigma_{\epsilon}}\right)^2},\]</span> where <span class="math inline">\(\mu = \alpha + \mathbf{x}^\top \boldsymbol{\beta}\)</span> is a linear predictor and <span class="math inline">\(\sigma_{\epsilon}\)</span> is the standard deviation of the error in predicting the outcome, <span class="math inline">\(y\)</span>. The likelihood of the entire sample is the product of <span class="math inline">\(N\)</span> individual likelihood contributions.</p>
+<p>An ANOVA model can be considered a special case of the above linear regression model where each of the <span class="math inline">\(K\)</span> predictors in <span class="math inline">\(\mathbf{x}\)</span> is a dummy variable indicating membership in a group. An equivalent linear predictor can be written as <span class="math inline">\(\mu_j = \alpha + \alpha_j\)</span>, which expresses the conditional expectation of the outcome in the <span class="math inline">\(j\)</span>-th group as the sum of a common mean, <span class="math inline">\(\alpha\)</span>, and a group-specific deviation from the common mean, <span class="math inline">\(\alpha_j\)</span>.</p>
+</div>
+<div id="priors" class="section level1">
+<h1>Priors</h1>
+<p>If we view the ANOVA model as a special case of a linear regression model with only dummy variables as predictors, then the model could be estimated using the prior specification in the <code>stan_lm</code> function. In fact, this is exactly how the <code>stan_aov</code> function is coded. These functions require the user to specify a value for the prior location (by default the mode) of the <span class="math inline">\(R^2\)</span>, the proportion of variance in the outcome attributable to the predictors under a linear model. This prior specification is appealing in an ANOVA context because of the fundamental identity <span class="math display">\[SS_{\mbox{total}} = SS_{\mbox{model}} + SS_{\mbox{error}},\]</span> where <span class="math inline">\(SS\)</span> stands for sum-of-squares. If we normalize this identity, we obtain the tautology <span class="math inline">\(1 = R^2 + \left(1 - R^2\right)\)</span> but it is reasonable to expect a researcher to have a plausible guess for <span class="math inline">\(R^2\)</span> before conducting an ANOVA. See the <a href="lm.html">vignette</a> for the <code>stan_lm</code> function (regularized linear models) for more information on this approach.</p>
+<p>If we view the ANOVA model as a difference of means, then the model could be estimated using the prior specification in the <code>stan_lmer</code> function. In the syntax popularized by the <strong>lme4</strong> package, <code>y ~ 1 + (1|group)</code> represents a likelihood where <span class="math inline">\(\mu_j = \alpha + \alpha_j\)</span> and <span class="math inline">\(\alpha_j\)</span> is normally distributed across the <span class="math inline">\(J\)</span> groups with mean zero and some unknown standard deviation. The <code>stan_lmer</code> function specifies that this standard deviation has a Gamma prior with, by default, both its shape and scale parameters equal to <span class="math inline">\(1\)</span>, which is just an standard exponential distribution. However, the shape and scale parameters can be specified as other positive values. This approach also requires specifying a prior distribution on the standard deviation of the errors that is independent of the prior distribution for each <span class="math inline">\(\alpha_j\)</span>. See the <a href="glmer.html">vignette</a> for the <code>stan_glmer</code> function (<strong>lme4</strong>-style models using <strong>rstanarm</strong>) for more information on this approach.</p>
+</div>
+<div id="example" class="section level1">
+<h1>Example</h1>
+<p>We will utilize an example from the <strong>HSAUR3</strong> package by Brian S. Everitt and Torsten Hothorn, which is used in their 2014 book <em>A Handbook of Statistical Analyses Using R (3rd Edition)</em> (Chapman &amp; Hall / CRC). This book is frequentist in nature and we will show how to obtain the corresponding Bayesian results.</p>
+<p>The model in section 4.3.1 analyzes an experiment where rats were subjected to different diets in order to see how much weight they gained. The experimental factors were whether their diet had low or high protein and whether the protein was derived from beef or cereal. Before seeing the data, one might expect that a moderate proportion of the variance in weight gain might be attributed to protein (source) in the diet. The frequentist ANOVA estimates can be obtained:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb2-1" title="1"><span class="kw">data</span>(<span class="st">&quot;weightgain&quot;</span>, <span class="dt">package =</span> <span class="st">&quot;HSAUR3&quot;</span>)</a>
+<a class="sourceLine" id="cb2-2" title="2"><span class="kw">coef</span>(<span class="kw">aov</span>(weightgain <span class="op">~</span><span class="st"> </span>source <span class="op">*</span><span class="st"> </span>type, <span class="dt">data =</span> weightgain))</a></code></pre></div>
+<pre><code>         (Intercept)         sourceCereal              typeLow 
+               100.0                -14.1                -20.8 
+sourceCereal:typeLow 
+                18.8 </code></pre>
+<p>To obtain Bayesian estimates we can prepend <code>stan_</code> to <code>aov</code> and specify the prior location of the <span class="math inline">\(R^2\)</span> as well as optionally the number of cores that the computer is allowed to utilize:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb4-1" title="1"><span class="kw">library</span>(rstanarm)</a>
+<a class="sourceLine" id="cb4-2" title="2">post1 &lt;-<span class="st"> </span><span class="kw">stan_aov</span>(weightgain <span class="op">~</span><span class="st"> </span>source <span class="op">*</span><span class="st"> </span>type, <span class="dt">data =</span> weightgain, </a>
+<a class="sourceLine" id="cb4-3" title="3">                  <span class="dt">prior =</span> <span class="kw">R2</span>(<span class="dt">location =</span> <span class="fl">0.5</span>), <span class="dt">adapt_delta =</span> <span class="fl">0.999</span>,</a>
+<a class="sourceLine" id="cb4-4" title="4">                  <span class="dt">seed =</span> <span class="dv">12345</span>)</a>
+<a class="sourceLine" id="cb4-5" title="5">post1</a></code></pre></div>
+<pre><code>stan_aov
+ family:       gaussian [identity]
+ formula:      weightgain ~ source * type
+ observations: 40
+ predictors:   4
+------
+                     Median MAD_SD
+(Intercept)           98.8    4.7 
+sourceCereal         -12.7    6.4 
+typeLow              -18.7    6.3 
+sourceCereal:typeLow  16.8    8.7 
+
+Auxiliary parameter(s):
+              Median MAD_SD
+R2             0.2    0.1  
+log-fit_ratio  0.0    0.1  
+sigma         14.7    1.7  
+
+ANOVA-like table:
+                    Median MAD_SD
+Mean Sq source      545.4  426.3 
+Mean Sq type        968.9  585.5 
+Mean Sq source:type 709.8  688.4 
+
+------
+* For help interpreting the printed output see ?print.stanreg
+* For info on the priors used see ?prior_summary.stanreg</code></pre>
+<p>Here we have specified <code>adapt_delta = 0.999</code> to decrease the stepsize and largely prevent divergent transitions. See the Troubleshooting section in the main rstanarm <a href="rstanarm.html">vignette</a> for more details about <code>adapt_delta</code>. Also, our prior guess that <span class="math inline">\(R^2 = 0.5\)</span> was overly optimistic. However, the frequentist estimates presumably overfit the data even more.</p>
+<p>Alternatively, we could prepend <code>stan_</code> to <code>lmer</code> and specify the corresponding priors</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb6-1" title="1">post2 &lt;-<span class="st"> </span><span class="kw">stan_lmer</span>(weightgain <span class="op">~</span><span class="st"> </span><span class="dv">1</span> <span class="op">+</span><span class="st"> </span>(<span class="dv">1</span><span class="op">|</span>source) <span class="op">+</span><span class="st"> </span>(<span class="dv">1</span><span class="op">|</span>type) <span class="op">+</span><span class="st"> </span>(<span class="dv">1</span><span class="op">|</span>source<span class="op">:</span>type),</a>
+<a class="sourceLine" id="cb6-2" title="2">                   <span class="dt">data =</span> weightgain, <span class="dt">prior_intercept =</span> <span class="kw">cauchy</span>(),</a>
+<a class="sourceLine" id="cb6-3" title="3">                   <span class="dt">prior_covariance =</span> <span class="kw">decov</span>(<span class="dt">shape =</span> <span class="dv">2</span>, <span class="dt">scale =</span> <span class="dv">2</span>),</a>
+<a class="sourceLine" id="cb6-4" title="4">                   <span class="dt">adapt_delta =</span> <span class="fl">0.999</span>, <span class="dt">seed =</span> <span class="dv">12345</span>)</a></code></pre></div>
+<p>Comparing these two models using the <code>loo</code> function in the <strong>loo</strong> package reveals a negligible preference for the first approach that is almost entirely due to its having a smaller number of effective parameters as a result of the more regularizing priors. However, the difference is so small that it may seem advantageous to present the second results which are more in line with a mainstream Bayesian approach to an ANOVA model.</p>
+</div>
+<div id="conclusion" class="section level1">
+<h1>Conclusion</h1>
+<p>This vignette has compared and contrasted two approaches to estimating an ANOVA model with Bayesian techniques using the <strong>rstanarm</strong> package. They both have the same likelihood, so the (small in this case) differences in the results are attributable to differences in the priors.</p>
+<p>The <code>stan_aov</code> approach just calls <code>stan_lm</code> and thus only requires a prior location on the <span class="math inline">\(R^2\)</span> of the linear model. This seems rather easy to do in the context of an ANOVA decomposition of the total sum-of-squares in the outcome into model sum-of-squares and residual sum-of-squares.</p>
+<p>The <code>stan_lmer</code> approach just calls <code>stan_glm</code> but specifies a normal prior with mean zero for the deviations from <span class="math inline">\(\alpha\)</span> across groups. This is more in line with what most Bayesians would do naturally — particularly if the factors were considered “random” — but also requires a prior for <span class="math inline">\(\alpha\)</span>, <span class="math inline">\(\sigma\)</span>, and the standard deviation of the normal prior on the group-level intercepts. The <code>stan_lmer</code> approach is very flexible and might be more appropriate for more complicated experimental designs.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

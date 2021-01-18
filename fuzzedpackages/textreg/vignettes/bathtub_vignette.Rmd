@@ -1,0 +1,353 @@
+---
+title: "Using the textreg package"
+author: "Miratrix"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+vignette: >
+  %\VignetteIndexEntry{Using the textreg package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.align="center", fig.width=5, fig.height=5, size="scriptsize")
+options(width = 80)
+
+```
+
+
+## Introduction
+
+The following document illustrates the \verb|textreg| package on a cut down version of the "Fat/Cat" database discussed in Miratrix & Ackerman (2014).
+In a nutshell, the textreg package allows for regressing a vector of +1/-1 labels onto raw text.
+The textreg package takes care of converting the text to all of the possible related features, allowing you to think of the more organic statement of regressing onto "text" in some broad sense.
+
+### Installing the textreg package
+The easiest way is to use CRAN.  If not, first install the \verb|Rcpp| and \verb|tm| packages.
+The first connects C++ to R in a nicer way than the default, and the second is a text manipulation package of great utility.
+You will also need a C++ compiler that R can access.
+We don't know how to advise you to get that if it is not already installed.
+
+Once you have your compiler, you might try, if you have the package as a file on your system:
+```{r install.package, echo=TRUE, eval=FALSE }
+install.packages("textreg_0.1.tar.gz", repos = NULL, type="source")
+```
+You can also install via CRAN.
+
+### Getting ready to regress
+
+To get started, load the package and the data.
+Here we use a small dataset that comes with the package.
+```{r LoadPackage, echo=TRUE, message=FALSE, warning=FALSE }
+library( textreg )
+library( tm )
+data( bathtub )
+bathtub
+```
+Notice it is a `tm` package `Corpus` object.  (Right now `textreg` really requires vector corpus objects, because it is going to convert everything to raw character strings before conducting the regression.)
+
+Next obtain some labeling.  
+Labeling is any list of +1 and -1 (or 0 if you want to drop a document).  Here it has been stored in meta data of the sample corpus, and we pull it out:
+```{r GetLabeling, echo=TRUE }
+mth.lab = meta(bathtub)$meth.chl
+table( mth.lab )
+```
+
+Now decide on what ban words you want to use.  Usually non-informative content-specific words should be dropped.  Here we drop the words associated with making the labeling in the first place:
+```{r Getbanwords,echo=TRUE }
+banwords = c( "methylene", "chloride")
+```
+Ban words are words in the text you wish to disallow from any summary generated.  
+This is in liu of classic ``stop-word'' lists; they are situation-dependent.
+Classic stop words are automatically removed by appropriate regularization in the regression.  There is no need to include them here.
+
+
+### Obtaining the Summary
+
+You get a summary by calling the \verb|textreg| function.
+It has a lot of parameters, but let's ignore them for now.
+
+```{r DoRegression, echo=TRUE, out.width="0.5\\textwidth" }
+rs = textreg(bathtub, mth.lab, C=4, gap=1, min.support = 1, 
+            verbosity=0, convergence.threshold=0.00001, maxIter=100 )
+rs
+```
+One diagnostic to always check is whether there was convergence.  If the number of iterations equals \verb|maxIter|, it is likely there was no convergence.  Try upping \verb|maxIter| or relaxing your convergence threshold.
+
+Note, you can also just pass a filename instead of the corpus as the first parameter.
+This is good if the file is very large and you don't want to load it into R. 
+The file needs to be one document per line of the file (so you will need to removed newlines, etc., from your documents in order to have made such a file).
+
+You can also print the results in a more easy-to-read form:
+```{r See.results, echo=TRUE }
+print( reformat.textreg.model( rs ), row.names=FALSE )
+```
+
+You can plot to see when phrases were introduced in the greedy coordinate descent.
+```{r plot_results, echo=TRUE }
+plot( rs )
+```
+This is simply a call to the provided \verb|path.matrix.chart| method which uses \verb|make.path.matrix| which is a matrix of all the coeficients for each step of the descent algorithm.
+
+
+### Tuning the Summary
+There are several knobs that you can twiddle to change the summary you get from \verb|textreg()|.  The main ones to consider are
+
+\begin{description}
+\item[C] The level of regularization.  Bigger values give shorter summaries as it is harder for a phrase to be selected.  Small values give longer summaries, and with $C$ too small, you get phrases that are likely there due to random chance.
+\item[Lq] The $q$ for the $L^q$-rescaling of terms. Anything above 10 is treated as infinity.   Bigger values means select more general phrases.  Smaller values means select less general ones.  2 is standard.
+\item[positive.only]  Set this to TRUE or FALSE. Only allow positive features (other than the intercept). Useful if there are few positive documents and many negative, baseline, documents.
+\item[binary.features]    Set this to TRUE or FALSE. When TRUE, the feature vectors are changed to 0-1 vectors indicating whether a phrase is in or not in any given document, as compared to vectors of counts of how many times a phrases in a document. These feature vectors are regularized regardless.
+\item[min.support]  Phrases that do not appear this many times are not considered viable features. Increasing this number can substantially decrease the running time of the algorithm, but it will force the dropping of very rare phrases regardless of regularization choice.  If you don't want to see very rare phrases, this is a good option (even if it is a bit ad hoc).
+\item[min.pattern, max.pattern]  Minimum and maximum lengths (in words) for phrases that are considered.
+\item[gap]  Number of words that can appear in a gap. A phrase can have multiple gaps  of this length.  So \verb|gap=2| would allow, e.g., ``the * * truck'' as a phrase.  For \verb|gap=1| ``the * truck * slowed'' could be a phrase, because the skips are not adjacent.
+\end{description}
+
+Here are some different models we might fit:
+```{r Play.with.parameters, echo=TRUE }
+rs5 = textreg( bathtub, mth.lab, banwords, C = 5, gap=1, min.support = 1, 
+            verbosity=0, convergence.threshold=0.00001, maxIter=100 )
+rsLq5 = textreg( bathtub, mth.lab, banwords, C = 3, Lq=5, gap=1, min.support = 1, 
+               verbosity=0, convergence.threshold=0.00001, maxIter=100 )
+rsMinSup10 = textreg( bathtub, mth.lab, banwords, C = 3, Lq=5, gap=1, min.support = 10,
+                    verbosity=0, positive.only=TRUE, convergence.threshold=0.00001, maxIter=100 )
+rsMinPat2 = textreg( bathtub, mth.lab, banwords, C = 3, Lq=5, gap=1, min.support = 1, 
+                   min.pattern=2, verbosity=0, convergence.threshold=0.00001, maxIter=100 )
+```
+
+We can merge lists to see overlap quite easily via the \verb|make.list.table| command.
+This gives a table that we can easily render in latex:
+```{r show.different.models, results='asis', echo=TRUE }
+library(xtable)
+lst = list( rs5, rsLq5, rsMinSup10, rsMinPat2 )
+names(lst) = c("C=5", "Lq=5","sup=10", "pat=2")
+tbl = make.list.table( lst, topic="Misc Models" )
+print( xtable( tbl, caption="Table from the make.list.table call" ), 
+       latex.environments="tiny" )
+```
+See latex table for results.
+
+You can also plot this side-by-side table
+```{r plot_different_models, echo=TRUE, fig.width=4 }
+list.table.chart( tbl )
+```
+
+
+### Selecting C
+
+C is the main tuning parameter for a regularized regression.
+In the above we just used a default $C=4$, which is just large enough to drop singleton phrases that are ``perfect predictors.''
+Better choices are possible.
+One way is to select one via obtaining a permutation distribution on this parameter under a null of no connection between text and labeling.
+Do so as follows:
+```{r FindC, echo=TRUE }
+Cs = find.threshold.C( bathtub, mth.lab, banwords, R = 100, gap=1, min.support = 5, 
+                       verbosity=0, convergence.threshold=0.00001 )
+
+Cs[1]
+summary( Cs[-1] )
+
+C = quantile( Cs, 0.95 )
+C
+```
+The $Cs[1]$ term gives you the penalty needed to get no selected phrases (a null model) on your original labeling.  If this is much larger than the permutation distribution, you know you have a real connection between the text and the labeling, even after dropping banned words and phrases outside the specified support.
+
+\paragraph{Important:} The \verb|find.threshold.C| function shares the parameters of the \verb|textreg| function.  
+By using the same parameters in both calls, you will find the appropriate null distribution given the phrases allowed by the other parameters such as \verb|min.pattern| and so forth.
+
+
+### Dropping documents
+
+You can drop documents from the regression by setting the corresponding label to 0 instead of +1 or -1.  For example
+```{r dropDocs, echo=TRUE }
+mth.lab.lit = mth.lab
+mth.lab.lit[20:length(mth.lab)] = 0
+
+rs.lit = textreg( bathtub, mth.lab.lit, banwords, C = 4, gap=1, min.support = 1, verbosity=0 )
+rs.lit
+rs.lit$labeling
+```
+Note how we can get the subset labeling from the \verb|textreg.result| object.
+This can be useful for some of the text exploratory calls that take a result object and a labeling.
+
+
+
+## Exploring the Text
+The textreg package also offers a variety of ways to explore your text.  
+Some of these methods work with objects returned from the \verb|textreg()| command, and some just extend the capability of the \verb|tm| package and are generally useful.
+
+### Finding Where Phrases Appear
+
+It is easy to see which selected features are in which positive documents by generating the ``phrase matrix'' which is effectively the 
+design matrix of the regression (with all unimportant columns dropped).  Here we look at the phrase matrix for the full bathtub regression, above, and the one limited to the subset in the ``Dropping Documents'' section, above.
+```{r See.results.loc, echo=TRUE }
+hits = phrase.matrix( rs )
+dim( hits )
+t( hits[ 1:10, ] )
+hits.lit = phrase.matrix( rs.lit )
+dim(hits.lit)
+```
+Note the transpose, above, making the rows the phrases and the columns documents. This is just for ease of printing.
+
+Also note that, in the \verb|rs.lit| case, since documents were dropped by the labeling, this method will also drop them from the phrase matrix.  (See above about dropping documents.)
+
+Once you have your phrase matrix, you can calculate the number of ``important'' phrases in each document, or the total number of times a phrase appears (these numbers are already in the result object, however).
+```{r See.results.loc2, echo=TRUE }
+apply( hits[ mth.lab == 1, ], 1, sum )
+apply( hits[ mth.lab == 1, ], 2, sum )
+```
+
+
+### Independent Search Methods
+We provide several methods that allow you to directly explore text without a \verb|textreg.result| object.  You can use these even if you are not using the regression function of this package at all.
+For example, to look at the appearance pattern of individual terms try the following:
+```{r phrase.count.demo, echo=TRUE }
+tt2 = phrase.count( "tub * a", bathtub )
+head( tt2 )
+table( tt2, dnn="Counts for tub * a" )
+```
+
+You can further investigate the appearance patterns for phrases  by making a table of which documents have which phrases.  
+Again, you can look for any phrases you want
+using these methods, even if they are not part of your original CCS summary.
+
+```{r appearance.pat, echo=TRUE }
+tab = make.phrase.matrix( c( "bathtub", "tub * a" ), bathtub )
+head( tab )
+table( tab[,2] )
+```
+Note the tally numbers are the same as above.
+
+You can also just get total counts of the phrases in the corpus.  
+The only advantage of this is you can check phrases that were not returned in your textreg result object.
+```{r make.count.table.demo, echo=TRUE }
+ct = make.count.table( c( "bathtub", "tub * a", "bath" ), mth.lab, bathtub )
+ct
+```
+
+
+### Finding Phrases' Contexts
+
+You can grab snippits of text that include phrases quite easily.
+For example, here are the first three appearances of ``bathtub'':
+```{r grab.frag.demo, echo=TRUE }
+tmp = grab.fragments( "bathtub", bathtub, char.before=30, char.after=30, clean=TRUE )
+tmp[1:3]
+```
+If a document has a phrase multiple times, you will get multiple results for that document.
+
+Here is where ``tub * a'' comes from, divided into positive and negative classes by the passed labeling:
+```{r sample.frag.demo, echo=TRUE }
+frags = sample.fragments( "tub * a", mth.lab, bathtub, 20, char.before=30, char.after=30 )
+frags
+```
+
+
+### Relationships between phrases
+
+Sometimes, especially for summaries of many positive documents, there are multiple aspects that are being summarized with clusters of phrases.
+We have two vizualizations that help understand how phrases interact.
+%We artificially generate longer summaries (by lowering $C$) to have more to work with; generally we do not necessarily advocate using $C$ lower than a found threshold since you open the door to random noise.
+
+The first is a simple clustering of the phrases based on their appearance in the positively marked documents only.  This is only meaningful if the negative, baseline documents are to be construed only as a backdrop.
+Clustering is based on a scaled overlap statistic.
+```{r ClusterPhraes, echo=TRUE, out.width="0.5\\textwidth" }
+cluster.phrases( rs, num.groups=3 )
+```
+The \verb|num.groups| parameter is how many clusters to make.  
+
+The second vizualization is a heat-map of the pairwise correlations of all selected phrases.  
+You can plot the number of documents shared by each pair as well.
+```{r Make_phrase_cor_chart, echo=TRUE, out.width="0.5\\textwidth" }
+make.phrase.correlation.chart( rs, count=TRUE, num.groups=3 )
+```
+The \verb|count=TRUE| means use raw counts (easier to interpret) rather than the scaled overlap statistic.
+
+
+## Prediction
+You can use the phrases to predict the labeling both for your original documents or new out-of-sample documents if you wish.
+First, you can obtain an overall measure of how well one can predict the labeling with the phrases:
+```{r CalcLoss, echo=TRUE }
+calc.loss( rs )
+```
+This might be useful for selecting $C$ based on cross-validated prediction accuracy or similar.
+
+You can also, if you wish, examine the prediction ability of phrases on individual documents.
+```{r Prediction, echo=TRUE, out.width="0.5\\textwidth" }
+pds = predict( rs )
+labs = rs$labeling
+table( labs )
+boxplot( pds ~ labs, ylim=c(-1,1) ) 
+abline( h=c(-1,1), col="red" )
+```
+Note many of the predictions for positively marked documents remain very negative.  This is typical when there are few positive examples.
+Also note the \verb|lab=rs$labeling| line---this will give you the final labeling used by \verb|textreg| after any 0s have been dropped.
+
+### Out of Sample Prediction
+Here we split the sample and train on one part and test on the other.
+```{r Outofsample, echo=TRUE, out.width="0.5\\textwidth" }
+    smp = sample( length(bathtub), length(bathtub)*0.5 )
+	rs = textreg(  bathtub[smp], mth.lab[smp], C = 3, gap=1, min.support = 5, 
+              verbosity=0, convergence.threshold=0.00001, maxIter=100 )
+	rs
+	train.pred = predict( rs )
+	test.pred = predict( rs, bathtub[-smp] )
+
+	train.loss = calc.loss( rs )
+	train.loss
+	test.loss = calc.loss( rs, bathtub[-smp], mth.lab[-smp] )
+	test.loss
+```
+You might want to think carefully about how to do this if the negative documents far outweigh the positive ones.
+
+### Cross Validation
+We can find an optimal C via cross-validation as follows:
+```{r Cross Validation, echo=TRUE }
+  tbl = find.CV.C( bathtub, mth.lab, c("methylene","chloride"), 4, 8, verbosity=0 )
+  print( round( tbl, digits=3 ) )
+```
+This is 4-fold cross validation evaluated at 8 different values of C ranging from no regularization ($C=0$) to full regularization ($C$ just large enough to give a null model).  We get a table of test error.  We would then typically pick a $C$ that has a test error one SE larger than the minimum.  
+
+You can get this via the rather clumsy \verb|make.CV.chart| method, which returns such a C:
+```{r CrossValidationPlot, echo=TRUE, out.width="0.5\\textwidth" }
+  rs = make.CV.chart( tbl )
+  rs
+```
+
+
+## Cleaning Text and Stemming
+
+You can easily clean dirty text and stem it.  
+```{r CleanAndStem, echo=TRUE }
+data( dirtyBathtub )
+strwrap( dirtyBathtub$text[[1]] )
+bc = VCorpus( VectorSource( dirtyBathtub$text ) )
+
+bc.clean = clean.text( bc )
+strwrap( bc.clean[[1]] )
+  
+bc.stem = stem.corpus(bc.clean, verbose=FALSE)
+strwrap( bc.stem[[1]] )
+```
+
+Everything else works.  
+For the textreg package, the ``+'' are automatically turned into wildcards when doing phrase search in the original (cleaned but not stemmed) text.
+We need updated banwords to account for the stemming, but other than that, everything is the same; 
+we are doing business as usual on the transformed text:
+```{r CleanAndStem2, echo=TRUE }
+  res.stm = textreg(  bc.stem, mth.lab, c("chlorid+", "methylen+"), C=4, verbosity=0 )
+  res.stm
+
+  sample.fragments( "that contain+", res.stm$labeling, bc.stem, 5, char.before=10 )
+  sample.fragments( "that contain+", res.stm$labeling, bc.clean, 5, char.before=10 )
+```
+This vastly increases the ease of understanding a stemmed phrase or word.
+
+Future work would be to be able to retrieve phrases in the original ``dirty'' text; that would be a useful addition.
+It will mostly work now, but dropped punctuation, etc., can mess up phrase retrieval.
+
+A final note is if generating the cleaned corpus is time consuming, there is a small helper function \verb|save.corpus.to.files| that will write out your corpus to a text file and a \verb|Rda| file.  The text file's name can then be passed to textreg, thus avoiding the need to load the corpus into R's memory.
+This is recommended to avoid a lot of copying of large objects back and forth in memory.
+

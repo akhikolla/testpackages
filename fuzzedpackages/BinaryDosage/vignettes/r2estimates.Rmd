@@ -1,0 +1,55 @@
+---
+title: "Estimating Imputed R-squares"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Estimating Imputed R-squares}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+A common way to measure the imputation $r^2$ is calculate the variance of the imputed alleles probabilities and divide that by the variance if the alleles were perfectly imputed. An allele is perfectly imputed if $\Pr(a_i = 1)$ equals 0 or 1 for all $i$.
+
+The variance of the alleles when are perfectly imputed is $q(1-q)$ where $q$ is the alternate allele frequency. Given the imputation data We do not know what $q$ is the general population. However we can estimate it using the dosage values for each subject.
+$$
+\hat q = \sum_{i = 1}^{N}\frac{d_i}{2N}
+$$
+where the dosage is calculated as
+$$
+d_i = \frac{\Pr(g_i = 1) + 2\Pr(g_i=2)}{2}
+$$
+Another problem with the dosage data is we don't have the probabilities for each allele. Instead we have $\Pr(g_i=0), \Pr(g_i=1),$ and $\Pr(g_i=2)$. If we assume that a subject's two allelic probabilities, $q_1, q_2$ are independently imputed we know the following
+$$
+q_1(1-q2) + (1-q_1)q_2 = \Pr(g=1)
+$$
+and
+$$
+q_1 q_2 = \Pr(g=2)
+$$
+These equations can be solved resulting in the following values
+$$
+q_1 = \frac{d - \sqrt{d^2 - \Pr(g = 2)}}{2}\\%
+q_2 = \frac{d + \sqrt{d^2 - \Pr(g = 2)}}{2}
+$$
+There can be some problems using the above equations. Sometimes the value inside the radical can be negative. This can be caused by roundoff error. If the value is negative and close to zero, the value can be set to zero.
+
+**Note:** The documentation for minimac and Impute 2 indicate that the imputation values for the two alleles are imputed independently.
+
+Since each subject has two alleles we can let $q_1$ to $q_N$ represent the first allele of each subject and $q_{N+1}$ to $q_{2N}$ represent the second allele. Given this we can calculate all the $q$'s as follows
+$$
+q_i = \left\{\begin{array}{ll}%
+\frac{d_i - \sqrt{d_i^2 - 4\Pr(g_i = 2)}}{2} & \; 0<i\leq N\\%
+\frac{d_i + \sqrt{d_i^2 - 4\Pr(g_i = 2)}}{2} & \; N<i\leq 2N %
+\end{array}\right.
+$$
+Once the $q$'s have been calculated, the imputation $r^2$ can be estimated as follows
+
+$$
+\hat r^2 = \frac{\sum_{i = 1}^{2N}\frac{(q_i - \hat q)^2}{2N}}{\hat q(1 - \hat q)}
+$$

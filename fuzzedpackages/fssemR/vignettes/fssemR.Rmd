@@ -1,0 +1,184 @@
+---
+title: "fssemR: Fused Sparse Structural Equation Models to Jointly Infer Gene Regulatory Networks"
+author: "Xin Zhou"
+date: "`r Sys.Date()`"
+output: pdf_document
+vignette: >
+  %\VignetteIndexEntry{fssemR-introduction}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = ">"
+)
+```
+
+In this vignette, we introduce the functionality of the `fssemR` package to estimate the differential gene regulatory network by gene expression and genetic perturbation data. To meet the space and time constraints in building this vignette within the `fssemR` package, we are going to simulate gene expression and genetic perturbation data instead of using a real dataset. For this purpose, we will use function `randomFSSEMdata` in `fssemR` to generate simulated data, and then apply fused sparse structural equation model (FSSEM) to estimate the GRNs under two different conditions and their differential GRN. Also, please go to `https://github.com/Ivis4ml/fssemR/tree/master/inst` for more large dataset analysis. In conlcusion, this vignette is composed by three sections as follow,
+
+- Simulating two GRNs and their eQTL effects under two different conditions 
+- Estimating GRNs from the simulated gene expression data and genetic perturbation data
+- Differential GRN Visualization
+
+For user using package `fssemR`, please cite the following article:
+
+Xin Zhou and Xiaodong Cai. Inference of Differential Gene Regulatory Networks Based on Gene Expression and Genetic Perturbation Data. Bioinformatics, submitted.
+
+## Simulating two GRNs and their eQTL effects under two different conditions (Acyclic example) 
+We are going to simulate two GRNs and their corresponding gene expression and genetic perturbation data in the following steps:
+
+1. Load the necessary packages
+
+```{r}
+library(fssemR)
+library(network)
+library(ggnetwork)
+library(Matrix)
+```
+
+2. Simulate 20 genes expression data from a directed acyclic networks (DAGs) under two conditions, and each gene is simulated having 
+average 3 cis-eQTLs. Also, the genotypes of corresponding eQTLs are generated from F2-cross.
+
+```{r}
+n = c(100, 100)    # number of observations in two conditions
+p = 20             # number of genes in our simulation
+k = 3              # each gene has nonzero 3 cis-eQTL effect
+sigma2 = 0.01      # simulated noise variance
+prob = 3           # average number of edges connected to each gene
+type = "DG"        # `fssemR` also offers simulated ER and directed graph (DG) network
+dag  = TRUE        # if DG is simulated, user can select to simulate DAG or DCG
+## seed = as.numeric(Sys.time())  # any seed acceptable
+seed = 1234        # set.seed(100)
+set.seed(seed)
+data = randomFSSEMdata2(n = n, p = p, k = p * k, sparse = prob / 2, df = 0.3, 
+                        sigma2 = sigma2, type = type, dag = T)
+```
+
+```{r, echo=FALSE, eval=TRUE}
+# genes 1 to 20 are named as g1, g2, ..., g20
+rownames(data$Vars$B[[1]]) = colnames(data$Vars$B[[1]]) = paste("g", seq(1, p), sep = "")
+rownames(data$Vars$B[[2]]) = colnames(data$Vars$B[[2]]) = paste("g", seq(1, p), sep = "")
+rownames(data$Data$Y[[1]]) = rownames(data$Data$Y[[2]]) = paste("g", seq(1, p), sep = "")
+names(data$Data$Sk) = paste("g", seq(1, p), sep = "")
+# qtl 1 to qtl 60 are named as rs1, rs2, ..., rs60
+rownames(data$Vars$F) = paste("g", seq(1, p), sep = "")
+colnames(data$Vars$F) = paste("rs", seq(1, p * k), sep = "")
+rownames(data$Data$X[[1]]) = rownames(data$Data$X[[2]]) = paste("rs", seq(1, p * k), sep = "")
+```
+
+  + Summary of simulated GRNs under two conditions, for simplicity, we named our simulated genes as `g{%d}` and eQTLs as `rs{%d}`.
+```{r, fig.align="center", fig.cap = "Simulated GRN under condition 1"}
+# data$Vars$B[[1]]    ## simulated GRN under condition 1
+GRN_1 = network(t(data$Vars$B[[1]]) != 0, matrix.type = "adjacency", directed = TRUE)
+plot(GRN_1, displaylabels = TRUE, label = network.vertex.names(GRN_1), label.cex = 0.5)
+```
+
+```{r, fig.align="center", fig.cap = "Simulated GRN under condition 2"}
+# data$Vars$B[[2]]    ## simulated GRN under condition 2
+GRN_2 = network(t(data$Vars$B[[2]]) != 0, matrix.type = "adjacency", directed = TRUE)
+plot(GRN_2, displaylabels = TRUE, label = network.vertex.names(GRN_2), label.cex = 0.5)
+```
+
+```{r, fig.align="center", fig.cap = "Simulated differential GRN (GRN2 - GRN1), up-regulated are red and down-regulated are blue"}
+# data$Vars$B[[2]]    ## simulated GRN under condition 2
+diffGRN = network(t(data$Vars$B[[2]] - data$Vars$B[[1]]) != 0, matrix.type = "adjacency", directed = TRUE)
+ecol = 3 - sign(t(data$Vars$B[[2]] - data$Vars$B[[1]]))
+plot(diffGRN, displaylabels = TRUE, label = network.vertex.names(GRN_2), label.cex = 0.5, edge.col = ecol)
+```
+  + Simulated eQTLs's effect for 20 genes.
+
+```{r}
+library(Matrix)
+print(Matrix(data$Vars$F, sparse = TRUE))
+```
+
+Therefore, the $B$ matrices and $F$ matrix in `data$Vars` are the true values in our simulated model. We then need to estimated the $\hat{B}$ and $\hat{F}$ by the FSSEM algorithm.
+
+## Estimating GRNs from the simulated gene expression data and genetic perturbation data
+We need to input the gene expression and corresponding genotype data of two conditions into the FSSEM algorithm. They are stored in the `data$Data`.
+
+1. 20 simulated gene expression under two conditions
+```{r}
+head(data$Data$Y[[1]])
+head(data$Data$Y[[2]])
+```
+
+2. 60 corresponding cis-eQTLs' genotype under two conditions
+```{r}
+head(data$Data$X[[1]] - 1)
+head(data$Data$X[[2]] - 1)
+```
+
+3. `data$Data$Sk` stores each gene's cis-eQTL's indices. In real data application, we recommend to use package `MatrixEQTL` to search the significant cis-eQTLs for genes of interested and build `Sk` for your research
+
+```{r}
+head(data$Data$Sk)
+```
+
+
+### Initialization of `fssemR` by ridge regression
+We implement our fssemR by the observed gene expression data and genetic perturbations data that stored in `data$Data`, and it is initialized by ridge regression, the $l_2$ norm penalty's hyperparameter $\gamma$ is selected by 5-fold cross-validation.
+
+```{r}
+Xs  = data$Data$X     ## eQTL's genotype data
+Ys  = data$Data$Y     ## gene expression data
+Sk  = data$Data$Sk    ## cis-eQTL indices
+gamma = cv.multiRegression(Xs, Ys, Sk, ngamma = 50, nfold = 5, n = data$Vars$n, 
+                           p = data$Vars$p, k = data$Vars$k)
+fit0   = multiRegression(data$Data$X, data$Data$Y, data$Data$Sk, gamma, trans = FALSE,
+                         n = data$Vars$n, p = data$Vars$p, k = data$Vars$k)
+```
+
+### Run fssemR algorithm for data
+Then, we chose the `fit0` object from ridge regression as intialization, and implement the `fssemR` algorithm, BIC is used to select optimal hyperparameters $\lambda, \rho$, where `nlambda` is the number of candidate lambda values for $l_1$ regularized term, and `nrho` is the number
+of candidate rho values for fused lasso regularized term.
+
+```{r}
+fitOpt <- opt.multiFSSEMiPALM2(Xs = Xs, Ys = Ys, Bs = fit0$Bs, Fs = fit0$Fs, Sk = Sk,
+                               sigma2 = fit0$sigma2, nlambda = 10, nrho = 10,
+                               p = data$Vars$p, q = data$Vars$k, wt = TRUE)
+
+fit <- fitOpt$fit
+```
+
+### Comparing our estimated GRNs and differential GRN with ground truth
+```{r}
+cat("Power of two estimated GRNs = ", 
+    (TPR(fit$Bs[[1]], data$Vars$B[[1]]) + TPR(fit$Bs[[2]], data$Vars$B[[2]])) / 2)
+cat("FDR of two estimated GRNs = ", 
+    (FDR(fit$Bs[[1]], data$Vars$B[[1]]) + FDR(fit$Bs[[2]], data$Vars$B[[2]])) / 2)
+cat("Power of estimated differential GRN = ", 
+    TPR(fit$Bs[[1]] - fit$Bs[[2]], data$Vars$B[[1]] - data$Vars$B[[2]]))
+cat("FDR of estimated differential GRN = ", 
+    FDR(fit$Bs[[1]] - fit$Bs[[2]], data$Vars$B[[1]] - data$Vars$B[[2]]))
+```
+From these 4 metrics, we can get the performance of our `fssemR` algorithm comparing to the ground truth (if we know) 
+
+## Differential GRN Visualization
+
+```{r, fig.align="center", fig.cap = "estimated differential GRN by fssemR"}
+# data$Vars$B[[2]]    ## simulated GRN under condition 2
+diffGRN = network(t(fit$Bs[[2]] - fit$Bs[[1]]) != 0, matrix.type = "adjacency", directed = TRUE)
+# up-regulated edges are colored by `red` and down-regulated edges are colored by `blue`
+ecol = 3 - sign(t(fit$Bs[[2]] - fit$Bs[[1]]))
+plot(diffGRN, displaylabels = TRUE, label = network.vertex.names(GRN_2), label.cex = 0.5, edge.col = ecol)
+```
+
+Additionally, the differeitial effect of two GRN are also estimated. Therefore, we can tell how the interactions in two GRNs change.
+```{r}
+diffGRN = Matrix::Matrix(fit$Bs[[1]] - fit$Bs[[2]], sparse = TRUE)
+diffGRN
+```
+
+From the diffGRN, we can determined how the gene-gene interactions in GRN changes across two conditions, then, we can find out the key genes for condition-specific gene regulatory network. 
+
+Additionally, for more applications and the replications of our real data analysis, please go to the `https://github.com/Ivis4ml/fssemR/tree/master/inst` for more cases.
+
+## Session Information
+```{r}
+sessionInfo()
+```
+
+

@@ -1,0 +1,437 @@
+#' @title Perturbation clustering
+#' @description Perform subtyping using one type of high-dimensional data
+#' 
+#' @param data Input matrix. The rows represent items while the columns represent features.
+#' @param kMax The maximum number of clusters used for automatically detecting the number of clusters. Default value is \code{5}.
+#' @param kMin The minimum number of clusters used for automatically detecting the number of clusters. Default value is \code{2}.
+#' @param k The number of clusters. If k is set then kMin and kMax will be ignored.
+#' @param verbose Boolean value indicating the algorithm to run with or without logging. Default value is \code{TRUE}.
+#' @param ncore Number of cores that the algorithm should use. Default value is \code{1}.
+#' @param clusteringMethod The name of built-in clustering algorithm that PerturbationClustering will use. Currently supported algorithm are \code{kmeans}, \code{pam} and \code{hclust}. Default value is "\code{kmeans}".
+#' @param clusteringOptions A list of parameter will be passed to the clustering algorithm in \code{clusteringMethod}.
+#' @param clusteringFunction The clustering algorithm function that will be used instead of built-in algorithms.
+#' @param perturbMethod The name of built-in perturbation method that PerturbationClustering will use, currently supported methods are \code{noise} and \code{subsampling}. Default value is "\code{noise}".
+#' @param perturbOptions A list of parameter will be passed to the perturbation method in \code{perturbMethod}.
+#' @param perturbFunction The perturbation method function that will be used instead of built-in ones.
+#' @param PCAFunction The customized PCA function that user can manually define.
+#' @param iterMin The minimum number of iterations. Default value is \code{20}.
+#' @param iterMax The maximum number of iterations. Default value is \code{200}.
+#' @param madMin The minimum of Mean Absolute Deviation of \code{AUC} of Connectivity matrix for each \code{k}. Default value is \code{1e-03}.
+#' @param msdMin The minimum of Mean Square Deviation of \code{AUC} of Connectivity matrix for each \code{k}. Default value is \code{1e-06}.
+#
+#' @details
+#' PerturbationClustering implements the Perturbation Clustering algorithm of Nguyen, et al (2017) and Nguyen, et al (2019).
+#' It aims to determine the optimum cluster number and location of each sample in the clusters in an unsupervised analysis.
+#' 
+#' PerturbationClustering takes input as a numerical matrix or data frame of items as rows and features as columns.
+#' It uses a clustering algorithm as the based algorithm.
+#' Current built-in algorithms that users can use directly are \code{kmeans}, \code{pam} and \code{hclust}.
+#' The default parameters for built-in \code{kmeans} are \code{nstart = 20 and iter.max = 1000}.
+#' Users can change the parameters of built-in clustering algorithm by passing the value into \code{clusteringOptions}.
+#' 
+#' PerturbationClustering also allows users to pass their own clustering algorithm instead of using built-in ones by using \code{clusteringFunction} parameter. 
+#' Once \code{clust?eringFunction} is specified, \code{clusteringMethod} will be skipped.
+#' The value of \code{clusteringFunction} must be a function that takes two arguments: \code{data} and \code{k}, 
+#' where \code{data} is a numeric matrix or data frame containing data that need to be clustered, and \code{k} is the number of clusters.
+#' \code{clusteringFunction} must return a vector of labels indicating the cluster to which each sample is allocated.
+#' 
+#' PerturbationClustering uses a perturbation method to perturb clustering input data.
+#' There are two built-in methods are \code{noise} and \code{subsampling} that users can use directly by passing to \code{perturbMethod} parameter.
+#' Users can change the default value of built-in perturbation methods by passing new value into \code{perturbOptions}:
+#' 
+#' 1. \code{noise} perturbation method takes two arguments: \code{noise} and \code{noisePercent}. The default values are \code{noise = NULL and noisePercent = "median"}.
+#' If \code{noise} is specified. \code{noisePercent} will be skipped.\cr
+#' 2. \code{subsampling} perturbation method takes one argument \code{percent} which has default value of \code{80}
+#' 
+#' Users can also use their own perturbation methods by passing them into \code{perturbFunction}. 
+#' Once \code{perturbFunction} is specified, \code{perturbMethod} will be skipped.
+#' The value of \code{perturbFunction} must be a function that takes one argument \code{data}
+#' - a numeric matrix or data frame containing data that need to be perturbed.
+#' \code{perturbFunction} must return an object list which is as follows:
+#' 
+#' 1. \code{data}: the perturbed data\cr
+#' 2. \code{ConnectivityMatrixHandler}: a function that takes three arguments:
+#' \code{connectivityMatrix} - the connectivity matrix generated after clustering returned \code{data}, 
+#' \code{iter} - the current iteration and \code{k} - the number of cluster. 
+#' This function must return a compatible connectivity matrix with the original connectivity matrix. 
+#' This function aims to correct the \code{connectivityMatrix} if needed and returns the corrected version of it.\cr
+#' 3. \code{MergeConnectivityMatrices}: a function that takes four arguments: \code{oldMatrix}, \code{newMatrix}, \code{k} and \code{iter}. 
+#' The \code{oldMatrix} and \code{newMatrix} are two connectivity matrices that need to be merged,
+#' \code{k} is the cluster number and \code{iter} is the current number of iteration.
+#' This function must returns a connectivity matrix that is merged from \code{oldMatrix} and \code{newMatrix}
+#' 
+#' @return
+#' \code{PerturbationClustering} returns a list with at least the following components:
+#' \item{k}{The optimal number of clusters}
+#' \item{cluster}{A vector of labels indicating the cluster to which each sample is allocated}
+#' \item{origS}{A list of original connectivity matrices}
+#' \item{pertS}{A list of perturbed connectivity matrices}
+#' 
+#' 
+#' @references
+#' 
+#' 1. H Nguyen, S Shrestha, S Draghici, & T Nguyen. PINSPlus: a tool for tumor subtype discovery in integrated genomic data. Bioinformatics, 35(16), 2843-2846, (2019).
+#' 
+#' 2. T Nguyen, R Tagett, D Diaz, S Draghici. A novel method for data integration and disease subtyping. Genome Research, 27(12):2025-2039, 2017.
+#' 
+#' 3. T. Nguyen, "Horizontal and vertical integration of bio-molecular data", PhD thesis, Wayne State University, 2017.
+#' 
+#' @seealso \code{\link{kmeans}}, \code{\link{pam}}
+#' 
+#' @examples
+#' \donttest{
+#' # Load the dataset AML2004
+#' data(AML2004)
+#' data <- as.matrix(AML2004$Gene)
+#' # Perform the clustering
+#' result <- PerturbationClustering(data = data)
+#' 
+#' # Plot the result
+#' condition = seq(unique(AML2004$Group[, 2]))
+#' names(condition) <- unique(AML2004$Group[, 2])
+#' plot(
+#'     prcomp(data)$x,
+#'     col = result$cluster,
+#'     pch = condition[AML2004$Group[, 2]],
+#'     main = "AML2004"
+#' )
+#' legend(
+#'     "bottomright",
+#'     legend = paste("Cluster ", sort(unique(result$cluster)), sep = ""),
+#'     fill = sort(unique(result$cluster))
+#' )
+#' legend("bottomleft", legend = names(condition), pch = condition)
+#' 
+#' # Change kmeans parameters
+#' result <- PerturbationClustering(
+#'     data = data,
+#'     clusteringMethod = "kmeans",
+#'     clusteringOptions = list(
+#'         iter.max = 500,
+#'         nstart = 50
+#'     )
+#' )
+#' 
+#' # Change to use pam
+#' result <- PerturbationClustering(data = data, clusteringMethod = "pam")
+#' 
+#' # Change to use hclust
+#' result <- PerturbationClustering(data = data, clusteringMethod = "hclust")
+#' 
+#' # Pass a user-defined clustering algorithm
+#' result <- PerturbationClustering(data = data, clusteringFunction = function(data, k){
+#'     # this function must return a vector of cluster
+#'     kmeans(x = data, centers = k, nstart = k*10, iter.max = 2000)$cluster
+#' })      
+#' 
+#' # Use noise as the perturb method
+#' result <- PerturbationClustering(data = data, 
+#'                                  perturbMethod = "noise", 
+#'                                  perturbOptions = list(noise = 0.3))
+#' # or
+#' result <- PerturbationClustering(data = data, 
+#'                                  perturbMethod = "noise", 
+#'                                  perturbOptions = list(noisePercent = 10))
+#' 
+#' # Change to use subsampling
+#' result <- PerturbationClustering(data = data, 
+#'                                  perturbMethod = "subsampling", 
+#'                                  perturbOptions = list(percent = 90))
+#'
+#' # Users can pass their own perturb method
+#' result <- PerturbationClustering(data = data, perturbFunction = function(data){
+#'    rowNum <- nrow(data)
+#'    colNum <- ncol(data)
+#'    epsilon <-
+#'        matrix(
+#'            data = rnorm(rowNum * colNum, mean = 0, sd = 1.234),
+#'            nrow = rowNum,
+#'            ncol = colNum
+#'        )
+#'    
+#'    list(
+#'        data = data + epsilon,
+#'        ConnectivityMatrixHandler = function(connectivityMatrix, ...) {
+#'            connectivityMatrix
+#'        },
+#'        MergeConnectivityMatrices = function(oldMatrix, newMatrix, iter, ...){
+#'            return((oldMatrix*(iter-1) + newMatrix)/iter)
+#'        }
+#'    )
+#' })
+#' 
+#' # Clustering on simulation data
+#' # Load necessary library
+#' 
+#'if (!require("mclust")) install.packages("mclust")
+#'library(mclust)
+#'library(irlba)
+#' 
+#' #Generate a simulated data matrix with the size of 50,000 x 5,000
+#' sampleNum <- 50000 # Number of samples
+#' geneNum <- 5000 # Number of genes
+#' subtypeNum <- 3 # Number of subtypes
+#' 
+#' # Generate expression matrix
+#'exprs <- matrix(rnorm(sampleNum*geneNum, 0, 1), nrow = sampleNum, ncol = geneNum) 
+#'rownames(exprs) <- paste0("S", 1:sampleNum) # Assign unique names for samples
+#'
+#'# Generate subtypes
+#'group <- sort(rep(1:subtypeNum, sampleNum/subtypeNum + 1)[1:sampleNum])
+#'names(group) <- rownames(exprs)
+#'
+#'# Make subtypes separate
+#'for (i in 1:subtypeNum) {
+#'    exprs[group == i, 1:100 + 100*(i-1)] <- exprs[group == i, 1:100 + 100*(i-1)] + 2
+#'}
+#'
+#'# Plot the data
+#'library(irlba)
+#'exprs.pca <- irlba::prcomp_irlba(exprs, n = 2)$x
+#'plot(exprs.pca, main = "PCA")
+#'
+#'#Run PINSPlus clustering:
+#'
+#'set.seed(1)
+#'t1 <- Sys.time()
+#'result <- PerturbationClustering(data = exprs.pca, ncore = 1)
+#'t2 <- Sys.time()
+#'
+#'
+#'#Print out the running time:
+#'
+#'time<- t2-t1
+#'
+#'#Print out the number of clusters:
+#'
+#'result$k
+#'
+#'#Get cluster assignment
+#'
+#'subtype <- result$cluster
+#'
+#'# Here we assess the clustering accurracy using Adjusted Rand Index (ARI). 
+#'#ARI takes values from -1 to 1 where 0 stands for a random clustering and 1 
+#'#stands for a perfect partition result. 
+#'if (!require("mclust")) install.packages("mclust")
+#'library(mclust)
+#'ari <- mclust::adjustedRandIndex(subtype, group)
+#'
+#'#Plot the cluster assginments
+#'
+#'colors <- as.numeric(as.character(factor(subtype)))
+#'
+#'plot(exprs.pca, col = colors, main = "Cluster assigments for simulation data")
+#'
+#'legend("topright", legend = paste("ARI:", ari))
+#'
+#'legend("bottomright", fill = unique(colors),
+#'       legend = paste("Group ", 
+#'                      levels(factor(subtype)), ": ", 
+#'                      table(subtype)[levels(factor(subtype))], sep = "" )
+#')
+#' }
+#' @import stats utils   
+#' @importFrom doParallel stopImplicitCluster registerDoParallel
+#' @importFrom matrixStats colSds allocMatrix
+#' @importFrom foreach foreach %dopar% %do%
+#' @importFrom entropy entropy
+#' @importFrom FNN knn
+#' @importFrom cluster pam
+#' @importFrom irlba prcomp_irlba
+#' @importFrom mclust adjustedRandIndex
+#' @export
+PerturbationClustering <- function(data, kMin = 2, kMax = 5, k = NULL, verbose = T, ncore = 1, # Algorithm args
+                                   clusteringMethod = "kmeans", clusteringFunction = NULL, clusteringOptions = NULL, # Based clustering algorithm args
+                                   perturbMethod = "noise", perturbFunction = NULL, perturbOptions = NULL, # Perturbed function args
+                                   PCAFunction = NULL, iterMin = 20, iterMax = 200, madMin = 1e-03, msdMin = 1e-06# Stopping condition for generating perturbation matrix
+) {
+    RcppParallel::setThreadOptions(ncore)
+    if(nrow(data) <= 2000){
+        now = Sys.time()
+        
+        # defined log function
+        log <- if(!verbose) function(...){} else function(...){
+            message(...)
+            flush.console()
+        }
+        
+        clusteringAlgorithm = GetClusteringAlgorithm(clusteringMethod = clusteringMethod, clusteringFunction = clusteringFunction, clusteringOptions = clusteringOptions)
+        perturbationAlgorithm = GetPerturbationAlgorithm(data = data, perturbMethod = perturbMethod, perturbFunction = perturbFunction, perturbOptions = perturbOptions)
+        
+        log("Clustering method: ", clusteringAlgorithm$name)
+        log("Perturbation method: ", perturbationAlgorithm$name)
+    
+        seed = round(rnorm(1)*10^6)
+        
+        if (is.null(PCAFunction)){
+        if(ncol(data)*nrow(data) > 2e7) {
+            pca <- rpca.para(data, min(nrow(data), 20), scale = F, p = 10)
+        } else {
+            pca <- prcomp(data, rank. = min(nrow(data), 200))
+        }
+        } else {
+            pca <- list(
+                x = PCAFunction(data)
+            )
+        }
+        
+        if (!is.null(k) || kMin == kMax){
+            if (is.null(k)){
+                k = kMin
+            }
+            
+            set.seed(seed)
+            cluster <- kmeans(pca$x, centers = k, iter.max = 1000, nstart = 1000)$cluster
+            
+            return(
+                list(k = k, cluster = cluster, origS = NULL, pertS = NULL, Discrepancy = NULL, pca = pca)
+            )
+        }
+    
+    
+        # get the partitioning from simply clustering the real data, for consecutive k
+        log("Building original connectivity matrices")
+        set.seed(seed)
+        origPartition <- GetOriginalSimilarity(data = pca$x, clusRange = kMin : kMax, clusteringAlgorithm = clusteringAlgorithm$fun, showProgress = verbose, ncore)
+        origS <- origPartition$origS
+    
+        listAUC <- list()
+        for (k in kMin:kMax){
+            listAUC[k] <- list(c()) 
+        }
+        # declare stopping criteria for Perturbed Similarity computing
+        stoppingCriteriaHandler <- DiffDevianceStoppingHandler(kMin = kMin, kMax = kMax, origS = origS, iterMin = iterMin, madMin = madMin, msdMin = msdMin, onExcute = function(k, AUCs){
+            listAUC[[k]] <<- AUCs
+        })
+    
+        log("\nBuilding perturbed connectivity matrices")
+        set.seed(seed)
+        pertS <- GetPerturbedSimilarity(data = pca$x, clusRange = kMin : kMax, iterMax = iterMax, iterMin = iterMin, origS = origS,
+                                        clusteringAlgorithm = clusteringAlgorithm$fun, perturbedFunction = perturbationAlgorithm$fun,
+                                        stoppingCriteriaHandler = stoppingCriteriaHandler,
+                                        showProgress = verbose, ncore = ncore)
+        for (k in kMin:kMax){
+            AUCs <- listAUC[[k]]
+            pert <- matrix(0, nrow(data), nrow(data))
+            for (i in 1:length(AUCs)){
+                pert <- pert + pertS[[k]][[i]]*length(which(AUCs == AUCs[i]))
+            }
+            pertS[[k]] <- pert/sum(as.matrix(table(AUCs))[,1]^2)
+        }
+    
+        # get discrepancy message('Calculate discrepancy between original and perturbed connectivity matrices')
+        Discrepancy <- CalcPerturbedDiscrepancy(origS, pertS, clusRange = kMin : kMax)
+        
+        Discrepancy$AUC = round(Discrepancy$AUC, digits = 4)#meanAUCs
+        clus <- min(which(Discrepancy$AUC == max(Discrepancy$AUC[kMin:kMax])))
+        
+        timediff = Sys.time() - now;
+        log("Done in ", timediff, " ", units(timediff), ".\n")
+        
+        list(k = clus, cluster = origPartition$groupings[[clus]], origS = origS, pertS = pertS, Discrepancy = Discrepancy, pca = pca)
+    }else{
+        
+        # defined log function
+        log <- if(!verbose) function(...){} else function(...){
+            message(...)
+            flush.console()
+        }
+        
+        log("\nUsing knn...")
+        now = Sys.time()
+        names <- rownames(data)
+        set.seed(1)
+        ind <- sample.int(nrow(data),2000)
+        
+        train <- data[ind, ]
+        test <- data[-ind, , drop=F]
+
+        
+        clusteringAlgorithm = GetClusteringAlgorithm(clusteringMethod = clusteringMethod, clusteringFunction = clusteringFunction, clusteringOptions = clusteringOptions)
+        perturbationAlgorithm = GetPerturbationAlgorithm(data = data, perturbMethod = perturbMethod, perturbFunction = perturbFunction, perturbOptions = perturbOptions)
+        
+        log("Clustering method: ", clusteringAlgorithm$name)
+        log("Perturbation method: ", perturbationAlgorithm$name)
+        
+        seed = round(rnorm(1)*10^6)
+        
+        if (is.null(PCAFunction)){
+            if(ncol(train)*nrow(train) > 2e7) {
+                pca <- rpca.para(train, min(nrow(train), 20), scale = F, p = 10)
+            } else {
+                pca <- prcomp(train, rank. = min(nrow(train), 200))
+            }
+        } else {
+            pca <- list(
+                x = PCAFunction(train)
+            )
+        }
+        
+        train <- pca$x
+        
+        test <- predict.rpca.para(pca, test)
+        
+        if (!is.null(k) || kMin == kMax){
+            if (is.null(k)){
+                k = kMin
+            }
+            
+            set.seed(seed)
+            cluster.train <- kmeans(pca$x, centers = k, iter.max = 1000, nstart = 1000)$cluster
+            clus <- k
+            origS <-NULL
+            pertS <- NULL
+            Discrepancy <- NULL
+        } else {
+            # get the partitioning from simply clustering the real data, for consecutive k
+            log("Building original connectivity matrices")
+            set.seed(seed)
+            origPartition <- GetOriginalSimilarity(data = train, clusRange = kMin : kMax, clusteringAlgorithm = clusteringAlgorithm$fun, showProgress = verbose, ncore)
+            origS <- origPartition$origS
+            
+            listAUC <- list()
+            for (k in kMin:kMax){
+                listAUC[k] <- list(c()) 
+            }
+            # declare stopping criteria for Perturbed Similarity computing
+            stoppingCriteriaHandler <- DiffDevianceStoppingHandler(kMin = kMin, kMax = kMax, origS = origS, iterMin = iterMin, madMin = madMin, msdMin = msdMin, onExcute = function(k, AUCs){
+                listAUC[[k]] <<- AUCs
+            })
+            
+            log("Building perturbed connectivity matrices")
+            set.seed(seed)
+            pertS <- GetPerturbedSimilarity(data = train, clusRange = kMin : kMax, iterMax = iterMax, iterMin = iterMin, origS = origS,
+                                            clusteringAlgorithm = clusteringAlgorithm$fun, perturbedFunction = perturbationAlgorithm$fun,
+                                            stoppingCriteriaHandler = stoppingCriteriaHandler,
+                                            showProgress = verbose, ncore = ncore)
+            for (k in kMin:kMax){
+                AUCs <- listAUC[[k]]
+                pert <- matrix(0, nrow(train), nrow(train))
+                for (i in 1:length(AUCs)){
+                    pert <- pert + pertS[[k]][[i]]*length(which(AUCs == AUCs[i]))
+                }
+                pertS[[k]] <- pert/sum(as.matrix(table(AUCs))[,1]^2)
+            }
+            
+            # get discrepancy message('Calculate discrepancy between original and perturbed connectivity matrices')
+            Discrepancy <- CalcPerturbedDiscrepancy(origS, pertS, clusRange = kMin : kMax)
+            
+            Discrepancy$AUC = round(Discrepancy$AUC, digits = 4)#meanAUCs
+            clus <- min(which(Discrepancy$AUC == max(Discrepancy$AUC[kMin:kMax])))
+            
+            cluster.train <- origPartition$groupings[[clus]]
+        }
+
+        cluster.test <- as.integer(FNN::knn(train, test, cluster.train, k = 10))
+        
+        cluster <- rep(0, nrow(data))
+        cluster[ind] <- cluster.train
+        cluster[-ind] <- cluster.test
+                                           
+        timediff = Sys.time() - now;
+        log("Done in ", timediff, " ", units(timediff), ".\n")
+        
+        list(k = clus, cluster = cluster, origS = origS, pertS = pertS, Discrepancy = Discrepancy, pca = pca)
+    }
+}

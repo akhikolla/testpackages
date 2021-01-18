@@ -1,0 +1,16 @@
+#' Time series representing the three acceleration components recorded over time
+#' with body mounted accelerometers during the activity of a given person.
+#'
+#' This dataset is provided for illustration only and represents the three
+#' acceleration components recorded over time with body mounted accelerometers
+#' during the activity of a given person. These data consist therefore of multidimensional time series with
+#' several regime changes over time, each regime is associated with an activity.
+#'
+#' @format A data frame with 2253 rows and 4 columns:
+#' \describe{
+#'   \item{x}{The covariate variable (the sampling time).}
+#'   \item{y1}{X axis component of the acceleration.}
+#'   \item{y2}{Y axis component of the acceleration.}
+#'   \item{y3}{Z axis component of the acceleration.}
+#' }
+"multivrealdataset"

@@ -1,0 +1,2561 @@
+%% use JSS class but for now with nojss option
+\documentclass[nojss,shortnames,article]{jss}
+\usepackage{rotating}
+%\usepackage{float}
+%\usepackage{flafter}
+\usepackage{booktabs}
+
+\author{Dirk Eddelbuettel\\Debian Project} % \And Second Author\\Plus Affiliation}
+\title{From \pkg{DEoptim} to \pkg{RcppDE}: \\
+  A case study in porting from \proglang{C} to \proglang{C++} \\
+  using \pkg{Rcpp} and \pkg{RcppArmadillo}}
+
+\Plainauthor{Dirk Eddelbuettel} % , Second Author} %% comma-separated
+\Plaintitle{DEoptim: A case study in porting to C++ and Rcpp}
+\Shorttitle{A case study in porting to C++ and Rcpp}
+
+\Abstract{
+  \noindent
+  \pkg{DEoptim} \citep{MullenArdiaEtAl:2009:DEoptim,ArdiaBoudtCarlEtAl:2010:DEoptim,CRAN:DEoptim}
+  provides differential evolution optimisation for
+  \proglang{R}.  It is based on an implementation by Storn
+  \citep{PriceStornLampinen:2006:DE} and was originally implemented as an
+  interpreted \proglang{R} script. It was then rewritten in ANSI C which
+  resulted in a much improved performance.
+
+  The present paper introduces another implementation. This version is
+  written in \proglang{C++} based on the \pkg{Rcpp} package \citep{CRAN:Rcpp}
+  which provides tools for a more direct integration of \proglang{R} objects at the \proglang{C++}
+  level---and vice versa. It also uses the \pkg{RcppArmadillo} package \citep{CRAN:RcppArmadillo}
+  which provides an interface from \proglang{R} to the \pkg{Armadillo} linear algebra
+  package written in \proglang{C++} by Sanderson \citep{Sanderson:2010:Armadillo}.
+
+  We find that by rewriting the differential evolution optimisation algorithm
+  in \proglang{C++}, we achieve three usually exclusive goals: a) shorter
+  code, b) easier maintainability as well as improved ability to enhance and
+  extend, and c) consistent performance gains.
+}
+
+\Keywords{\pkg{Rcpp}, \pkg{RcppArmadillo}, \pkg{DEoptim}, differential evolution, genetic algorithm} %% at least one keyword must be supplied
+\Plainkeywords{Rcpp, RcppArmadillo, DEoptim, differential evolution, genetic algorith} %% without formatting
+
+%\VignetteIndexEntry{From DEoptim to RcppDE: A case study in porting from C to C++ using Rcpp and RcppArmadillo}
+%\VignetteKeywords{Rcpp,RcppArmadillo,DEoption,differential evolution,optimisation}
+%\VignettePackage{RcppDE}
+
+%% publication information
+%% NOTE: Typically, this can be left commented and will be filled out by the technical editor
+%% \Volume{13}
+%% \Issue{9}
+%% \Month{September}
+%% \Year{2004}
+%% \Submitdate{2004-09-29}
+%% \Acceptdate{2004-09-29}
+
+\Address{
+  Dirk Eddelbuettel \\
+  Debian Project \\
+  River Forest, IL, USA\\
+  %% Telephone: +43/1/31336-5053
+  %% Fax: +43/1/31336-734
+  E-mail: \email{edd@debian.org}\\
+  URL: \url{http://dirk.eddelbuettel.com}
+}
+
+%% need no \usepackage{Sweave.sty}
+
+% ------------------------------------------------------------------------
+
+\begin{document}
+
+\SweaveOpts{engine=R,eps=FALSE,echo=FALSE,prefix.string=figures/chart}
+
+\setkeys{Gin}{width=0.8\textwidth}
+
+<<prelim,echo=FALSE,print=FALSE>>=
+options(width=50)
+library(lattice)
+library(RcppDE)
+RcppDE.version <- packageDescription("RcppDE")$Version
+RcppDE.date <- packageDescription("RcppDE")$Date
+now.date <- strftime(Sys.Date(), "%B %d, %Y")
+# create figures/ if not present
+if ( ! (file.exists("figures") && file.info("figures")[["isdir"]]) ) dir.create("figures")
+@
+%
+
+\makeatletter
+\if@nojss
+  The \pkg{DEoptim} package was instrumental in
+  creating this paper, and I am grateful to \citet{CRAN:DEoptim}.
+  Christian Gunning kindly provided comments and additional references which
+  improved the paper. All remaining errors are mine.
+
+  \vfill
+  This version corresponds to \pkg{RcppDE} version \Sexpr{RcppDE.version} and was
+  typeset on \Sexpr{now.date}.
+\fi
+\makeatother
+
+
+\section{Introduction}
+
+\pkg{DEoptim}
+\citep{MullenArdiaEtAl:2009:DEoptim,ArdiaBoudtCarlEtAl:2010:DEoptim,CRAN:DEoptim}
+provides differential evolution optimisation for the \proglang{R} language
+and statistical environment.  Differential evolution
+\citep{StornPrice:1997:Differential} is one of several
+evolutionary computing approaches to the global optimisation of arbitrary
+objective functions; genetic algorithms and simulated annealing
+are two others.  Differential evolution is reasonably close to genetic
+algorithms but differs in one key aspect: parameter values are encoded as
+floating point values (rather than sequences of binary digits), which makes it
+particular suitable for real-valued optimisation problems. The relative
+performance of differential evolution compared to other global optimisation
+algorithms, as well as optimal parametrization, is reviewed in
+\citet{StornPrice:1997:Differential} and \citet{VesterstromThomsen:2004:Comparative}.
+
+\pkg{DEoptim} is based on an implementation by Storn
+\citep{PriceStornLampinen:2006:DE}. It was originally implemented as an
+(interpreted) \proglang{R} script before being rewritten in (compiled)
+\proglang{C} which resulted in a much improved performance. \pkg{DEoptim} has
+been used to optimise problems from a wide range of problem domains ranging
+from crystallography \citep{MullenKrayzmanLevin:2010:Atomic} to agricultural
+economics \citep{BoernerHigginsKantelhardt:2007:Rainfall} and computational
+finance \citep{BoudtPetersonCarl:2008:HFPortfolio}. It is also being used by
+two other CRAN packages for R: \pkg{micEconCES} \citep{CRAN:micEconCES} and
+\pkg{selectMeta} \citep{CRAN:selectMeta}.
+
+The present paper introduces the \proglang{R} package \pkg{RcppDE}. It
+provides another iteration as far as implementations of differential
+evolution go. This new version is based very closely on \pkg{DEoptim} but
+written in \proglang{C++}. The implementation employs the \pkg{Rcpp} package
+\citep{CRAN:Rcpp} which provides tools for a more direct integration of
+\proglang{R} objects at the \proglang{C++} level---and vice versa. It also
+uses the \pkg{RcppArmadillo} package \citep{CRAN:RcppArmadillo} which
+provides an interface from \proglang{R} to the \pkg{Armadillo} linear algebra
+package written in \proglang{C++} by Sanderson
+\citep{Sanderson:2010:Armadillo}.
+
+The code structure descends directly from the current \pkg{DEoptim} by
+\cite{CRAN:DEoptim}.  The conversion to \proglang{C++} was undertaken to see
+whether one or more of the goals \textsl{shorter}, \textsl{easier}  and
+\textsl{faster} could be achieved by switching the implementation
+language. These goals were loosely defined as follows:
+\begin{itemize}
+\item[shorter] replacing code that is by necessity somewhat verbose when
+  written in \proglang{C} with more compact code written in \proglang{C++}:
+  an example would be copying of a matrix which is implemented as a dual loop
+  copying each element---whereas \proglang{C++} allows us to use a single
+  (overloaded) \verb|+| operator and hence a single statement;
+\item[easier] this may appear as a corollary to the previous point but really
+  covers other aspects such as the automatic type conversion offered by
+  \pkg{Rcpp} as well as the automatic memory management: by replacing
+  allocation and freeing of heap-based dynamic memory, a consistent source of
+  programmer error would be eliminated---plus we are not trying `short and
+  incomprehensible' in the APL-sense but aim for possible improvements on
+  \textsl{both} the length and the ease of comprehension without trading one
+  off against the other;
+\item[faster] this may be a bit more of a conjecture as ultimately,
+  \proglang{C++} and \proglang{C} can be expected to be roughly equivalent
+  given matching compiler versions etc; however gains maybe be expected from
+  replacing a copying operation of a block of adjacent memory cells with a
+  single \verb|memcpy()| call done behind the scenes; \pkg{RcppArmadillo}
+  also offers further possible gains from template metaprogramming which can
+  result in the elimination of temporary object in complex expression where,
+  loosely speaking, compile-time effort is substituted to gain later run-time
+  performance.
+\end{itemize}
+
+This paper is organised as follows. The next sections describes the structure
+of \pkg{DEoptim} which \pkg{RcppDE} shadows closely. The following two
+section compare differences at the \proglang{R} and \proglang{C++} level,
+respectively. Next, changes in auxiliary files are discussed before we
+review changes in performance. A summary concludes. The appendix contains a
+list of figures contrasting the two implementations.
+
+\section[DEoptim structure]{\pkg{DEoptim} structure}
+
+\pkg{DEoptim} is a straightforward and well-implemented package. Its core
+functionality is provided by three \proglang{R} files, as well as three
+\proglang{C} files.
+
+In the transition \pkg{DEoptim} from to \pkg{RcppDE} many more changes were
+made to the \proglang{C} files: besides the obvious porting from \proglang{C}
+to \proglang{C++}, several internal code changes were made.  We discuss these
+changes below.  An important point to note is that the overall architecture
+and API remain as unchanged as possible.
+%
+On the other hand, very few changes were required at the \proglang{R}
+level. The user-facing side of \pkg{DEoptim} persists virtually unchanged
+(with one or two changes discussed below).
+
+Because of the dominant number of changes at the level of the compiled
+languages, we discuss the structure, and later on changes, of this part first
+before turning to the \proglang{R} side.
+
+\subsection[C / C++ structure and changes]{\proglang{} / \proglang{C++} structure and changes}
+
+\begin{table}[t!]
+  \begin{center}
+    \begin{tabular}{lrclr}
+      \toprule
+      \multicolumn{2}{c}{\pkg{DEoptim}} & & \multicolumn{2}{c}{\pkg{RcppDE}} \\
+      File  & Functions    & & File  & Functions\\
+      \cmidrule{1-2} \cmidrule{4-5} \\
+      \verb|de4_0.c| & \verb|DEoptimC()| & & \verb|deoptim.cpp| & \verb|DEoptim()| \\
+                      & \verb|devol()|    & & \verb|devol.cpp|    & \verb|devol()| \\
+                      & \verb|permute()|  & & \verb|permute.cpp| & \verb|permute()| \\[6pt]
+      \verb|evaluate.c|&  \verb|evaluate()| & & & \\[6pt]
+        &             & & \verb|evaluate.h|& \phantom{X} \verb|EvalBase class|  \\[6pt]
+      \verb|get_element.c|\phantom{X} &  \verb|getListElement()| & \phantom{XXX} & & \\
+      \bottomrule
+    \end{tabular}
+    \caption{Source file organisation for \proglang{C} files in \pkg{DEoptim}}
+    \label{tab:Cfiles}
+  \end{center}
+\end{table}
+
+Table~\ref{tab:Cfiles} lists the \proglang{C} and \proglang{C++}
+files in \pkg{DEoptim} and \pkg{RcppDE}, respectively.
+The large file \verb|de4_0.c| has been split into three files: one each for
+the core functions \verb|DEoptim()| (which is called from \proglang{R}),
+\verb|devol()| (which is the core differential evolution optimisation
+routine) and \verb|permute()| (which is a helper function used to shuffle
+indices).
+
+The evaluation function has been replaced by a base class and two virtual
+classes. These can now make use of objective functions written in
+\proglang{R} (as in \pkg{DEoptim}) as well as ones written in
+\proglang{C++}. Using compiled objective functions can lead to substantial
+speed improvements, particularly when the evaluation of the objective is
+`expensive' relative to overall computation in the optimization algorithm.
+Section~\ref{sec:Cppchanges} discusses these changes in more detail.
+
+
+\subsection[R structure and changes]{\proglang{R} structure and changes}
+
+Table~\ref{tab:Rfiles} lists the files and corresponding key functions.  Very
+few changes had to be made for \pkg{RcppDE}. Keeping the interface compatible
+between both implementations was an important goal. As can be seen from
+table~\ref{tab:Rfiles}, no files or functions were added.  A more detailed
+comparison follow below in section~\ref{sec:Rchanges}.
+
+\begin{table}[b!]
+  \begin{center}
+    \begin{tabular}{lr}
+      \toprule
+      File                                     & Functions \\
+      \midrule
+      \verb|DEoptim.R| \phantom{XXXXX}        & \verb|DEoptim()| \\
+                                               & \verb|DEoptim.control()| \\[6pt]
+      \verb|methods.R|                       & \verb|summary.DEoptim()| \\
+                                               & \verb|plot.DEoptim()| \\[6pt]
+      \verb|zzz.R|                            & \verb|.onLoad()| \\
+      \bottomrule
+    \end{tabular}
+    \caption{Source file organisation for \proglang{R} files in \pkg{DEoptim}
+    and \pkg{RcppDE}}
+    \label{tab:Rfiles}
+  \end{center}
+\end{table}
+
+
+\section[C / C++ changes]{\proglang{C} / \proglang{C++} changes}
+\label{sec:Cppchanges}
+
+In this section, we will look at the changes at the \proglang{C} /
+\proglang{C++} level. Figures~\ref{fig:deoptim_start} to
+\ref{fig:deoptim_end} contain the code the highest-level \proglang{C++}
+function: \verb|DEoptim()| (which we renamed from \verb|DEoptim_C()| as there
+is no need for a different name at the \proglang{C} level relative to
+\proglang{R}). This is followed by figures~\ref{fig:devol_start} to
+\ref{fig:devol_return} on the main worker function \verb|devol()| before
+figure~\ref{fig:evaluate_fun} compares the objective function evaluation of
+as the last element at the \proglang{C} / \proglang{C++} level.
+
+\subsection[de4_0.c and deoptim.cpp]{\code{de4\_0.c} and \code{deoptim.cpp}}
+
+The \verb|DEoptim()| function (renamed from \verb|DEoptim_C()| as there is no need for a different
+name at the \proglang{C} level relative to \proglang{R}) is the entry point
+from \proglang{R}. It receives parameters, sets up the call of \verb|devol()|
+and then prepares the return values.
+
+\paragraph{Part 1: Start of \texttt{DEoptim()}} The first part concerns
+itself with receiving parameters from \proglang{R};
+figure~\ref{fig:deoptim_start} displays this. The pure mechanics of passing and
+receiving parameters from \proglang{R} are easier thanks to logic provided by
+the \pkg{Rcpp} package:
+\begin{enumerate}
+\item Figure~\ref{fig:deoptim_start} illustrates this point: Panel B (with code
+  using \proglang{C++}) appears to be about half the size of panel A but this
+  due in part to bringing comments on the same line as code. On the other
+  hand, we save for example the declaration of ten \texttt{SEXP} variables as
+  \pkg{Rcpp} objects can be converted directly to \texttt{SEXP} type.
+\item Instead of using a mix of macros like \verb|NUMERIC_VALUE|,
+  \verb|INTEGER_VALUE|, \texttt{NUMERIC\_POINTER} and so on, we have a
+  consistent use of the \pkg{Rcpp} template function \verb|as| with template
+  types corresponding to base typed \verb|int|, \verb|double| etc. Also of
+  note is how one matrix object (\texttt{initialpom} for seeding a first
+  population of parameter values) is initialized directly from a parameter.
+\item Parameter lookup is by a string value but done using the \pkg{Rcpp} lookup
+  of elements in the \verb|list| type (which corresponds to the \proglang{R}
+  list passed in) rather than via a (functionally similar but ad-hoc) function
+  \verb|getListElement| that hence is not longer needed in \pkg{RcppDE}.
+\item Here as in later code examples, care was taken to ensure that variable
+  names and types correspond closely between both variants.
+\end{enumerate}
+
+\paragraph{Part 2: Middle of \texttt{DEoptim()}} The second part,
+displayed in figure~\ref{fig:deoptim_memory}, allocates dynamic memory for
+both parameters returned to \proglang{R} as well as for temporary objects
+required to store the results of intermediate computations.  Again, panel A
+shows the \proglang{C} code from \pkg{DEoptim} whereas panel B displays the
+\proglang{C++} code from \pkg{RcppDE}.  One difference becomes immediately apparent: the lack
+of proper matrix or vector types in \proglang{C}. We use the classes from the
+\pkg{Armadillo} \proglang{C++} library written by
+\cite{Sanderson:2010:Armadillo} and provided via the \proglang{R} package
+\pkg{Armadillo} by \citet{CRAN:RcppArmadillo}.
+\begin{enumerate}
+\item Matrix objects are created in \proglang{C} by first allocating a vector
+  of pointers to pointers, which is followed by a loop in which each each
+  column is allocated as vector of appropriate length.
+\item In \proglang{C++}, allocating a matrix is a single statement. Memory is
+  managed by reference counting and is freed when objects go out of
+  scope. This removes a \textsl{significant} portion of programmer errors.
+\item Another subtle difference is in the allocations of the container
+  holding different population snapshots, here called \texttt{d\_storepop}:
+  \pkg{Rcpp} lets us create a list object in which we store matrices, just as
+  would in \proglang{R} whereas the \proglang{C} construct is much more
+  complicated as we will see below.
+\item A subtle point discussed more below is that \pkg{RcppDE} stores
+  population members column-wise rather than row-wise. Whereas matrices on the
+  left in panel A have dimension $n \times k$, we allocate them as $k \times
+  n$ matrices in panel B.
+\end{enumerate}
+
+\paragraph{Part 3: End of \texttt{DEoptim()}} The third and last part of
+\verb|DEoptim()| covers the actual call of the worker function \verb|devol()|
+and the preparation of return values for \proglang{R}. As
+figure~\ref{fig:deoptim_end} shows, this section realized a significant
+reduction in source code size.
+
+\begin{enumerate}
+\item The \verb|devol()| function is called: as we aim to maintain
+  interfaces, the call is unchanged between both approaches shown in
+  figure~\ref{fig:deoptim_end}.
+\item The code following the function call is very different.  The new
+  version is shorter for a number of reasons:
+  \begin{enumerate}
+  \item No need to create new temporary variables just to convert to
+    \texttt{SEXP} types for return to \proglang{R} as the \pkg{Rcpp} package takes
+    care of this: seamless conversion back to \proglang{R} is a key feature.
+  \item No need to allocate memory for new temporary variables (as we do not
+    need these variables, and even if we did memory allocation would be implicit).
+  \item No need to \texttt{PROTECT} and later \texttt{UNPROTECT} such dynamic
+    memory allocations (because this is handled automatically behind the scenes).
+  \item No need for an explicit new list object to hold the eight return variables.
+  \item No need to explicitly assign names for these eight return
+    variables; this done implicitly while we create the returned list object.
+  \end{enumerate}
+\item Rather, a mere two statements are executed: the call to \verb|devol()|
+  followed by single call to create a return object as a list with named
+  elements which are simply inserted---just like we would in \proglang{R} itself.
+\item The remaining code takes care of exception handling by providing to
+  \verb|catch()| branches. These either forward a recognised exception to
+  \proglang{R}, or (in the case of an unrecognised exception) signal a
+  generic error.
+\end{enumerate}
+
+In sum, we see how a number of (possibly small) enhancements taken together
+permit us to write a function which is considerably shorter and easier to read, yet
+fully equivalent in terms of its functionality.
+
+\subsection[de4_0.c and devol.cpp]{\code{de4\_0.c} and \code{devol.cpp}}
+
+The \verb|devol()| function is the key part of the \pkg{DEoptim}
+implementation. It is also by far the largest function.  We will discuss it
+again in different sections, each corresponding to one figure ranging from
+figure~\ref{fig:devol_start} to figure~\ref{fig:devol_return}.
+
+\paragraph{Part 1: Start of \texttt{devol()}} The first part concerns the
+beginning of the \verb|devol()|. The display (in
+figure~\ref{fig:devol_start}) of panels A and B differs mostly in minor
+aspects:
+\begin{enumerate}
+\item The \proglang{C} version contains a declaration of a number of loop
+  variable that are either not needed at all in the \proglang{C++} version,
+  or declared locally.
+\item The urn depth is defined as a \proglang{C} macro and a constant
+  variable, respectively.
+\item The \proglang{C++} version has an additional short block to set up the
+  proper evaluation class for the user supplied function, depending on
+  whether an external pointer object is passed (in which case we expect a
+  compiled function) or not in which case an \proglang{R} routine is used,
+  just like in \pkg{DEoptim}.
+\item The \texttt{sortIndex} vector is filled with index only in case
+  strategy six has been selected as it is not used otherwise.
+\end{enumerate}
+
+\paragraph{Part 2: Initializations in \texttt{devol()}}
+
+The second part of \verb|devol()| deals with the creation and initialization
+of a number of variables.  The \proglang{C} language code in panel A is
+clearly more verbose and longer than the \proglang{C++} code in panel B. As
+shown in figure~\ref{fig:devol_init}, key differences are:
+\begin{enumerate}
+\item Initialization of matrices to zero values uses two explicit loops in
+  the \proglang{C} version.\footnote{The \texttt{memset()} function could be
+    used in the \proglang{C} version to avoid the loops for a minor
+    performance gain.}  In \proglang{C++}, we simply use the member function
+  \verb|zeros()| provided by the \pkg{Armadillo} library.
+\item In panel B for the \proglang{C++} case, the initial population in
+  variable \texttt{initialpopm} is transposed in the \proglang{C++}
+  example. We keep each population as a \textsl{column} rather than a
+  \textsl{row} as memory can generally be accessed faster column-wise.
+\item The actual initialization of the first population is very comparable;
+  in particular the \proglang{R} random number generator is called in the
+  exact same sequence all throughout \pkg{RcppDE} so that results are in fact
+  identical to those obtained from \pkg{DEoptim}.
+\item The initial population evaluation occurs with a call to
+  \verb|evaluate()| in the original version, and a call of the member
+  function of the evaluation class which will call either the supplied
+  compiled function, or the supplied \proglang{R} functions.
+\end{enumerate}
+
+\paragraph{Part 3: Iteration loop setup and start of population loop in \texttt{devol()}}
+
+The next part of \verb|devol()|, shown in figure~\ref{fig:devol_iter}, starts
+both the main outer loop over all iterations as well as the main inner loop
+over all population elements.  Similar to the discussion in the
+preceding paragraph, the new code is shorter in large part of more compact
+matrix expressions. Other differences are:
+\begin{enumerate}
+\item Intermediate populations are stored directly in a list, after being
+  transposed to account for our design choice of operating column-wise. In
+  the \proglang{C} code, the matrices are somewhat awkwardly `serialised'
+  into a single vector using the counter \texttt{popcnt} that incremented
+  position by position.
+\item Several other vector copies are each executed in a single statement rather
+  than in an explicit loop.
+\item At the beginning of the population loop, a vector is once more stored
+  in a temporary variable and the permutation algorithm is called to pick
+  suitable indices which will be used next.
+\end{enumerate}
+
+\paragraph{Part 4 and 5: Population strategies in  \texttt{devol()}}
+
+Evaluating each population member based on the user-selected strategies is
+detailed in both figures~\ref{fig:devol_first_four} and
+\ref{fig:devol_other_three} covering the six available strategies as well as
+the default case. There are only fairly minor differences between both
+version as shown by panels A and B of both figures:
+\begin{enumerate}
+\item Instead of \verb|if/else| branches, the new version uses a
+  \verb|switch| statement. This change can be beneficial as it may lead to fewer
+  comparison, depending on the chosen strategy, and though the inner loop is
+  executed many times, the overall benefit is still likely to be small.
+\item The case-invariant initialization of \verb|k| has been moved before the
+  block.
+\item The code for the different strategies differs very little between the
+  initial \proglang{C} implementation and the newer \proglang{C++} code.`4
+\end{enumerate}
+
+\paragraph{Part 6: End of population loop in  \texttt{devol()}}
+
+Figure~\ref{fig:devol_end_pop} contains two fairly short segments that are
+entered once within each outer iteration after the loop over all population
+elements has finished.  The two code segments in panels A and B of
+figure~\ref{fig:devol_end_pop} are fairly close, with the one difference
+once again the element-by-element copy of vector elements (in \proglang{C})
+versus the single statement using \proglang{C++} objects.
+
+\paragraph{Part 7: Special case of \texttt{bs} flag in  \texttt{devol()}}
+
+Similarly, figure~\ref{fig:devol_bs_flag} once more shows differences chiefly
+due to the way interim solutions are copied.
+\begin{enumerate}
+\item Panel A has a full nine loops for copying vector or matrix elements
+  which are not needed in panel B.
+\item Panel A has a somewhat elaborate segment to use a loop to copy a first
+  population vector to a temporary vector, copy a second into the place of
+  the first before then copying the content of the temporary vector into the
+  second (and likewise for the evaluation score of these vectors).  In Panel
+  B, we simply use a single call of \texttt{swap()} member function for both
+  the population vectors and their fitness.
+\end{enumerate}
+We should note that this code is executed only when the user has changed the
+default value of false for the \texttt{bs} option in the control list for
+\texttt{DEoptim()}.
+
+\paragraph{Part 8: End  of  \texttt{devol()}}
+
+Finally, figure~\ref{fig:devol_return} contains the final portion of the
+\verb|devol()| function. The population and its fitness value are saved. If
+the \texttt{checkWinner} option of the control structure has been changed by
+the user from the default value of false, a possible re-evaluation of the
+best population occurs and values are updated.
+
+Next, if tracing is enabling and the iteration counter has a value which
+signals that tracing display should occur, then updates are printed before a
+few state variables are updated.
+%
+The \texttt{devol()} then finishes right after restoring the state of the
+random number generator.
+
+
+\subsection[Evaluation functions in R and C++]{Evaluation functions in \proglang{R} and \proglang{C++}}
+
+Figure~\ref{fig:evaluate_fun} details the code used to evaluate the
+user-supplied objective function.  This figure is an exception: the code from
+\pkg{RcppDE} is much longer than the code in \pkg{DEoptim}.  This is due to a
+key main extension in \pkg{RcppDE}: the ability to use not only an
+\proglang{R} function to describe the objective function to be
+minimized---but also a compiled function.
+
+This is implemented by means of common \proglang{C++} idiom: an abstract base
+class, here called \texttt{EvalBase}. This is an empty class which contains
+no code, but providing an interface containing of two public functions
+\texttt{eval()} and \texttt{getNbEvals()} which are \textsl{virtual}: the
+declare the interface, but provide no implementation. This is provided by two
+classes deriving from the abstract base class: one each for evaluating the
+\proglang{R} and the \proglang{C++} function.
+
+The class \texttt{EvalStandard} in panel B correspond most closely to the
+normal \texttt{evaluate()} in panel A. A function call with a set of
+parameters is prepared and the evaluated in an environment. Here, the
+function and the environment are supplied once at the beginning---and hence
+used to instantiate the class.  Each evaluation then brings a new parameter
+vector.
+
+The class \texttt{EvalCompiled} does the same, but not for the compiled
+function that we access via an external pointer. The support for external
+pointer types via type \texttt{XPtr} class in \pkg{Rcpp} was instrumental in
+implementing this.  Similar to the standard case, the function is supplied at
+the beginning to instantiate the class.  Later, on each evaluation call a new
+parameter vector is supplied.
+
+
+\section[R changes]{\proglang{R} changes}
+\label{sec:Rchanges}
+
+Figures~\ref{fig:fig_R_DEoptim1} and \ref{fig:fig_R_DEoptim2} display the
+main \proglang{R} function \texttt{DEoptim()} which provides the interface
+the user of these packages employs.  A few changes have been made:
+\begin{enumerate}
+\item \pkg{DEoptim} supports variable arguments in the \proglang{R} function,
+  which follows the standard set by other optimisation functions. For
+  symmetry with the compiled function, we support just a standard vector.
+  However, the environment in which the function and parameters are evaluated
+  can also be supplied by the user (whereas \pkg{DEoptim} always creates a
+  new environment). The use of the environment then permits us to pass
+  auxiliary arguments to the function in the same way the variable arguments
+  would.
+\item \pkg{RcppDE} therefore has an additional argument \texttt{env} for the
+  user-supplied environment, as well as an additional creation of a default
+  environment if none was supplied.
+\item Population matrices are passed from \proglang{C++} to \proglang{R} as
+  matrix objects; no copy or rearrangement has to be undertaken.  This saves
+  a block of code at the top of panel B in figure~\ref{fig:fig_R_DEoptim2}.
+  Similarly, we do not have cast the population matrix as we already obtain a
+  matrix.
+\end{enumerate}
+
+None of the other functions from the files listed in table~\ref{tab:Rfiles}
+were changed (apart from a trivial startup message in the \texttt{.onLoad()}
+function in file \verb|zzz.R|).  In other words, the control options for
+\texttt{DEoptim()} are unchanged between between both versions, as are the
+additional method for summarizing, printing and plotting.
+
+\section{Auxiliary files}
+
+\subsection{Regression tests}
+
+A a directory \verb|tests/| has been added. It contains the file
+\verb|compTest.R| which provides a first means of both \textsl{comparing}
+results between \pkg{RcppDE} and \pkg{DEoptim} and also timing them.
+
+Three standard test functions (Wild, Rastrigin, Genrose) are run for four
+sets of parameter vector sizes---for both \pkg{RcppDE} and
+\pkg{DEoptim}. This ensures that results are identical between both
+implementation.
+
+Adding full regression testing is left for a future version of \pkg{RcppDE}.
+
+\subsection{Demo files}
+\label{subsec:demos}
+
+Several demos have been added for \pkg{RcppDE} to the existing demo file
+already present in \pkg{DEoptim}.  These new files are
+
+\begin{itemize}
+\item \texttt{SmallBenchmark} which runs the three standard test functions
+  in both implementations for three small parameters sizes. As these small
+  optimisation problems are relatively inexpensive, they are repeated a
+  number of times and timings are obtained as trimmed means.
+\item \texttt{LargeBenchmark} which runs the three standard test functions in
+  both implementations for three larger parameters sizes, this time without
+  replication.
+\item \texttt{CompiledBenchmark} which runs the three standard test
+  functions---but this time as compiled \proglang{C++} functions
+  demonstrating a significant performance gain relative to the \proglang{R}
+  version.
+\item \texttt{environment} which runs a single small example showing how to
+  pass an auxiliary parameter to the user-supplied function using an
+  environment.
+\end{itemize}
+
+\subsection{Benchmarking Scripts}
+
+The demos file from the preceding section are also being used for performance
+comparisons (as detailed in the next section).
+
+The files are organised as thin wrapper scripts around the demo files
+described in the preceding section.
+
+\section{Performance}
+\label{sec:performance}
+
+We will divide the performance comparison in three sections, corresponding to
+the same \textsl{small}, \textsl{large} and \textsl{compiled} split detailed
+above in section~\ref{subsec:demos}.
+
+Performance was measured between version 2.0-7 of \pkg{DEoptim} and the
+development versions of \pkg{RcppDE} preceding the 0.1.0 release of the
+latter.
+
+\subsection{Performance on small parameter vectors}
+
+\begin{figure}[t!]
+%\begin{figure}[ht]
+  \centering
+<<smallRes,fig=TRUE,width=8>>=
+## # small benchmark at SVN 2419M
+## # At 2010-11-08 06:42:29.018531
+smallLines <- "
+            DEoptim   RcppDE ratioRcppToBasic pctGainOfRcpp netSpeedUp
+Rastrigin5  0.10912 0.099875          0.91523        8.4765     1.0926
+Rastrigin10 0.23738 0.214875          0.90521        9.4787     1.1047
+Rastrigin20 0.55587 0.501500          0.90218        9.7819     1.1084
+Wild5       0.18288 0.171875          0.93985        6.0150     1.0640
+Wild10      0.40912 0.391125          0.95600        4.3996     1.0460
+Wild20      1.04513 0.987375          0.94474        5.5257     1.0585
+Genrose5    0.18913 0.179250          0.94779        5.2214     1.0551
+Genrose10   0.39538 0.374625          0.94752        5.2482     1.0554
+Genrose20   0.90050 0.848375          0.94212        5.7885     1.0614
+"
+## MEANS       0.44717 0.418764          0.93648        6.3517     1.0678
+## # Done 2010-11-08 06:43:50.88171
+
+con <- textConnection(smallLines)
+smallData <- read.table(con, header=TRUE, sep="")
+close(con)
+
+sb <- trellis.par.get("strip.background")
+sb[["col"]][1:2] <- c("gray80","gray90")
+trellis.par.set("strip.background", sb)
+
+# dput(brewer.pal(7, "Set1"))
+.cols <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
+           "#FF7F00", "#FFF33", "#A65628")[-6]
+
+ss <- trellis.par.get("superpose.symbol")
+ss[["col"]][1:6] <- .cols
+ss[["cex"]] <- rep(1.0, 7)
+ss[["pch"]] <- rep(19, 7)
+ss[["alpha"]] <- rep(0.75, 7)
+trellis.par.set("superpose.symbol", ss)
+
+smallWide <- data.frame(timeInSeconds=c(smallData[,1,drop=TRUE], smallData[,2,drop=TRUE]),
+                        pkg=rep(c("DEoptim", "RcppDE"), each=9),
+                        fun=rep(rep(c("Rastrigin", "Wild", "Genrose"), each=3), 2),
+                        n=c(5,10,20), 6)
+smallWide$fun <- factor(smallWide$fun, levels=c("Rastrigin", "Genrose", "Wild"))
+print(dotplot(as.factor(n) ~ timeInSeconds | fun, group=pkg, data=smallWide, layout=c(1,3),
+              xlab="Time in seconds for 5, 10 and 20 parameter problems, using logarithmic axis", ylab="",
+              scales=list(x=list(log=TRUE,at=c(0.1, 0.2, 0.4, 0.6, 0.8, 1.0), labels=c(0.1, 0.2, 0.4, 0.6, 0.8, 1.0))),
+              key=simpleKey(text=c("DEoptim","RcppDE"), space="top")))
+@
+\caption{Performance comparison for small-scale optimisation problems.}
+\begin{flushleft}
+  \footnotesize Results from our calculations using scripts included in the
+  \pkg{RcppDE} package; results are included in the source package. Tests were
+  performed using Ubuntu Linux version 10.10 in 64-bit mode on an Intel i7 '920' CPU
+  running at 2.6 GHz in hyperthreaded mode.
+\end{flushleft}
+\label{fig:smallResults}
+\end{figure}
+
+Figure~\ref{fig:smallResults} displays a performance comparison on the
+standard objective functions Wild, Genrose and Rastrigin.  Each function is
+evaluated at five, ten and twenty parameters, respectively.  As running time
+for the small problems is inconsequential, we report trimmed means (excluding
+10\% at each side) over a set of ten replications (as shown in the script and
+demo files in the package and discussed above).
+
+From figure~\ref{fig:smallResults}, we can draw a number of conclusions:
+\begin{itemize}
+\item Performance between \pkg{DEoptim} and \pkg{RcppDE} is roughly
+  comparable, though \pkg{RcppDE} has a small edge for which is consistent
+  across functions and parameter sizes.
+\item Performance varies between objective functions: the Wild function with
+  its two calls of trigonometric functions as well as five expressions of the
+  vector $x$ is roughly twice as expensive as the Rastrigin function which
+  has just one trigonometric function and two $x$ terms.
+\item The cost of increasing parameter size is larger than just linear: for
+  all functions, $n=20$ takes more than twice as long than $n=10$, and
+  likewise for $n=5$. Note that we plotted figures~\ref{fig:smallResults} to
+  \ref{fig:compiledResults} using a logarithmic $x$-axis which linearises the
+  results.
+\end{itemize}
+
+
+\subsection{Performance on large parameter vectors}
+
+\begin{figure}[t!]
+%\begin{figure}[ht]
+  \centering
+<<largeRes,fig=TRUE,width=8>>=
+## # big benchmark at SVN 2419M
+## # At 2010-11-08 06:43:51.422299
+largeLines <- "
+             DEoptim RcppDE ratioRcppToBasic pctGainOfRcpp netSpeedUp
+Rastrigin50    1.770  1.575          0.88983       11.0169     1.1238
+Rastrigin100   4.794  4.258          0.88819       11.1806     1.1259
+Rastrigin200  14.840 12.472          0.84043       15.9569     1.1899
+Wild50         3.692  3.558          0.96371        3.6295     1.0377
+Wild100       11.127 10.646          0.95677        4.3228     1.0452
+Wild200       38.026 35.755          0.94028        5.9722     1.0635
+Genrose50      2.587  2.414          0.93313        6.6873     1.0717
+Genrose100     6.252  5.739          0.91795        8.2054     1.0894
+Genrose200    17.058 15.147          0.88797       11.2030     1.1262
+"
+## MEANS         11.127 10.174          0.91431        8.5695     1.0937
+## # Done 2010-11-08 06:47:03.810348
+
+con <- textConnection(largeLines)
+largeData <- read.table(con, header=TRUE, sep="")
+close(con)
+
+largeWide <- data.frame(timeInSeconds=c(largeData[,1,drop=TRUE], largeData[,2,drop=TRUE]),
+                        pkg=rep(c("DEoptim", "RcppDE"), each=9),
+                        fun=rep(rep(c("Rastrigin", "Wild", "Genrose"), each=3), 2),
+                        n=c(50,100,200), 6)
+largeWide$fun <- factor(largeWide$fun, levels=c("Rastrigin", "Genrose", "Wild"))
+print(dotplot(as.factor(n) ~ timeInSeconds | fun, group=pkg, data=largeWide, layout=c(1,3),
+              xlab="Time in seconds for 50, 100 and 200 parameter problems, using logarithmic axis", ylab="",
+              scales=list(x=list(log=TRUE,at=c(1, 2, 5, 10, 20, 30), labels=c(1, 2, 5, 10, 20, 30))),
+              key=simpleKey(text=c("DEoptim","RcppDE"), space="top")))
+@
+\caption{Performance comparison for large-scale optimisation problems.}
+\begin{flushleft}
+  \footnotesize Results from our calculations using scripts included in the
+  \pkg{RcppDE} package; results are included in the source package. Tests were
+  performed using Ubuntu Linux version 10.10 in 64-bit mode on an Intel i7 '920' CPU
+  running at 2.6 GHz in hyperthreaded mode.
+\end{flushleft}
+\label{fig:largeResults}
+\end{figure}
+
+Figure~\ref{fig:largeResults} display results from the running the same three
+test functions for larger parameters vectors of size fifty, one hundred and
+two hundred, respectively.
+
+As in the preceding figure~\ref{fig:smallResults}, using \pkg{RcppDE} rather
+than \pkg{DEoptim} on these optimization problems provides a consistent
+performance edge. This edge is now actually larger in both absolute and
+relative terms and ranges from just 3.5\% (for the Wild function at $n=50$)
+to almost 16\% (for Rastrigin at $n=200$).  The performance gain also
+increases across all functions as $n$ increases.
+
+
+\subsection{Performance with compiled objective function}
+\label{subsec:compiled}
+
+\begin{figure}[t!]
+%\begin{figure}[ht]
+  \centering
+<<compiledRes,fig=TRUE,width=8>>=
+## # compiled benchmark at SVN 2419:2421M
+## # At 2010-11-08 06:48:42.56918
+compiledLines <- "
+             DEoptim  RcppDE ratioRcppToBasic pctGainOfRcpp netSpeedUp
+Rastrigin50    1.781  0.6090          0.34194        65.806     2.9245
+Rastrigin100   4.807  2.0940          0.43561        56.439     2.2956
+Rastrigin200  14.572  7.5000          0.51469        48.531     1.9429
+Wild50         3.748  0.9500          0.25347        74.653     3.9453
+Wild100       11.268  3.3160          0.29428        70.572     3.3981
+Wild200       37.225 12.4120          0.33343        66.657     2.9991
+Genrose50      2.667  0.2710          0.10161        89.839     9.8413
+Genrose100     6.498  0.7190          0.11065        88.935     9.0376
+Genrose200    17.471  1.9830          0.11350        88.650     8.8104
+"
+## MEANS         11.115  3.3171          0.29843        70.157     3.3509
+## # Done 2010-11-08 06:50:53.195003
+
+con <- textConnection(compiledLines)
+compiledData <- read.table(con, header=TRUE, sep="")
+close(con)
+
+compiledWide <- data.frame(timeInSeconds=c(compiledData[,1,drop=TRUE], compiledData[,2,drop=TRUE]),
+                        pkg=rep(c("DEoptim", "RcppDE"), each=9),
+                        fun=rep(rep(c("Rastrigin", "Wild", "Genrose"), each=3), 2),
+                        n=c(50,100,200), 6)
+compiledWide$fun <- factor(compiledWide$fun, levels=c("Rastrigin", "Genrose", "Wild"))
+print(dotplot(as.factor(n) ~ timeInSeconds | fun, group=pkg, data=compiledWide, layout=c(1,3),
+              xlab="Time in sec. for 50, 100 and 200 parameter problems, compiled objective function, logarithmic axis", ylab="",
+              scales=list(x=list(log=TRUE,at=c(0.5, 1, 2, 5, 10, 20, 30), labels=c(0.5, 1, 2, 5, 10, 20, 30))),
+              key=simpleKey(text=c("DEoptim","RcppDE"), space="top")))
+@
+\caption{Performance comparison for compiled objective function in optimisation problems.}
+\begin{flushleft}
+  \footnotesize Results from our calculations using scripts included in the
+  \pkg{RcppDE} package; results are included in the source package. Tests were
+  performed using Ubuntu Linux version 10.10 in 64-bit mode on an Intel i7 '920' CPU
+  running at 2.6 GHz in hyperthreaded mode.
+\end{flushleft}
+\label{fig:compiledResults}
+\end{figure}
+
+Using a compiled objective function can yield dramatic performance
+gains. Figure~\ref{fig:compiledResults} compares results for \pkg{RcppDE}
+using a compiled objective function with \pkg{DEoptim} using the standard
+\proglang{R} implementations used before.
+
+Gains can reach from (approximately) halving the observed time (for the
+Rastrigin function at $n=200$) to reducing it to almost one-tenth (for the
+Genrose function at all sizes).
+
+\subsection{Discussion}
+
+This section has demonstrated performance gains for the \pkg{RcppDE}
+implementation of optimisation via differential evolution relative to the
+\pkg{DEoptim} implementation we parted from. The gains we observed were
+consistent and range from small gains on small problems to moderate gains in
+the ten-percent range for larger problems.  In both these cases, the objective
+functions used were written in \proglang{R}.
+
+This paper also introduces a performance gain with allows the analysts to
+deploy differential evolution optimisation within  \proglang{R}, but via a
+compiled objective function.  This approach can yield more dramatic gains as
+was seen in section~\ref{subsec:compiled}.  Of course, the `No Free Lunch'
+theorem still holds: writing such an objective function may well be more
+work, or may not always be feasible.  However, if it is possible---and the
+\pkg{Rcpp} \citep{CRAN:Rcpp} for \proglang{R} and \proglang{C++} integration
+makes it easier---then this approach could provide significant gains on a
+wide range of optimisation problems.
+
+\section{Summary}
+
+Differential evolution optimization has been available for \proglang{R}
+through the \pkg{DEoptim} package
+\citep{MullenArdiaEtAl:2009:DEoptim,ArdiaBoudtCarlEtAl:2010:DEoptim,CRAN:DEoptim}.
+The \pkg{RcppDE} package presented in this paper started from a simple
+question.  Could we start from \pkg{DEoptim} and, by relying on the
+\pkg{Rcpp} and \pkg{RcppArmadillo} packages, achieve what the the quip
+\textsl{Shorter, Faster, Easier: Pick Any Three} alludes to: simultaneous
+improvements in code length, expressiveness (while maintaining
+comprehensibility) and at the same time gain in performance?
+
+Answering the first part is easiest.  As section~\ref{sec:Cppchanges}
+demonstrated, and as can be seen from figures~\ref{fig:deoptim_start} to
+\ref{fig:devol_return} in the appendix, the \proglang{C++} source code in
+\pkg{RcppDE} is now measurably shorter that the \proglang{C} code in
+\pkg{DEoptim} that we built upon. While some of this change is caused by to
+editing style and comment preferences, a very significant portion is due to
+two key sources.  First, the direct vector and matrix expressions
+in \proglang{C++} free us from boilerplate code using loops just to copy
+vectors or matrices. Second, direct \proglang{R} object manipulation in
+\proglang{C++} is possible thanks to the \pkg{Rcpp} package. Among other
+things, this makes it easier to access parameters passed from \proglang{R},
+and to return results back from \proglang{C++} to \proglang{R}.
+
+Answering the second question in the affirmative is also possible.
+Section~\ref{sec:performance} presented results of consistent performance
+gains of \pkg{Rcpp} over \pkg{DEoptim} across all test functions and all
+parameters vector sizes that were examined in this paper. Particularly
+noteworthy improvements in performance were obtained with the compiled
+objective functions that are possible with \pkg{RcppDE}.
+
+As for the third part and whether this makes using or extending the code
+\textsl{easier}: The proof may very well be in the pudding. We hope to now
+investigate how the use of multithreaded programming approaches, in
+particularly via the OpenMP framework, can further improve the performance of
+optimization via differential evolution.  We think that having changed the
+code basis to the more compact \proglang{C++} should facilitate this
+investigation.  In the meantime, the relative ease with which the extension
+for compiled objective function has been added may be an indication of the
+possible benefits from using \proglang{C++}. So this is not yet fully proven,
+but some benefits have already been demonstrated.
+
+Concluding, we can score the approach presented here at a careful \textsl{2
+  1/2 out of 3 possible points}. Going from \pkg{DEoptim} to \pkg{RcppDE} has
+been a useful case study in applying \pkg{Rcpp} and \pkg{RcppArmadillo} to a
+well-established problem. We hope that \pkg{RcppDE} also proves useful to
+other \proglang{R} users.
+
+\bibliography{RcppDE}
+
+
+\section*{Appendix}
+
+
+%% C++ functions
+
+\begin{sidewaysfigure}          % fig 1: beginning of DEoptimC / DEoptim
+  \begin{minipage}{0.40\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+SEXP DEoptimC(SEXP lower, SEXP upper, SEXP fn, SEXP control, SEXP rho)
+{
+  int i, j;
+
+  /* External pointers to return to R */
+  SEXP sexp_bestmem, sexp_bestval, sexp_nfeval, sexp_iter,
+    out, out_names, sexp_pop, sexp_storepop, sexp_bestmemit, sexp_bestvalit;
+
+  if (!isFunction(fn))
+    error("fn is not a function!");
+  if (!isEnvironment(rho))
+    error("rho is not an environment!");
+
+  /*-----Initialization of annealing parameters-------------------------*/
+  /* value to reach */
+  double VTR = NUMERIC_VALUE(getListElement(control, "VTR"));
+  /* chooses DE-strategy */
+  int i_strategy = INTEGER_VALUE(getListElement(control, "strategy"));
+  /* Maximum number of generations */
+  int i_itermax = INTEGER_VALUE(getListElement(control, "itermax"));
+  /* Number of objective function evaluations */
+  long l_nfeval = (long)NUMERIC_VALUE(getListElement(control, "nfeval"));
+  /* Dimension of parameter vector */
+  int i_D = INTEGER_VALUE(getListElement(control, "npar"));
+  /* Number of population members */
+  int i_NP = INTEGER_VALUE(getListElement(control, "NP"));
+  /* When to start storing populations */
+  int i_storepopfrom = INTEGER_VALUE(getListElement(control, "storepopfrom"))-1;
+  /* How often to store populations */
+  int i_storepopfreq = INTEGER_VALUE(getListElement(control, "storepopfreq"));
+  /* User-defined inital population */
+  int i_specinitialpop = INTEGER_VALUE(getListElement(control, "specinitialpop"));
+  double *initialpopv = NUMERIC_POINTER(getListElement(control, "initialpop"));
+  /* User-defined bounds */
+  double *f_lower = NUMERIC_POINTER(lower);
+  double *f_upper = NUMERIC_POINTER(upper);
+  /* stepsize */
+  double f_weight = NUMERIC_VALUE(getListElement(control, "F"));
+  /* crossover probability */
+  double f_cross = NUMERIC_VALUE(getListElement(control, "CR"));
+  /* Best of parent and child */
+  int i_bs_flag = NUMERIC_VALUE(getListElement(control, "bs"));
+  /* Print progress? */
+  int i_trace = NUMERIC_VALUE(getListElement(control, "trace"));
+  /* Re-evaluate best parameter vector? */
+  int i_check_winner = NUMERIC_VALUE(getListElement(control, "checkWinner"));
+  /* Average */
+  int i_av_winner = NUMERIC_VALUE(getListElement(control, "avWinner"));
+  /* p to define the top 100p% best solutions */
+  double i_pPct = NUMERIC_VALUE(getListElement(control, "p"));
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel A: \proglang{C} version}
+    \tiny
+
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.56\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+RcppExport SEXP DEoptim(SEXP lowerS, SEXP upperS, SEXP fnS, SEXP controlS, SEXP rhoS) {
+
+    try {
+        Rcpp::NumericVector  f_lower(lowerS), f_upper(upperS);          // User-defined bounds
+        Rcpp::List           control(controlS);                         // named list of params
+
+        double VTR           = Rcpp::as<double>(control["VTR"]);        // value to reach
+        int i_strategy       = Rcpp::as<int>(control["strategy"]);      // chooses DE-strategy
+        int i_itermax        = Rcpp::as<int>(control["itermax"]);       // Maximum number of generations
+        long l_nfeval        = 0;                                       // nb of function evals (NOT passed in)
+        int i_D              = Rcpp::as<int>(control["npar"]);          // Dimension of parameter vector
+        int i_NP             = Rcpp::as<int>(control["NP"]);            // Number of population members
+        int i_storepopfrom   = Rcpp::as<int>(control["storepopfrom"]) - 1;  // When to start storing populations
+        int i_storepopfreq   = Rcpp::as<int>(control["storepopfreq"]);  // How often to store populations
+        int i_specinitialpop = Rcpp::as<int>(control["specinitialpop"]);// User-defined inital population
+        Rcpp::NumericMatrix initialpopm = Rcpp::as<Rcpp::NumericMatrix>(control["initialpop"]);
+        double f_weight      = Rcpp::as<double>(control["F"]);          // stepsize
+        double f_cross       = Rcpp::as<double>(control["CR"]);         // crossover probability
+        int i_bs_flag        = Rcpp::as<int>(control["bs"]);            // Best of parent and child
+        int i_trace          = Rcpp::as<int>(control["trace"]);         // Print progress?
+        int i_check_winner   = Rcpp::as<int>(control["checkWinner"]);   // Re-evaluate best parameter vector?
+        int i_av_winner      = Rcpp::as<int>(control["avWinner"]);      // Average
+        double i_pPct        = Rcpp::as<double>(control["p"]);          // p to define the top 100p% best solutions
+
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel B: \proglang{C++} version using \pkg{Rcpp}}
+   \end{minipage}
+  \caption{Beginning of \code{DEoptim()} \proglang{C/C++} function}
+  \label{fig:deoptim_start}
+\end{sidewaysfigure}
+
+\begin{sidewaysfigure}          % fig 2: memory allocations
+  \begin{minipage}{0.40\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+  /* Data structures for parameter vectors */
+  double **gta_popP = (double **)R_alloc(i_NP*2,sizeof(double *));
+  for (int i = 0; i < (i_NP*2); i++)
+    gta_popP[i] = (double *)R_alloc(i_D,sizeof(double));
+
+  double **gta_oldP = (double **)R_alloc(i_NP,sizeof(double *));
+  for (int i = 0; i < i_NP; i++)
+    gta_oldP[i] = (double *)R_alloc(i_D,sizeof(double));
+
+  double **gta_newP = (double **)R_alloc(i_NP,sizeof(double *));
+  for (int i = 0; i < i_NP; i++)
+    gta_newP[i] = (double *)R_alloc(i_D,sizeof(double));
+
+  double *gt_bestP = (double *)R_alloc(1,sizeof(double) * i_D);
+
+  /* Data structures for objective function values associated with
+   * parameter vectors */
+  double *gta_popC = (double *)R_alloc(i_NP*2,sizeof(double));
+  double *gta_oldC = (double *)R_alloc(i_NP,sizeof(double));
+  double *gta_newC = (double *)R_alloc(i_NP,sizeof(double));
+  double *gt_bestC = (double *)R_alloc(1,sizeof(double));
+
+  double *t_bestitP = (double *)R_alloc(1,sizeof(double) * i_D);
+  double *t_tmpP = (double *)R_alloc(1,sizeof(double) * i_D);
+  double *tempP = (double *)R_alloc(1,sizeof(double) * i_D);
+
+  int i_nstorepop = ceil((i_itermax - i_storepopfrom) / i_storepopfreq);
+  double *gd_pop = (double *)R_alloc(i_NP*i_D,sizeof(double));
+  double *gd_storepop = (double *)R_alloc(i_NP,sizeof(double) * i_D * i_nstorepop);
+  double *gd_bestmemit = (double *)R_alloc(i_itermax*i_D,sizeof(double));
+  double *gd_bestvalit = (double *)R_alloc(i_itermax,sizeof(double));
+  int gi_iter = 0;
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel A: \proglang{C} version}
+    \tiny
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.56\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+        arma::colvec minbound(f_lower.begin(), f_lower.size(), false);  // convert Rcpp vectors to arma vectors
+        arma::colvec maxbound(f_upper.begin(), f_upper.size(), false);
+        arma::mat initpopm(initialpopm.begin(), initialpopm.rows(), initialpopm.cols(), false);
+
+        arma::mat ta_popP(i_D, i_NP*2);                                 // Data structures for parameter vectors
+        arma::mat ta_oldP(i_D, i_NP);
+        arma::mat ta_newP(i_D, i_NP);
+        arma::colvec t_bestP(i_D);
+
+        arma::colvec ta_popC(i_NP*2);                                   // Data structures for obj. fun. values
+        arma::colvec ta_oldC(i_NP);
+        arma::colvec ta_newC(i_NP);
+        double t_bestC;
+
+        arma::colvec t_bestitP(i_D);
+        arma::colvec t_tmpP(i_D);
+
+        int i_nstorepop = ceil((i_itermax - i_storepopfrom) / i_storepopfreq);
+        arma::mat d_pop(i_D, i_NP);
+        Rcpp::List d_storepop(i_nstorepop);
+        arma::mat d_bestmemit(i_D, i_itermax);
+        arma::colvec d_bestvalit(i_itermax);
+        int i_iter = 0;
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel B: \proglang{C++} version using \pkg{Rcpp}}
+  \end{minipage}
+  \caption{Memory allocation in \code{DEoptim()} \proglang{C/C++} function}
+  \label{fig:deoptim_memory}
+\end{sidewaysfigure}
+
+
+\begin{sidewaysfigure}          % fig 3: devol and arguments
+  \begin{minipage}{0.40\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+  /*---optimization--------------------------------------*/
+  devol(VTR, f_weight, f_cross, i_bs_flag, f_lower, f_upper, fn, rho, i_trace,
+        i_strategy, i_D, i_NP, i_itermax,
+        initialpopv, i_storepopfrom, i_storepopfreq,
+        i_specinitialpop, i_check_winner, i_av_winner,
+        gta_popP, gta_oldP, gta_newP, gt_bestP,
+        gta_popC, gta_oldC, gta_newC, gt_bestC,
+        t_bestitP, t_tmpP, tempP,
+        gd_pop, gd_storepop, gd_bestmemit, gd_bestvalit,
+        &gi_iter, i_pPct, &l_nfeval);
+  /*---end optimization----------------------------------*/
+
+  PROTECT(sexp_bestmem = NEW_NUMERIC(i_D));
+  for (i = 0; i < i_D; i++) {
+    NUMERIC_POINTER(sexp_bestmem)[i] = gt_bestP[i];
+  }
+
+  j = i_NP * i_D;
+  PROTECT(sexp_pop = NEW_NUMERIC(j));
+  for (i = 0; i < j; i++)
+    NUMERIC_POINTER(sexp_pop)[i] = gd_pop[i];
+
+  j =  i_nstorepop * i_NP * i_D;
+  PROTECT(sexp_storepop = NEW_NUMERIC(j));
+  for (i = 0; i < j; i++)
+    NUMERIC_POINTER(sexp_storepop)[i] = gd_storepop[i];
+
+  j = gi_iter * i_D;
+  PROTECT(sexp_bestmemit = NEW_NUMERIC(j));
+  for (i = 0; i < j; i++)
+    NUMERIC_POINTER(sexp_bestmemit)[i] = gd_bestmemit[i];
+  j = gi_iter;
+  PROTECT(sexp_bestvalit = NEW_NUMERIC(j));
+  for (i = 0; i < j; i++)
+    NUMERIC_POINTER(sexp_bestvalit)[i] = gd_bestvalit[i];
+
+  PROTECT(sexp_bestval = NEW_NUMERIC(1));
+  NUMERIC_POINTER(sexp_bestval)[0] = gt_bestC[0];
+
+  PROTECT(sexp_nfeval = NEW_INTEGER(1));
+  //INTEGER_POINTER(sexp_nfeval)[0] = 0;
+  INTEGER_POINTER(sexp_nfeval)[0] = l_nfeval;
+
+  PROTECT(sexp_iter = NEW_INTEGER(1));
+  INTEGER_POINTER(sexp_iter)[0] = gi_iter;
+
+  PROTECT(out = NEW_LIST(8));
+  SET_VECTOR_ELT(out, 0, sexp_bestmem);
+  SET_VECTOR_ELT(out, 1, sexp_bestval);
+  SET_VECTOR_ELT(out, 2, sexp_nfeval);
+  SET_VECTOR_ELT(out, 3, sexp_iter);
+  SET_VECTOR_ELT(out, 4, sexp_bestmemit);
+  SET_VECTOR_ELT(out, 5, sexp_bestvalit);
+  SET_VECTOR_ELT(out, 6, sexp_pop);
+  SET_VECTOR_ELT(out, 7, sexp_storepop);
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel A: \proglang{C} version}
+    \tiny
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.56\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+  PROTECT(out_names = NEW_STRING(8));
+  SET_STRING_ELT(out_names, 0, mkChar("bestmem"));
+  SET_STRING_ELT(out_names, 1, mkChar("bestval"));
+  SET_STRING_ELT(out_names, 2, mkChar("nfeval"));
+  SET_STRING_ELT(out_names, 3, mkChar("iter"));
+  SET_STRING_ELT(out_names, 4, mkChar("bestmemit"));
+  SET_STRING_ELT(out_names, 5, mkChar("bestvalit"));
+  SET_STRING_ELT(out_names, 6, mkChar("pop"));
+  SET_STRING_ELT(out_names, 7, mkChar("storepop"));
+
+  SET_NAMES(out, out_names);
+
+  UNPROTECT(10);
+
+  return out;
+}
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel A: \proglang{C} version (in both columns)}
+    \tiny
+
+    \bigskip
+    \phantom{XX}
+    \bigskip
+    \phantom{XX}
+    \bigskip
+    \phantom{XX}
+    \bigskip
+
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+	// call actual Differential Evolution optimization given the parameters
+	devol(VTR, f_weight, f_cross, i_bs_flag, minbound, maxbound, fnS, rhoS, i_trace, i_strategy, i_D, i_NP,
+	      i_itermax, initpopm, i_storepopfrom, i_storepopfreq, i_specinitialpop, i_check_winner, i_av_winner,
+	      ta_popP, ta_oldP, ta_newP, t_bestP, ta_popC, ta_oldC, ta_newC, t_bestC, t_bestitP, t_tmpP,
+	      d_pop, d_storepop, d_bestmemit, d_bestvalit, i_iter, i_pPct, l_nfeval);
+
+	return Rcpp::List::create(Rcpp::Named("bestmem")   = t_bestP,	// and return a named list with results to R
+				  Rcpp::Named("bestval")   = t_bestC,
+				  Rcpp::Named("nfeval")    = l_nfeval,
+				  Rcpp::Named("iter")      = i_iter,
+				  Rcpp::Named("bestmemit") = trans(d_bestmemit),
+				  Rcpp::Named("bestvalit") = d_bestvalit,
+				  Rcpp::Named("pop")       = trans(d_pop),
+				  Rcpp::Named("storepop")  = d_storepop);
+
+    } catch( std::exception& ex) {
+	forward_exception_to_r(ex);
+    } catch(...) {
+	::Rf_error( "c++ exception (unknown reason)");
+    }
+    return R_NilValue;
+}
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel B: \proglang{C++} version using \pkg{Rcpp}}
+  \end{minipage}
+  \caption{\code{DEoptim()} call of \code{devol()} and return of results to \proglang{R}}
+  \label{fig:deoptim_end}
+\end{sidewaysfigure}
+
+
+
+\begin{sidewaysfigure}          % fig 4: devol and arguments
+  \begin{minipage}{0.40\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+void devol(double VTR, double f_weight, double f_cross, int i_bs_flag,
+    double *lower, double *upper, SEXP fcall, SEXP rho, int trace,
+    int i_strategy, int i_D, int i_NP, int i_itermax,
+    double *initialpopv, int i_storepopfrom, int i_storepopfreq,
+    int i_specinitialpop, int i_check_winner, int i_av_winner,
+    double **gta_popP, double **gta_oldP, double **gta_newP, double *gt_bestP,
+    double *gta_popC, double *gta_oldC, double *gta_newC, double *gt_bestC,
+    double *t_bestitP, double *t_tmpP, double *tempP,
+    double *gd_pop, double *gd_storepop, double *gd_bestmemit, double *gd_bestvalit,
+    int *gi_iter, double i_pPct, long *l_nfeval)
+{
+
+#define URN_DEPTH  5   /* 4 + one index to avoid */
+
+  /* initialize parameter vector to pass to evaluate function */
+  SEXP par; PROTECT(par = NEW_NUMERIC(i_D));
+
+  int i, j, k, x;  /* counting variables */
+  int i_r1, i_r2, i_r3, i_r4;  /* placeholders for random indexes */
+
+  int ia_urn2[URN_DEPTH];
+  int i_nstorepop, i_xav;
+  i_nstorepop = ceil((i_itermax - i_storepopfrom) / i_storepopfreq);
+
+  int popcnt, bestacnt, same; /* lazy cnters */
+
+  double *fa_minbound = lower;
+  double *fa_maxbound = upper;
+  double f_jitter, f_dither;
+
+  double t_bestitC;
+  double t_tmpC, tmp_best;
+
+  double initialpop[i_NP][i_D];
+
+  /* vars for DE/current-to-p-best/1 */
+  int i_pbest;
+  int p_NP = round(i_pPct * i_NP);  /* choose at least two best solutions */
+      p_NP = p_NP < 2 ? 2 : p_NP;
+  int sortIndex[i_NP];              /* sorted values of gta_oldC */
+  for(i = 0; i < i_NP; i++) sortIndex[i] = i;
+
+  /* vars for when i_bs_flag == 1 */
+  int i_len, done, step, bound;
+  double tempC;
+
+  GetRNGstate();
+
+  gta_popP[0][0] = 0;
+      \end{CodeInput}
+    \end{CodeChunk}
+    \normalsize
+    \centering{Panel A: \proglang{C} version}
+    \tiny
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.56\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+void devol(double VTR, double f_weight, double f_cross, int i_bs_flag,
+           arma::colvec & fa_minbound, arma::colvec & fa_maxbound, SEXP fcall, SEXP rho, int i_trace,
+           int i_strategy, int i_D, int i_NP, int i_itermax, arma::mat & initialpopm,
+	   int i_storepopfrom, int i_storepopfreq, int i_specinitialpop, int i_check_winner, int i_av_winner,
+           arma::mat &ta_popP, arma::mat &ta_oldP, arma::mat &ta_newP, arma::colvec & t_bestP,
+           arma::colvec & ta_popC, arma::colvec & ta_oldC, arma::colvec & ta_newC, double & t_bestC,
+           arma::colvec & t_bestitP, arma::colvec & t_tmpP,
+           arma::mat &d_pop, Rcpp::List &d_storepop, arma::mat & d_bestmemit, arma::colvec & d_bestvalit,
+           int & i_iterations, double i_pPct, long & l_nfeval) {
+
+    Rcpp::DE::EvalBase *ev = NULL; 		// pointer to abstract base class
+    if (TYPEOF(fcall) == EXTPTRSXP) { 		// non-standard mode: we are being passed an external pointer
+	ev = new Rcpp::DE::EvalCompiled(fcall); // so assign a pointer using external pointer in fcall SEXP
+    } else {					// standard mode: env_ is an env, fcall_ is a function
+	ev = new Rcpp::DE::EvalStandard(fcall, rho);	// so assign R function and environment
+    }
+    const int urn_depth = 5;   			// 4 + one index to avoid
+    Rcpp::NumericVector par(i_D);		// initialize parameter vector to pass to evaluate function
+    arma::icolvec::fixed<urn_depth> ia_urn2; 	// fixed-size vector for urn draws
+    arma::icolvec ia_urntmp(i_NP); 		// so that we don't need to re-allocated each time in permute
+    arma::mat initialpop(i_D, i_NP);
+    int i_nstorepop = ceil((i_itermax - i_storepopfrom) / i_storepopfreq);
+    int p_NP = round(i_pPct * i_NP);  		// choose at least two best solutions
+    p_NP = p_NP < 2 ? 2 : p_NP;
+    arma::icolvec sortIndex(i_NP); 		// sorted values of ta_oldC
+    if (i_strategy == 6) {
+	for (int i = 0; i < i_NP; i++)
+	    sortIndex[i] = i;
+    }
+    GetRNGstate();
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel B: \proglang{C++} version using \pkg{Rcpp}}
+  \end{minipage}
+  \caption{\code{devol()} beginning}
+  \label{fig:devol_start}
+\end{sidewaysfigure}
+
+
+
+\begin{sidewaysfigure}          % fig 5: devol inits
+  \begin{minipage}{0.40\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+  /* initialize initial population */
+  for (int i = 0; i < i_NP; i++) {
+    for (int j = 0; j < i_D; j++) {
+      initialpop[i][j] = 0.0;
+    }
+  }
+
+  /* initialize best members */
+  for (int i = 0; i < i_itermax * i_D; i++)
+    gd_bestmemit[i] = 0.0;
+
+  /* initialize best values */
+  for (int i = 0; i < i_itermax; i++)
+    gd_bestvalit[i] = 0.0;
+
+  /* initialize best population */
+  for (int i = 0; i < i_NP * i_D; i++)
+    gd_pop[i] = 0.0;
+
+  /* initialize stored populations */
+  if (i_nstorepop < 0)
+    i_nstorepop = 0;
+
+  for (int i = 0; i < (i_nstorepop * i_NP * i_D); i++)
+    gd_storepop[i] = 0.0;
+
+  /* if initial population provided, initialize with values */
+  if (i_specinitialpop > 0) {
+    k = 0;
+
+    for (j = 0; j < i_D; j++) {
+      for (i = 0; i < i_NP; i++) {
+        initialpop[i][j] = initialpopv[k];
+        k += 1;
+      }
+    }
+  }
+
+  /* number of function evaluations
+   * (this is an input via DEoptim.control, but we over-write it?) */
+  *l_nfeval = 0;
+
+  /*------Initialization-----------------------------*/
+  for (i = 0; i < i_NP; i++) {
+    for (j = 0; j < i_D; j++) {
+      if (i_specinitialpop <= 0) { /* random initial member */
+        gta_popP[i][j] = fa_minbound[j] +
+        unif_rand() * (fa_maxbound[j] - fa_minbound[j]);
+
+      }
+      else /* or user-specified initial member */
+        gta_popP[i][j] = initialpop[i][j];
+    }
+    gta_popC[i] = evaluate(l_nfeval, gta_popP[i], par, fcall, rho);
+
+    if (i == 0 || gta_popC[i] <= gt_bestC[0]) {
+      gt_bestC[0] = gta_popC[i];
+      for (j = 0; j < i_D; j++)
+        gt_bestP[j]=gta_popP[i][j];
+    }
+  }
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    %\normalsize \centering{Panel A: \proglang{C} version} \tiny
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.56\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+
+  /*---assign pointers to current ("old") population---*/
+  gta_oldP = gta_popP;
+  gta_oldC = gta_popC;
+
+  /*------Iteration loop--------------------------------------------*/
+  int i_iter = 0;
+  popcnt = 0;
+  bestacnt = 0;
+  i_xav = 1;
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel A: \proglang{C} version (in both columns)}
+    \tiny
+
+    \bigskip
+    \phantom{XX}
+    \bigskip
+    \phantom{XX}
+    \bigskip
+    \phantom{XX}
+    \bigskip
+
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+    initialpop.zeros();                         // initialize initial population
+    d_bestmemit.zeros();                        // initialize best members
+    d_bestvalit.zeros();                        // initialize best values
+    d_pop.zeros();                              // initialize best population
+    i_nstorepop = (i_nstorepop < 0) ? 0 : i_nstorepop;
+
+    if (i_specinitialpop > 0) {                 // if initial population provided, initialize with values
+        initialpop = trans(initialpopm);        // transpose as we prefer columns for population members here
+    }
+
+    for (int i = 0; i < i_NP; i++) {            // ------Initialization-----------------------------
+        if (i_specinitialpop <= 0) {            // random initial member
+            for (int j = 0; j < i_D; j++) {
+                ta_popP.at(j,i) = fa_minbound[j] + ::unif_rand() * (fa_maxbound[j] - fa_minbound[j]);
+            }
+        } else {                                // or user-specified initial member
+            ta_popP.col(i) = initialpop.col(i);
+        }
+        memcpy(REAL(par), ta_popP.colptr(i), Rf_nrows(par) * sizeof(double));
+        ta_popC[i] = ev->eval(par);
+        if (i == 0 || ta_popC[i] <= t_bestC) {
+            t_bestC = ta_popC[i];
+            t_bestP = ta_popP.unsafe_col(i);
+        }
+    }
+
+    ta_oldP = ta_popP.cols(0, i_NP-1);          // ---assign pointers to current ("old") population---
+    ta_oldC = ta_popC.rows(0, i_NP-1);
+
+    int i_iter = 0;                             // ------Iteration loop--------------------------------------------
+    int popcnt = 0;
+    int i_xav = 1;
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel B: \proglang{C++} version using \pkg{Rcpp}}
+  \end{minipage}
+  \caption{\code{devol()} initializations}
+  \label{fig:devol_init}
+\end{sidewaysfigure}
+
+
+
+
+\begin{sidewaysfigure}          % fig 6: devol and arguments
+  \begin{minipage}{0.40\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+  /* loop */
+  while ((i_iter < i_itermax) && (gt_bestC[0] > VTR))
+    {
+      /* store intermediate populations */
+      if (i_iter % i_storepopfreq == 0 && i_iter >= i_storepopfrom) {
+	for (i = 0; i < i_NP; i++) {
+	  for (j = 0; j < i_D; j++) {
+	    gd_storepop[popcnt] = gta_oldP[i][j];
+	    popcnt++;
+	  }
+	}
+      } /* end store pop */
+
+      /* store the best member */
+      for(j = 0; j < i_D; j++) {
+	gd_bestmemit[bestacnt] = gt_bestP[j];
+	bestacnt++;
+      }
+      /* store the best value */
+      gd_bestvalit[i_iter] = gt_bestC[0];
+
+      for (j = 0; j < i_D; j++)
+        t_bestitP[j] = gt_bestP[j];
+      t_bestitC = gt_bestC[0];
+
+      i_iter++;
+
+      /*----computer dithering factor -----------------*/
+      f_dither = f_weight + unif_rand() * (1.0 - f_weight);
+
+      /*---DE/current-to-p-best/1 ---------------------------------*/
+      if (i_strategy == 6) {
+        /* create a copy of gta_oldC to avoid changing it */
+        double temp_oldC[i_NP];
+        for(j = 0; j < i_NP; j++) temp_oldC[j] = gta_oldC[j];
+
+        /* sort temp_oldC to use sortIndex later */
+        rsort_with_index( (double*)temp_oldC, (int*)sortIndex, i_NP );
+      }
+
+      /*----start of loop through ensemble-------------------------*/
+      for (i = 0; i < i_NP; i++) {
+
+	/*t_tmpP is the vector to mutate and eventually select*/
+	for (j = 0; j < i_D; j++)
+	  t_tmpP[j] = gta_oldP[i][j];
+	t_tmpC = gta_oldC[i];
+
+	permute(ia_urn2, URN_DEPTH, i_NP, i); /* Pick 4 random and distinct */
+
+	i_r1 = ia_urn2[1];  /* population members */
+	i_r2 = ia_urn2[2];
+	i_r3 = ia_urn2[3];
+	i_r4 = ia_urn2[4];
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel A: \proglang{C} version} \tiny
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.56\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+    while ((i_iter < i_itermax) && (t_bestC > VTR)) {    // main loop ====================================
+        if (i_iter % i_storepopfreq == 0 && i_iter >= i_storepopfrom) {         // store intermediate populations
+            d_storepop[popcnt++] = Rcpp::wrap( trans(ta_oldP) );
+        } // end store pop
+
+        d_bestmemit.col(i_iter) = t_bestP;      // store the best member
+        d_bestvalit[i_iter] = t_bestC;          // store the best value
+        t_bestitP = t_bestP;
+        i_iter++;                               // increase iteration counter
+
+        double f_dither = f_weight + ::unif_rand() * (1.0 - f_weight);  // ----computer dithering factor --------------
+
+        if (i_strategy == 6) {                  // ---DE/current-to-p-best/1 ------------------------------------------
+            arma::colvec temp_oldC = ta_oldC;                           // create copy of ta_oldC to avoid changing it
+            rsort_with_index( temp_oldC.memptr(), sortIndex.begin(), i_NP );    // sort temp_oldC to use sortIndex
+        }
+
+        for (int i = 0; i < i_NP; i++) {        // ----start of loop through ensemble------------------------
+
+            t_tmpP = ta_oldP.col(i);            // t_tmpP is the vector to mutate and eventually select
+
+            permute(ia_urn2.memptr(), urn_depth, i_NP, i, ia_urntmp.memptr()); // Pick 4 random and distinct
+            int k = 0;                          // loop counter used in all strategies below
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel B: \proglang{C++} version using \pkg{Rcpp}}
+  \end{minipage}
+  \caption{\code{devol()} iteration loop setup and beginning of population loop}
+  \label{fig:devol_iter}
+\end{sidewaysfigure}
+
+
+\begin{sidewaysfigure}          % fig 7: devol main loop and top of strat loop
+  \begin{minipage}{0.40\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+	/*===Choice of strategy=======================================================*/
+	/*---classical strategy DE/rand/1/bin-----------------------------------------*/
+	if (i_strategy == 1) {
+
+	  j = (int)(unif_rand() * i_D); /* random parameter */
+	  k = 0;
+	  do {
+	    /* add fluctuation to random target */
+	    t_tmpP[j] = gta_oldP[i_r1][j] +
+	      f_weight * (gta_oldP[i_r2][j] - gta_oldP[i_r3][j]);
+
+	    j = (j + 1) % i_D;
+	    k++;
+	  }while((unif_rand() < f_cross) && (k < i_D));
+
+	}
+	/*---DE/local-to-best/1/bin---------------------------------------------------*/
+	else if (i_strategy == 2) {
+
+	  j = (int)(unif_rand() * i_D); /* random parameter */
+	  k = 0;
+	  do {
+	    /* add fluctuation to random target */
+
+	    t_tmpP[j] = t_tmpP[j] +
+	      f_weight * (t_bestitP[j] - t_tmpP[j]) +
+	      f_weight * (gta_oldP[i_r2][j] - gta_oldP[i_r3][j]);
+	    j = (j + 1) % i_D;
+	    k++;
+	  }while((unif_rand() < f_cross) && (k < i_D));
+
+	}
+	/*---DE/best/1/bin with jitter------------------------------------------------*/
+	else if (i_strategy == 3) {
+
+	  j = (int)(unif_rand() * i_D); /* random parameter */
+	  k = 0;
+	  do {
+	    /* add fluctuation to random target */
+	    f_jitter = 0.0001 * unif_rand() + f_weight;
+	    t_tmpP[j] = t_bestitP[j] +
+	      f_jitter * (gta_oldP[i_r1][j] - gta_oldP[i_r2][j]);
+
+	    j = (j + 1) % i_D;
+	    k++;
+	  }while((unif_rand() < f_cross) && (k < i_D));
+
+	}
+	/*---DE/rand/1/bin with per-vector-dither-------------------------------------*/
+	else if (i_strategy == 4) {
+
+	  j = (int)(unif_rand() * i_D); /* random parameter */
+	  k = 0;
+	  do {
+	    /* add fluctuation to random target */
+	    t_tmpP[j] = gta_oldP[i_r1][j] +
+	      (f_weight + unif_rand()*(1.0 - f_weight))*
+	      (gta_oldP[i_r2][j]-gta_oldP[i_r3][j]);
+
+	    j = (j + 1) % i_D;
+	    k++;
+	  }while((unif_rand() < f_cross) && (k < i_D));
+
+	}
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel A: \proglang{C} version} \tiny
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.56\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+	    // ===Choice of strategy=======================================================
+	    switch (i_strategy) {
+
+	    case 1: {				// ---classical strategy DE/rand/1/bin---------------------------------
+		int j = static_cast<int>(::unif_rand() * i_D);	// random parameter
+		do {				// add fluctuation to random target
+		    t_tmpP[j] = ta_oldP.at(j,ia_urn2[1]) + f_weight *
+			(ta_oldP.at(j,ia_urn2[2]) - ta_oldP.at(j,ia_urn2[3]));
+		    j = (j + 1) % i_D;
+		} while ((::unif_rand() < f_cross) && (++k < i_D));
+		break;
+	    }
+	    case 2: {				// ---DE/local-to-best/1/bin-------------------------------------------
+		int j = static_cast<int>(::unif_rand() * i_D);	// random parameter
+		do {				// add fluctuation to random target
+		    t_tmpP[j] = t_tmpP[j] + f_weight * (t_bestitP[j] - t_tmpP[j]) + f_weight *
+			(ta_oldP.at(j,ia_urn2[2]) - ta_oldP.at(j,ia_urn2[3]));
+		    j = (j + 1) % i_D;
+		} while ((::unif_rand() < f_cross) && (++k < i_D));
+		break;
+	    }
+	    case 3: {				// ---DE/best/1/bin with jitter---------------------------------------
+		int j = static_cast<int>(::unif_rand() * i_D);	// random parameter
+		do {				// add fluctuation to random target
+		    double f_jitter = 0.0001 * ::unif_rand() + f_weight;
+		    t_tmpP[j] = t_bestitP[j] + f_jitter * (ta_oldP.at(j,ia_urn2[1]) - ta_oldP.at(j,ia_urn2[2]));
+		    j = (j + 1) % i_D;
+		} while ((::unif_rand() < f_cross) && (++k < i_D));
+		break;
+	    }
+	    case 4: {				// ---DE/rand/1/bin with per-vector-dither----------------------------
+		int j = static_cast<int>(::unif_rand() * i_D);	// random parameter
+		do {				// add fluctuation to random target *
+		    t_tmpP[j] = ta_oldP.at(j,ia_urn2[1]) + (f_weight + ::unif_rand()*(1.0 - f_weight))
+			* (ta_oldP.at(j,ia_urn2[2]) - ta_oldP.at(j,ia_urn2[3]));
+		    j = (j + 1) % i_D;
+		} while ((::unif_rand() < f_cross) && (++k < i_D));
+		break;
+	    }
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel B: \proglang{C++} version using \pkg{Rcpp}}
+  \end{minipage}
+  \caption{\code{devol()} first four strategy options}
+  \label{fig:devol_first_four}
+\end{sidewaysfigure}
+
+
+
+\begin{sidewaysfigure}          % fig 8: bottom of strat loop
+  \begin{minipage}{0.40\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+	/*---DE/rand/1/bin with per-generation-dither---------------------------------*/
+	else if (i_strategy == 5) {
+
+	  j = (int)(unif_rand() * i_D); /* random parameter */
+	  k = 0;
+	  do {
+	    /* add fluctuation to random target */
+	    t_tmpP[j] = gta_oldP[i_r1][j] +
+	      f_dither * (gta_oldP[i_r2][j] - gta_oldP[i_r3][j]);
+
+	    j = (j + 1) % i_D;
+	    k++;
+	  }while((unif_rand() < f_cross) && (k < i_D));
+
+	}
+	/*---DE/current-to-p-best/1 (JADE)--------------------------------------------*/
+	else if (i_strategy == 6) {
+
+          /* select from [0, 1, 2, ..., (pNP-1)] */
+          i_pbest = sortIndex[(int)(unif_rand() * p_NP)];
+
+          j = (int)(unif_rand() * i_D); /* random parameter */
+	  k = 0;
+	  do {
+	    /* add fluctuation to random target */
+	    t_tmpP[j] = gta_oldP[i][j] +
+              f_weight * (gta_oldP[i_pbest][j] - gta_oldP[i][j]) +
+              f_weight * (gta_oldP[i_r1][j]    - gta_oldP[i_r2][j]);
+
+	    j = (j + 1) % i_D;
+	    k++;
+	  }while((unif_rand() < f_cross) && (k < i_D));
+
+        }
+	/*---variation to DE/rand/1/bin: either-or-algorithm--------------------------*/
+	else {
+
+	  j = (int)(unif_rand() * i_D); /* random parameter */
+	  k = 0;
+	  if (unif_rand() < 0.5) { /* differential mutation, Pmu = 0.5 */
+	    do {
+	      /* add fluctuation to random target */
+	      t_tmpP[j] = gta_oldP[i_r1][j] +
+		f_weight * (gta_oldP[i_r2][j] - gta_oldP[i_r3][j]);
+
+	      j = (j + 1) % i_D;
+	      k++;
+	    }while((unif_rand() < f_cross) && (k < i_D));
+	  }
+	  else {
+	    /* recombination with K = 0.5*(F+1) -. F-K-Rule */
+	    do {
+	      /* add fluctuation to random target */
+	      t_tmpP[j] = gta_oldP[i_r1][j] +
+		0.5 * (f_weight + 1.0) * (gta_oldP[i_r2][j]
+					  + gta_oldP[i_r3][j] - 2 * gta_oldP[i_r1][j]);
+
+	      j = (j + 1) % i_D;
+	      k++;
+	    }while((unif_rand() < f_cross) && (k < i_D));
+
+	  }
+	}/* end if (i_strategy ...*/
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel A: \proglang{C} version} \tiny
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.56\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+	    casee 5: {				// ---DE/rand/1/bin with per-generation-dither---------------
+		int j = static_cast<int>(::unif_rand() * i_D); 	// random parameter
+		do {				// add fluctuation to random target
+		    t_tmpP[j] = ta_oldP.at(j,ia_urn2[1]) + f_dither
+			* (ta_oldP.at(j,ia_urn2[2]) - ta_oldP.at(j,ia_urn2[3]));
+		    j = (j + 1) % i_D;
+		} while ((::unif_rand() < f_cross) && (++k < i_D));
+		break;
+	    }
+	    case 6: {				// ---DE/current-to-p-best/1 (JADE)--------------------------
+                // select from [0, 1, 2, ..., (pNP-1)]
+		int i_pbest = sortIndex[static_cast<int>(::unif_rand() * p_NP)];
+		int j = static_cast<int>(::unif_rand() * i_D); 	// random parameter
+		do {				// add fluctuation to random target
+		    t_tmpP[j] = ta_oldP.at(j,i) + f_weight * (ta_oldP.at(j,i_pbest) - ta_oldP.at(j,i)) +
+			f_weight * (ta_oldP.at(j,ia_urn2[1]) - ta_oldP.at(j,ia_urn2[2]));
+		    j = (j + 1) % i_D;
+		} while ((::unif_rand() < f_cross) && (++k < i_D));
+		break;
+	    }
+	    default: {				// ---variation to DE/rand/1/bin: either-or-algorithm--------
+		int j = static_cast<int>(::unif_rand() * i_D); 	// random parameter
+		if (::unif_rand() < 0.5) { 	// differential mutation, Pmu = 0.5
+		    do {			// add fluctuation to random target */
+			t_tmpP[j] = ta_oldP.at(j,ia_urn2[1]) + f_weight *
+                                        (ta_oldP.at(j,ia_urn2[2]) - ta_oldP.at(j,ia_urn2[3]));
+			j = (j + 1) % i_D;
+		    } while ((::unif_rand() < f_cross) && (++k < i_D));
+
+		} else { 			// recombination with K = 0.5*(F+1) -. F-K-Rule
+		    do {			// add fluctuation to random target */
+			t_tmpP[j] = ta_oldP.at(j,ia_urn2[1]) + 0.5 * (f_weight + 1.0) *
+			    (ta_oldP.at(j,ia_urn2[2]) + ta_oldP.at(j,ia_urn2[3]) - 2 * ta_oldP.at(j,ia_urn2[1]));
+			j = (j + 1) % i_D;
+		    } while ((::unif_rand() < f_cross) && (++k < i_D));
+		}
+		break;
+	    }
+	    } // end switch (i_strategy) ...
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel B: \proglang{C++} version using \pkg{Rcpp}}
+  \end{minipage}
+  \caption{\code{devol()} remaining three strategy options}
+  \label{fig:devol_other_three}
+\end{sidewaysfigure}
+
+
+
+
+\begin{sidewaysfigure}          % fig 9: remainder of core loop
+  \begin{minipage}{0.40\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+	/*----boundary constraints, bounce-back method was not enforcing bounds correctly*/
+	for (j = 0; j < i_D; j++) {
+	  if (t_tmpP[j] < fa_minbound[j]) {
+	    t_tmpP[j] = fa_minbound[j] +
+	      unif_rand() * (fa_maxbound[j] - fa_minbound[j]);
+	  }
+	  if (t_tmpP[j] > fa_maxbound[j]) {
+	    t_tmpP[j] =  fa_maxbound[j] -
+	      unif_rand() * (fa_maxbound[j] - fa_minbound[j]);
+	  }
+	}
+
+	/*------Trial mutation now in t_tmpP-----------------*/
+	/* Evaluate mutant in t_tmpP[]*/
+
+	t_tmpC = evaluate(l_nfeval, t_tmpP, par, fcall, rho);
+
+	/* note that i_bs_flag means that we will choose the
+	 *best NP vectors from the old and new population later*/
+	if (t_tmpC <= gta_oldC[i] || i_bs_flag) {
+	  /* replace target with mutant */
+	  for (j = 0; j < i_D; j++)
+	    gta_newP[i][j]=t_tmpP[j];
+	  gta_newC[i]=t_tmpC;
+	  if (t_tmpC <= gt_bestC[0]) {
+	    for (j = 0; j < i_D; j++)
+	      gt_bestP[j]=t_tmpP[j];
+	    gt_bestC[0]=t_tmpC;
+	  }
+	}
+	else {
+	  for (j = 0; j < i_D; j++)
+	    gta_newP[i][j]=gta_oldP[i][j];
+	  gta_newC[i]=gta_oldC[i];
+
+	}
+      } /* End mutation loop through pop. */
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel A: \proglang{C} version} \tiny
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.56\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+            for (int j = 0; j < i_D; j++) {     // boundary constr., bounce-back meth. not enforcing bounds
+                if (t_tmpP[j] < fa_minbound[j]) {
+                    t_tmpP[j] = fa_minbound[j] + ::unif_rand() * (fa_maxbound[j] - fa_minbound[j]);
+                }
+                if (t_tmpP[j] > fa_maxbound[j]) {
+                    t_tmpP[j] = fa_maxbound[j] - ::unif_rand() * (fa_maxbound[j] - fa_minbound[j]);
+                }
+            }
+
+            // ------Trial mutation now in t_tmpP-----------------
+            memcpy(REAL(par), t_tmpP.memptr(), Rf_nrows(par) * sizeof(double));
+            double t_tmpC = ev->eval(par);              // Evaluate mutant in t_tmpP
+            if (t_tmpC <= ta_oldC[i] || i_bs_flag) {    // i_bs_flag means will choose best NP later
+                ta_newP.col(i) = t_tmpP;                // replace target with mutant
+                ta_newC[i] = t_tmpC;
+                if (t_tmpC <= t_bestC) {
+                    t_bestP = t_tmpP;
+                    t_bestC = t_tmpC;
+                }
+            } else {
+                ta_newP.col(i) = ta_oldP.col(i);
+                ta_newC[i] = ta_oldC[i];
+            }
+        } // End mutation loop through pop., ie the "for (i = 0; i < i_NP; i++)"
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel B: \proglang{C++} version using \pkg{Rcpp}}
+  \end{minipage}
+  \caption{\code{devol()} remainder of population mutation loop}
+  \label{fig:devol_end_pop}
+\end{sidewaysfigure}
+
+
+\begin{sidewaysfigure}          % fig 10: bs special casing
+  \begin{minipage}{0.40\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+      if(i_bs_flag) {
+	/* examine old and new pop. and take the best NP members
+	 * into next generation */
+	for (i = 0; i < i_NP; i++) {
+	  for (j = 0; j < i_D; j++)
+	    gta_popP[i][j] = gta_oldP[i][j];
+	  gta_popC[i] = gta_oldC[i];
+	}
+	for (i = 0; i < i_NP; i++) {
+	  for (j = 0; j < i_D; j++)
+	    gta_popP[i_NP+i][j] = gta_newP[i][j];
+	  gta_popC[i_NP+i] = gta_newC[i];
+	}
+	i_len = 2 * i_NP;
+	step = i_len;  /* array length */
+	while (step > 1) {
+	  step /= 2;   /* halve the step size */
+	  do {
+	    done = 1;
+	    bound  = i_len - step;
+	    for (j = 0; j < bound; j++) {
+		i = j + step + 1;
+		if (gta_popC[j] > gta_popC[i-1]) {
+		    for (k = 0; k < i_D; k++)
+		      tempP[k] = gta_popP[i-1][k];
+		    tempC = gta_popC[i-1];
+		    for (k = 0; k < i_D; k++)
+		      gta_popP[i-1][k] = gta_popP[j][k];
+		    gta_popC[i-1] = gta_popC[j];
+		    for (k = 0; k < i_D; k++)
+		      gta_popP[j][k] = tempP[k];
+		    gta_popC[j] = tempC;
+		      done = 0;
+		      /* if a swap has been made we are not finished yet */
+	        }  /* if */
+	    }  /* for */
+	  } while (!done);   /* while */
+	} /*while (step > 1) */
+	/* now the best NP are in first NP places in gta_pop, use them */
+	for (i = 0; i < i_NP; i++) {
+	  for (j = 0; j < i_D; j++)
+	    gta_newP[i][j] = gta_popP[i][j];
+	  gta_newC[i] = gta_popC[i];
+	}
+      } /*i_bs_flag*/
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel A: \proglang{C} version} \tiny
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.56\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+	if (i_bs_flag) {	// examine old and new pop. and take the best NP members into next generation
+
+	    ta_popP.cols(0, i_NP-1) = ta_oldP;
+	    ta_popC.rows(0, i_NP-1) = ta_oldC;
+
+	    ta_popP.cols(i_NP, 2*i_NP-1) = ta_newP;
+	    ta_popC.rows(i_NP, 2*i_NP-1) = ta_newC;
+
+	    int i_len = 2 * i_NP;
+	    int step = i_len, done;	// array length
+	    while (step > 1) {
+		step /= 2;   		// halve the step size
+		do {
+		    done = 1;
+		    int bound  = i_len - step;
+		    for (int j = 0; j < bound; j++) {
+			int i = j + step + 1;
+			if (ta_popC[j] > ta_popC[i-1]) {
+			    ta_popP.swap_cols(j, i-1);
+			    ta_popC.swap_rows(j, i-1);
+			    done = 0;
+			}  // if
+		    }  // for
+		} while (!done); // while
+	    } // while (step > 1)
+	    ta_newP = ta_popP.cols(0, i_NP-1);	// now the best NP are in first NP places in gta_pop, use them
+	    ta_newC = ta_popC.rows(0, i_NP-1);
+	} // i_bs_flag
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel B: \proglang{C++} version using \pkg{Rcpp}}
+  \end{minipage}
+  \caption{\code{devol()} case of \code{i\_bs\_flag}}
+  \label{fig:devol_bs_flag}
+\end{sidewaysfigure}
+
+
+\begin{sidewaysfigure}          % fig 11: end of devol()
+  \begin{minipage}{0.40\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+      /* have selected NP mutants move on to next generation */
+      for (i = 0; i < i_NP; i++) {
+	for (j = 0; j < i_D; j++)
+	  gta_oldP[i][j] = gta_newP[i][j];
+	gta_oldC[i] = gta_newC[i];
+      }
+      /* check if the best stayed the same, if necessary */
+      if(i_check_winner)  {
+	same = 1;
+	for (j = 0; j < i_D; j++)
+	  if(t_bestitP[j] != gt_bestP[j]) {
+	    same = 0;
+	  }
+	if(same && i_iter > 1)  {
+	  i_xav++;
+	  /* if re-evaluation of winner */
+	  tmp_best = evaluate(l_nfeval, gt_bestP, par, fcall, rho);
+
+	  /* possibly letting the winner be the average of all past generations */
+	  if(i_av_winner)
+	    gt_bestC[0] = ((1/(double)i_xav) * gt_bestC[0])
+	      + ((1/(double)i_xav) * tmp_best)
+              + (gd_bestvalit[i_iter-1] * ((double)(i_xav - 2))/(double)i_xav);
+	  else
+	    gt_bestC[0] = tmp_best;
+
+	}
+	else {
+	  i_xav = 1;
+	}
+
+      }
+      for (j = 0; j < i_D; j++)
+	t_bestitP[j] = gt_bestP[j];
+      t_bestitC = gt_bestC[0];
+
+      if( trace > 0 ) {
+        if( (i_iter % trace) == 0 ) {
+	  Rprintf("Iteration: %d bestvalit: %f bestmemit:", i_iter, gt_bestC[0]);
+	  for (j = 0; j < i_D; j++)
+	    Rprintf("%12.6f", gt_bestP[j]);
+	  Rprintf("\n");
+        }
+      }
+    } /* end loop through generations */
+
+  /* last population */
+  k = 0;
+  for (i = 0; i < i_NP; i++) {
+    for (j = 0; j < i_D; j++) {
+      gd_pop[k] = gta_oldP[i][j];
+      k++;
+    }
+  }
+
+  *gi_iter = i_iter;
+
+  PutRNGstate();
+  UNPROTECT(1);
+
+}
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel A: \proglang{C} version} \tiny
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.56\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+        ta_oldP = ta_newP;                      // have selected NP mutants move on to next generation
+        ta_oldC = ta_newC;
+
+        if (i_check_winner)  {                  // check if the best stayed the same, if necessary
+            int same = 1;
+            for (int j = 0; j < i_D; j++) {
+                if (t_bestitP[j] != t_bestP[j]) {
+                    same = 0;
+                }
+            }
+            if (same && i_iter > 1)  {
+                i_xav++;
+                memcpy(REAL(par), t_bestP.memptr(), Rf_nrows(par) * sizeof(double));
+                double tmp_best = ev->eval(par);// if re-evaluation of winner
+                if (i_av_winner)         //  poss. letting winner be avg of all past generations
+                    t_bestC = ((1/(double)i_xav) * t_bestC) + ((1/(double)i_xav) * tmp_best) +
+                        (d_bestvalit[i_iter-1] * ((double)(i_xav - 2))/(double)i_xav);
+                else
+                    t_bestC = tmp_best;
+            } else {
+                i_xav = 1;
+            }
+        }
+        t_bestitP = t_bestP;
+
+        if ( (i_trace > 0)  &&  ((i_iter % i_trace) == 0) ) {
+            Rprintf("Iteration: %d bestvalit: %f bestmemit:", i_iter, t_bestC);
+            for (int j = 0; j < i_D; j++)
+                Rprintf("%12.6f", t_bestP[j]);
+            Rprintf("\n");
+        }
+    } // end loop through generations
+
+    d_pop = ta_oldP;
+    i_iterations = i_iter;
+    l_nfeval = ev->getNbEvals();
+    PutRNGstate();
+}
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel B: \proglang{C++} version using \pkg{Rcpp}}
+  \end{minipage}
+  \caption{\code{devol()} population processing and return preparation}
+  \label{fig:devol_return}
+\end{sidewaysfigure}
+
+
+\begin{sidewaysfigure}          % fig 12: evaluate
+  \begin{minipage}{0.40\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+double evaluate(long *l_nfeval, double *param, SEXP par, SEXP fcall, SEXP env)
+{
+   int i;
+   SEXP sexp_fvec, fn;
+   double f_result;
+
+   for (i = 0; i < nrows(par); i++) {
+      NUMERIC_POINTER(par)[i] = param[i];
+   }
+   PROTECT(fn = lang2(fcall, par));
+      (*l_nfeval)++;  /* increment function evaluation count */
+
+   PROTECT(sexp_fvec = eval(fn, env));
+   f_result = NUMERIC_POINTER(sexp_fvec)[0];
+
+   UNPROTECT(2);
+   if(ISNAN(f_result))
+     error("NaN value of objective function! \nPerhaps adjust the bounds.");
+
+   return(f_result);
+}
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel A: \proglang{C} version} \tiny
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.56\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+namespace Rcpp {
+    namespace DE {
+
+	class EvalBase {
+	public:
+	    EvalBase() : neval(0) {};
+	    virtual double eval(SEXP par) = 0;
+	    unsigned long getNbEvals() { return neval; }
+        protected:
+            unsigned long int neval;
+	};
+
+	class EvalStandard : public EvalBase {
+	public:
+	    EvalStandard(SEXP fcall_, SEXP env_) : fcall(fcall_), env(env_) {}
+	    double eval(SEXP par) {
+		neval++;
+		return defaultfun(par);
+	    }
+	private:
+	    SEXP fcall, env;
+	    double defaultfun(SEXP par) { 		// essentially the same as the old evaluate
+		SEXP fn = ::Rf_lang2(fcall, par); 	// this could be done with Rcpp
+		SEXP sexp_fvec = ::Rf_eval(fn, env);	// but is still a lot slower right now
+		double f_result = REAL(sexp_fvec)[0];
+		if (ISNAN(f_result))
+		    ::Rf_error("NaN value of objective function! \nPerhaps adjust the bounds.");
+		return(f_result);
+	    }
+	};
+
+	typedef double (*funcPtr)(SEXP);
+	class EvalCompiled : public EvalBase {
+	public:
+	    EvalCompiled( Rcpp::XPtr<funcPtr> xptr ) {
+		funptr = *(xptr);
+	    };
+	    EvalCompiled( SEXP xps ) {
+		Rcpp::XPtr<funcPtr> xptr(xps);
+		funptr = *(xptr);
+	    };
+	    double eval(SEXP par) {
+		neval++;
+		return funptr(par);
+	    }
+	private:
+	    funcPtr funptr;
+	};
+
+    }
+}
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize \centering{Panel B: \proglang{C++} version using \pkg{Rcpp}}
+  \end{minipage}
+  \caption{\code{evaluate()} function versus Evaluation classes permitting
+    \proglang{R} and \proglang{C++} objective functions}
+  \label{fig:evaluate_fun}
+\end{sidewaysfigure}
+
+
+
+%% R functions
+
+\begin{sidewaysfigure}          % fig R1: beginning of DEoptim()
+  \begin{minipage}{0.48\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+DEoptim <- function(fn, lower, upper, control = DEoptim.control(), ...) {
+  fn1  <- function(par) fn(par, ...)
+  if (length(lower) != length(upper))
+    stop("'lower' and 'upper' are not of same length")
+  if (!is.vector(lower))
+    lower <- as.vector(lower)
+  if (!is.vector(upper))
+    upper <- as.vector(upper)
+  if (any(lower > upper))
+    stop("'lower' > 'upper'")
+  if (any(lower == "Inf"))
+    warning("you set a component of 'lower' to 'Inf'. May imply 'NaN' results", immediate. = TRUE)
+  if (any(lower == "-Inf"))
+    warning("you set a component of 'lower' to '-Inf'. May imply 'NaN' results", immediate. = TRUE)
+  if (any(upper == "Inf"))
+    warning("you set a component of 'upper' to 'Inf'. May imply 'NaN' results", immediate. = TRUE)
+  if (any(upper == "-Inf"))
+    warning("you set a component of 'upper' to '-Inf'. May imply 'NaN' results", immediate. = TRUE)
+  if (!is.null(names(lower)))
+    nam <- names(lower)
+  else if (!is.null(names(upper)) & is.null(names(lower)))
+    nam <- names(upper)
+  else
+    nam <- paste("par", 1:length(lower), sep = "")
+
+  ctrl <- do.call(DEoptim.control, as.list(control))
+  ctrl$npar <- length(lower)
+  if (ctrl$NP < 4) {
+    warning("'NP' < 4; set to default value 50\n", immediate. = TRUE)
+    ctrl$NP <- 50
+  }
+  if (ctrl$NP < 10*length(lower))
+    warning("For many problems it is best to set 'NP' (in 'control') to be at least "
+            "ten times the length of the parameter vector. \n", immediate. = TRUE)
+  if (!is.null(ctrl$initialpop)) {
+    ctrl$specinitialpop <- TRUE
+    if(!identical(as.numeric(dim(ctrl$initialpop)), c(ctrl$NP, ctrl$npar)))
+      stop("Initial population is not a matrix with dim. NP x length(upper).")
+  }
+  else {
+    ctrl$specinitialpop <- FALSE
+    ctrl$initialpop <- 0.0
+  }
+  ##
+  ctrl$trace <- as.numeric(ctrl$trace)
+  ctrl$specinitialpop <- as.numeric(ctrl$specinitialpop)
+  ctrl$initialpop <- as.numeric(ctrl$initialpop)
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel A: \proglang{R} version in \pkg{DEoptim}}
+    \tiny
+
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.48\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+DEoptim <- function(fn, lower, upper, control = DEoptim.control(), env, ...) {
+  ##fn1  <- function(par) fn(par, ...)
+  if (length(lower) != length(upper))
+    stop("'lower' and 'upper' are not of same length")
+  if (!is.vector(lower))
+    lower <- as.vector(lower)
+  if (!is.vector(upper))
+    upper <- as.vector(upper)
+  if (any(lower > upper))
+    stop("'lower' > 'upper'")
+  if (any(lower == "Inf"))
+    warning("you set a component of 'lower' to 'Inf'. May imply 'NaN' results", immediate. = TRUE)
+  if (any(lower == "-Inf"))
+    warning("you set a component of 'lower' to '-Inf'. May imply 'NaN' results", immediate. = TRUE)
+  if (any(upper == "Inf"))
+    warning("you set a component of 'upper' to 'Inf'. May imply 'NaN' results", immediate. = TRUE)
+  if (any(upper == "-Inf"))
+    warning("you set a component of 'upper' to '-Inf'. May imply 'NaN' results", immediate. = TRUE)
+  if (!is.null(names(lower)))
+    nam <- names(lower)
+  else if (!is.null(names(upper)) & is.null(names(lower)))
+    nam <- names(upper)
+  else
+    nam <- paste("par", 1:length(lower), sep = "")
+  if (missing(env))
+    env <- new.env()
+
+  ctrl <- do.call(DEoptim.control, as.list(control))
+  ctrl$npar <- length(lower)
+  if (ctrl$NP < 4) {
+    warning("'NP' < 4; set to default value 50\n", immediate. = TRUE)
+    ctrl$NP <- 50
+  }
+  if (ctrl$NP < 10*length(lower))
+    warning("For many problems it is best to set 'NP' (in 'control') to be at least ten"
+            " times the length of the parameter vector. \n", immediate. = TRUE)
+  if (!is.null(ctrl$initialpop)) {
+    ctrl$specinitialpop <- TRUE
+    if(!identical(as.numeric(dim(ctrl$initialpop)), c(ctrl$NP, ctrl$npar)))
+      stop("Initial population is not a matrix with dim. NP x length(upper).")
+  }
+  else {
+    ctrl$specinitialpop <- FALSE
+    ctrl$initialpop <- matrix(0,1,1)    # dummy matrix
+  }
+  ##
+  ctrl$trace <- as.numeric(ctrl$trace)
+  ctrl$specinitialpop <- as.numeric(ctrl$specinitialpop)
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel B: \proglang{R} version in \pkg{RcppDE}}
+   \end{minipage}
+  \caption{First half of \proglang{R} function \texttt{DEoptim()}}
+  \label{fig:fig_R_DEoptim1}
+\end{sidewaysfigure}
+
+\begin{sidewaysfigure}          % fig R2: second half of DEoptim()
+  \begin{minipage}{0.48\linewidth}
+    \tiny
+    \begin{CodeChunk}
+      \begin{CodeInput}
+  outC <- .Call("DEoptimC", lower, upper, fn1, ctrl, new.env(),
+               PACKAGE = "DEoptim")
+  ##
+  if (length(outC$storepop) > 0) {
+    nstorepop <- floor((outC$iter - ctrl$storepopfrom) / ctrl$storepopfreq)
+    storepop <- list()
+    cnt <- 1
+    for(i in 1:nstorepop) {
+      idx <- cnt:((cnt - 1) + (ctrl$NP * ctrl$npar))
+      storepop[[i]] <- matrix(outC$storepop[idx], nrow = ctrl$NP, ncol = ctrl$npar,
+                         byrow = TRUE)
+      cnt <- cnt + (ctrl$NP * ctrl$npar)
+      dimnames(storepop[[i]]) <- list(1:ctrl$NP, nam)
+    }
+  }
+  else {
+    storepop = NULL
+  }
+
+  ## optim
+  bestmem <- as.numeric(outC$bestmem)
+  names(bestmem) <- nam
+  bestval <- as.numeric(outC$bestval)
+  nfeval <- as.numeric(outC$nfeval)
+  iter <- as.numeric(outC$iter)
+
+  ## member
+  names(lower) <- names(upper) <- nam
+  bestmemit <- matrix(outC$bestmemit, nrow = iter,
+                      ncol = ctrl$npar, byrow = TRUE)
+
+  dimnames(bestmemit) <- list(1:iter, nam)
+  bestvalit <- as.numeric(outC$bestvalit[1:iter])
+  pop <- matrix(outC$pop, nrow = ctrl$NP, ncol = ctrl$npar,
+                byrow = TRUE)
+  storepop <- as.list(storepop)
+
+  outR <- list(optim = list(
+              bestmem = bestmem,
+              bestval = bestval,
+              nfeval = nfeval,
+              iter = iter),
+            member = list(
+              lower = lower,
+              upper = upper,
+              bestmemit = bestmemit,
+              bestvalit = bestvalit,
+              pop = pop,
+              storepop = storepop))
+
+  attr(outR, "class") <- "DEoptim"
+  return(outR)
+}
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel A: \proglang{R} version in \pkg{DEoptim}}
+    \tiny
+
+  \end{minipage}
+  \begin{minipage}{0.03\linewidth}
+    \phantom{XX}
+  \end{minipage}
+  \begin{minipage}{0.48\linewidth}
+    \tiny
+
+    \begin{CodeChunk}
+      \begin{CodeInput}
+  outC <- .Call("DEoptim", lower, upper, fn, ctrl, env, PACKAGE = "RcppDE")
+  ##
+  if (length(outC$storepop) > 0) {
+    nstorepop <- floor((outC$iter - ctrl$storepopfrom) / ctrl$storepopfreq)
+    ## storepop <- list()
+    ## cnt <- 1
+    ## for(i in 1:nstorepop) {
+    ##   idx <- cnt:((cnt - 1) + (ctrl$NP * ctrl$npar))
+    ##   storepop[[i]] <- matrix(outC$storepop[idx], nrow = ctrl$NP, ncol = ctrl$npar,
+    ##                      byrow = TRUE)
+    ##   cnt <- cnt + (ctrl$NP * ctrl$npar)
+    ##   dimnames(storepop[[i]]) <- list(1:ctrl$NP, nam)
+    ## }
+    storepop <- outC$storepop[1:nstorepop]
+    for (i in 1:length(storepop)) dimnames(storepop[[i]]) <- list(1:ctrl$NP, nam)
+  }
+  else {
+    storepop = NULL
+  }
+
+  ## optim
+  bestmem <- as.numeric(outC$bestmem)
+  names(bestmem) <- nam
+  bestval <- as.numeric(outC$bestval)
+  nfeval <- as.numeric(outC$nfeval)
+  iter <- as.numeric(outC$iter)
+
+  ## member
+  names(lower) <- names(upper) <- nam
+  #bestmemit <- matrix(outC$bestmemit, nrow = iter, ncol = ctrl$npar, byrow = TRUE)
+  bestmemit <- outC$bestmemit
+
+  dimnames(bestmemit) <- list(1:iter, nam)
+  bestvalit <- as.numeric(outC$bestvalit[1:iter])
+  #pop <- matrix(outC$pop, nrow = ctrl$NP, ncol = ctrl$npar, byrow = TRUE)
+  pop <- outC$pop
+  storepop <- as.list(storepop)
+
+  outR <- list(optim = list(
+              bestmem = bestmem,
+              bestval = bestval,
+              nfeval = nfeval,
+              iter = iter),
+            member = list(
+              lower = lower,
+              upper = upper,
+              bestmemit = bestmemit,
+              bestvalit = bestvalit,
+              pop = pop,
+              storepop = storepop))
+
+  attr(outR, "class") <- "DEoptim"
+  return(outR)
+}
+      \end{CodeInput}
+    \end{CodeChunk}
+
+    \normalsize
+    \centering{Panel B: \proglang{R} version in \pkg{RcppDE}}
+   \end{minipage}
+  \caption{Second half of \proglang{R} function \texttt{DEoptim()}}
+  \label{fig:fig_R_DEoptim2}
+\end{sidewaysfigure}
+
+
+\end{document}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:

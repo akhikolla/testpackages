@@ -1,0 +1,10 @@
+\title{internals}
+\name{internals}
+\keyword{internal}
+\alias{print.MAT}
+\alias{SCORE_cpp}
+\alias{score_cpp}
+\alias{selectItem_cpp}
+\description{internals}
+\details{internals}
+\value{none}

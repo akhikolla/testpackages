@@ -1,0 +1,157 @@
+---
+title: "Prospective Design Analysis"
+description: "This vignette shows how to conduct a prospective design analysis using the function `prospective()`."
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{prospective}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+bibliography: PRDA.bib
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r, message=FALSE}
+library(PRDA)
+```
+
+Given the hypothetical population effect size and the required power level, the function `prospective()` performs a prospective design analysis. Prospective design analysis allows to define the sample size needed to obtain a required level of power computing also the associated inferential risks. Function arguments are:
+
+```{r, eval=FALSE, echo = T}
+retrospective(effect_size, power, ratio_n = 1,
+              test_method = c("pearson", "two_sample", "welch",
+                                        "paired", "one_sample"),
+              alternative = c("two_sided","less","greater"),
+              sig_level = .05, ratio_sd = 1, B = 1e4,
+              tl = -Inf, tu = Inf, B_effect = 1e3,
+              sample_range = c(2, 1000), tol = .01,
+              display_message = TRUE)
+```
+
+Complete arguments description is provided in the function documentation `?prospective`. In the following sections, instead, different examples are presented. For further details about design analysis see @altoeEnhancingStatisticalInference2020 and @bertoldoDesigningStudiesEvaluating2020.
+
+
+## Prospective Design Analysis for Correlation
+
+To conduct a prospective design analysis considering a correlation between two variables, we need to specify `test_method = "pearson"` (default option). Note that, only Pearson's correlation is available, while the Kendall's $\tau$ and Spearman's $\rho$ are not implemented.
+
+### Example 1: Pearson's correlation
+
+Consider a study that will evaluate the correlation between two variables. Knowing from the literature that we expect an effect size of $\rho = .25$, which is the required sample size to obtain a power of 60%? We can use the function `prospective()` setting the argument `test_method = "pearson"`. 
+
+```{r, example1}
+set.seed(2020) # set seed to make results reproducible
+
+prospective(effect_size = .25, power = .60, test_method = "pearson",
+            display_message = TRUE)
+```
+
+The default option `display_message = TRUE` prints the different steps to find the required sample size and the progress bar. Note that, however, the progress bar is available only when `effect_size` is defined as a function. In the output, we have the summary information about the hypothesized population effect, the study characteristics, and the inferential risks. To obtain a power of around 60% the required sample size is $n = 76$, the associated Type M error is almost 1.30 and the Type S error is approximately 0. Finally, the critical values (i.e., the minimum absolute effect size value that would result significant) are $\rho = \pm.226$. Note that correlation tests were conducted considering `"two_sided"` alternative hypothesis and a significance level of .05 (the default settings).
+
+
+## Prospective Design Analysis for Means Comparison
+
+To conduct a retrospective design analysis considering means comparisons, we need to specify the appropriate *t*-test (i.e., One-sample, Paired, Two-sample, or Welch's *t*-test) using the argument `test_method`. Arguments specifications for the different *t*-tests are presented in the following Table.
+
+
+| Test                | `test_method` |     Other required arguments    |
+| -------------------:|:-------------:|:-------------------------------:|
+| One-sample *t*-test | `one_sample`  | `ratio_n = NULL`                |
+| Paired *t*-test     | `paired`      | `ratio_n = 1`                   |
+| Two-sample *t*-test | `two_sample`  | `ratio_n`                       |
+| Welch's *t*-test    | `welch`       | `ratio_n` and `ratio_sd`        |
+
+### Example 2: Paired *t*-test
+
+Imagine that we are planning a study where the same group is measured twice (e.g., pre- and post-test). Knowing from the literature that we expect an effect size of $d = .35$, which is the required sample size to obtain a power of 80%? We can use the function `prospective()` specifying the corresponding arguments. We use the option `test_method = one_sample` for paired *t*-test  and set `ratio_n = 1`.
+
+```{r, example2}
+prospective(effect_size = .35, power = .8, test_method = "paired",
+            ratio_n = 1, display_message = FALSE)
+```
+
+To obtain a power of 80%, the required sample size is $n=66$, the associated Type M error is around 1.10 and the Type S error is approximately 0. Finally, the critical values (i.e., the minimum absolute effect size value that would result significant) are $d  =  \pm 0.246$.
+
+### Example 3: Two-sample *t*-test
+
+Imagine now the case where two groups (e.g., treatment and control group) will be compared. However, we know in advance that the sample size in the two groups will be different (e.g., the number of participants in the treatment group could be limited due to strict selecting criteria). We can define the ratio between the sample size in the first group and in the second group using the `ratio_n` argument. Again, we hypothesize an effect size of $d = .35$, but this time we specify a one-sided alternative hypothesis and a significance level of .10. We can do that using respectively the arguments `alternative` and `sig_level`.
+
+```{r, example3}
+prospective(effect_size = .35, power = .80, ratio_n = .5, 
+            test_method = "two_sample", alternative = "great", sig_level = .10, 
+            display_message = FALSE)
+```
+
+The option `test_method = "two_sample"` is used to consider a two-sample *t*-test. To obtain a power of 80%, we would need at least 55 participants in the first group and 110 participants in the second group. The associated Type M error is almost 1.20 and the Type S error is approximately 0. Finally, the critical value is $d = .213$.
+
+
+### Example 4: Welch's *t*-test
+
+Consider again the previous example, but this time we do not assume homogeneity of variance between the two groups. We suppose, instead, that the ratio between the standard deviation of the first group and of the second group is 1.5. In this case the appropriate test is the Welch's *t*-test. We set the option `test_method = "welch"` and specify the argument `ratio_sd`.
+
+
+```{r, example4}
+prospective(effect_size = .35, power = .80, ratio_n = .5, test_method = "welch",
+            ratio_sd = 1.5, alternative = "great", sig_level = .10, 
+            display_message = FALSE)
+```
+
+Now, to obtain a power of 80%, we would need at least 63 participants in the first group and 126 participants in the second group. The associated Type M error is almost 1.20 and the Type S error is approximately 0. Finally, the critical value is $d = .212$. Results are really close to the previous ones.
+
+
+## Population effect size distribution
+
+Defining the hypothetical population effect size as a single value could be limiting.  Instead, researchers may prefer to use a probability distribution representing their uncertainty regarding the hypothetical population effect. Note that this could be interpreted as a prior distribution of the population effect in a Bayesian framework. 
+
+To define the hypothetical population effect size (`effect_size`) according to a probability distribution, it is necessary to specify a function that allows sampling values from a given distribution. The function has to be defined as `function(n) my_function(n, ...)`, with only one single argument `n` representing the number of samples (e.g., `function(n) rnorm(n, mean = 0, sd = 1)`). See [`vignette("retrospective")`](retrospective.html) for further details.
+
+### Example 5: Effect size distribution
+
+Consider the same scenario as in the correlation example (Example 1). This time we define the hypothesized effect size according to a normal distribution with mean .30 and standard deviation .10. Moreover, to avoid unreasonable values we truncate the distribution between .15 and .45.
+
+```{r, example5}
+prospective(effect_size = function(n) rnorm(n, .3, .1), power = .60, 
+            test_method = "pearson", tl = .15, tu = .45, B_effect = 500, 
+            B = 500, display_message = FALSE)
+```
+
+Note that we adjusted `B_effect` and `B` to find a good trade-off between computational times and results accuracy. Differently from previous outputs, we have now a summary for the sampled effects distribution and for the inferential risks.
+
+## Graphical representation
+
+Currently there are no personalized plot functions in {PRDA}. However, it is easy to access all the results and use them to create the plots according to your needs. 
+
+The function `prospective()` returns a list with class `"design_analysis"` that contains:
+
+- `design_analysis` - a character string indicating the type of design analysis (prospective or retrospective).
+- `call_arguments` - a list with all the arguments passed to the function. 
+- `effect_info` - a list with all the information regarding the considered hypothetical population effect size. In particular, in `effect_samples` we find the vector with the sampled effects (or unique value in the case of a single value).
+- `test_info` - a list with all the information regarding the test performed.
+- `prospective_res` - a data frame with the results of the design analysis (i.e., `power`, `typeM`, and `typeS`).
+
+Output complete description is provided in the function help page `?prospective`.
+
+```{r, data_plot}
+da_fit <- prospective(effect_size = function(n) rnorm(n, .3, .1), power = .60,
+                      test_method = "pearson", tl = .15, tu = .45, 
+                      B_effect = 500, B = 500, display_message = FALSE)
+
+str(da_fit, max.level = 1)
+```
+
+
+Similarly to the examples provided in [`vignette("retrospective")`](retrospective.html), results can be used to create the plots according to your needs. See  [`vignette("retrospective")`](retrospective.html) for further details.
+
+---
+nocite: | 
+  @gelmanPowerCalculationsAssessing2014
+...
+
+### References

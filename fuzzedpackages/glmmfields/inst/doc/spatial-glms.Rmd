@@ -1,0 +1,149 @@
+---
+title: "Spatial GLMs with glmmfields"
+author: "Sean C. Anderson and Eric J. Ward"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Spatial GLMs with glmmfields}
+  %\VignetteEngine{knitr::rmarkdown}
+  \usepackage[utf8]{inputenc}
+---
+
+Here we will use the glmmfields package to fit a spatial GLM with a predictor. While glmmfields was designed to fit spatiotemporal GLMs with the possibility of extreme events, it can also be used to fit regular spatial GLMs without a time element and without extreme events. Currently it can fit Gaussian (link = identity), Gamma (link = log), Poisson (link = log), negative binomial (link = log), and binomial (link = logit) models. The package can also fit lognormal (link = log) models.
+  
+```{r set-knitr-options, cache=FALSE, echo=FALSE}
+library("knitr")
+opts_chunk$set(message = FALSE, fig.width = 5.5)
+```
+
+Let's load the necessary packages:
+
+```{r, message=FALSE, warning=FALSE}
+library(glmmfields)
+library(ggplot2)
+library(dplyr)
+```
+
+Set up parallel processing (not used in this example):
+
+```{r, echo=TRUE, eval=FALSE}
+options(mc.cores = parallel::detectCores())
+```
+
+First, let's simulate some data. We will use the built-in function `sim_glmmfields()`, but normally you would start with your own data. We will simulate 200 data points, some (fake) temperature data, an underlying random field spatial pattern, and add some observation error. In this example we will fit a Gamma GLM with a log link.
+
+The underlying intercept is 0.5 and the slope between temperature and our observed variable (say biomass or density of individuals in a quadrat) is 0.2.
+
+```{r simulate-data}
+set.seed(1)
+N <- 200 # number of data points
+temperature <- rnorm(N, 0, 1) # simulated temperature data
+X <- cbind(1, temperature) # our design matrix
+s <- sim_glmmfields(
+  n_draws = 1, gp_theta = 1.5, n_data_points = N,
+  gp_sigma = 0.2, sd_obs = 0.2, n_knots = 12, obs_error = "gamma",
+  covariance = "squared-exponential", X = X,
+  B = c(0.5, 0.2) # B represents our intercept and slope
+)
+d <- s$dat
+d$temperature <- temperature
+ggplot(s$dat, aes(lon, lat, colour = y)) +
+  viridis::scale_colour_viridis() +
+  geom_point(size = 3)
+```
+
+If we fit a regular GLM we can see that there is spatial autocorrelation in the residuals:
+
+```{r}
+m_glm <- glm(y ~ temperature, data = d, family = Gamma(link = "log"))
+m_glm
+confint(m_glm)
+d$m_glm_residuals <- residuals(m_glm)
+ggplot(d, aes(lon, lat, colour = m_glm_residuals)) +
+  scale_color_gradient2() +
+  geom_point(size = 3)
+```
+
+Let's instead fit a spatial GLM with random fields. Note that we are only using 1 chain and 500 iterations here so the vignette builds quickly on CRAN. For final inference, you should likely use 4 or more chains and 2000 or more iterations.
+
+```{r, results='hide'}
+m_spatial <- glmmfields(y ~ temperature,
+  data = d, family = Gamma(link = "log"),
+  lat = "lat", lon = "lon", nknots = 12, iter = 500, chains = 1,
+  prior_intercept = student_t(3, 0, 10), 
+  prior_beta = student_t(3, 0, 3),
+  prior_sigma = half_t(3, 0, 3),
+  prior_gp_theta = half_t(3, 0, 10),
+  prior_gp_sigma = half_t(3, 0, 3),
+  seed = 123 # passed to rstan::sampling()
+)
+```
+
+Let's look at the model output:
+
+```{r}
+m_spatial
+```
+
+We can see that the 95% credible intervals are considerably wider on the intercept term and narrower on the slope coefficient in the spatial GLM vs. the model that ignored the spatial autocorrelation.
+
+Let's look at the residuals in space this time:
+
+```{r}
+plot(m_spatial, type = "spatial-residual", link = TRUE) +
+  geom_point(size = 3)
+```
+
+That looks better.
+
+We can inspect the residuals versus fitted values:
+
+```{r}
+plot(m_spatial, type = "residual-vs-fitted")
+```
+
+And the predictions from our model itself:
+
+```{r}
+plot(m_spatial, type = "prediction", link = FALSE) +
+  viridis::scale_colour_viridis() +
+  geom_point(size = 3)
+```
+
+Compare that to our data at the top. Note that the original data also includes observation error with a CV of 0.2.
+
+We can also extract the predictions themselves with credible intervals:
+
+```{r}
+# link scale:
+p <- predict(m_spatial)
+head(p)
+
+# response scale:
+p <- predict(m_spatial, type = "response")
+head(p)
+
+# prediction intervals on new observations (include observation error):
+p <- predict(m_spatial, type = "response", interval = "prediction")
+head(p)
+```
+
+Or use the `tidy` method to get our parameter estimates as a data frame:
+
+```{r}
+head(tidy(m_spatial, conf.int = TRUE, conf.method = "HPDinterval"))
+```
+
+Or make the predictions on a fine-scale spatial grid for a constant value of the predictor:
+
+```{r}
+pred_grid <- expand.grid(lat = seq(min(d$lat), max(d$lat), length.out = 30),
+  lon = seq(min(d$lon), max(d$lon), length.out = 30))
+pred_grid$temperature <- mean(d$temperature)
+pred_grid$prediction <- predict(m_spatial, newdata = pred_grid, 
+  type = "response")$estimate
+ggplot(pred_grid, aes(lon, lat, fill = prediction)) + 
+  geom_raster() +
+  viridis::scale_fill_viridis()
+```
+

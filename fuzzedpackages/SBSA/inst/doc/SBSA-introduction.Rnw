@@ -1,0 +1,573 @@
+% \VignetteIndexEntry{Simplified Bayesian Sensitivity Analysis}
+% \VignetteDepends{MASS, xtable}
+% \VignetteKeyword{Bayesian inference}
+% \VignetteKeyword{Measurement error}
+% \VignetteKeyword{Sensitivity analysis}}
+
+\documentclass[10pt]{article}
+
+\usepackage{subfig}
+\usepackage{bm}
+%% \usepackage[outerbars]{changebar}
+
+\newcommand{\vect}[1]{\bm{#1}}
+%% \newcommand{\TODO}[1]{\textbf{---TODO: #1---}}
+%% \newcommand{\DONE}[2]{\marginpar{\small #1}\cbstart {#2}\cbend}
+
+\renewcommand{\topfraction}{0.9}	% max fraction of floats at top
+    \renewcommand{\bottomfraction}{0.8}	% max fraction of floats at bottom
+    %   Parameters for TEXT pages (not float pages):
+    \setcounter{topnumber}{2}
+    \setcounter{bottomnumber}{2}
+    \setcounter{totalnumber}{4}     % 2 may work better
+    \setcounter{dbltopnumber}{2}    % for 2-column pages
+    \renewcommand{\dbltopfraction}{0.9}	% fit big float above 2-col. text
+    \renewcommand{\textfraction}{0.07}	% allow minimal text w. figs
+    %   Parameters for FLOAT pages (not text pages):
+    \renewcommand{\floatpagefraction}{0.7}	% require fuller float pages
+	% N.B.: floatpagefraction MUST be less than topfraction !!
+    \renewcommand{\dblfloatpagefraction}{0.7}	% require fuller float pages
+
+<<echo=FALSE,print=FALSE>>=
+options(width=60)
+prettyVersion <- packageDescription("SBSA")$Version
+prettyDate <- format(Sys.Date(), "%B %e, %Y")
+library(xtable)
+library(MASS)
+library(SBSA)
+@
+
+\author{Davor \v{C}ubrani\'{c} \and Paul Gustafson}
+\title{Package SBSA: Simplified Bayesian Sensitivity Analysis (Version
+  \Sexpr{prettyVersion})
+}
+\date{\Sexpr{prettyDate}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+  \noindent
+  SBSA is an R package that offers a simplified interface to Bayesian
+  sensitivity analysis. This vignette contains a guided walkthrough of
+  using the package to analyze a dataset. It covers calling into the
+  package, and how the result can be checked, tuned, and analyzed.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:introduction}
+
+\subsection{The Model}
+\label{sec:model}
+
+Consider a health outcome $Y$, exposure $X$, and confounders $\vect{Z}=(Z_1,
+\dots, Z_p)'$ and $\vect{U} = (U_1, \dots, U_q)'$. In the case of continous
+outcome $Y$, the outcome model can straightforwardly be expressed as:
+\begin{equation}
+  \label{eq:Y_model}
+  (Y|\vect{U}, \vect{Z}, X) \sim 
+      N(\alpha_0 + \alpha_x X + \vect{\beta_u}' \vect{U} + \vect{\beta_z}' \vect{Z}, \sigma^2)
+\end{equation}
+
+However, in practice the measurements of $\vect{U}$ are unavailable,
+whereas only noisy measurements $\vect{W}$ are available in place of
+$\vect{Z}$. Thus we refer to $\vect{U}$ and $\vect{Z}$ as unobserved
+and near-observed confounders, respectively.
+
+The SBSA package provides functionality to estimate the parameters of
+this model from the observed data $(\vect{W}, Y, X)$. In this
+vignette, we will focus on practicalities of using the package. For
+full details of the model and the algorithm, please see Gustafson
+\emph{et al.}~\cite{Gustafson_etal:2010}.
+
+\subsection{Parameters}
+\label{sec:parameters}
+
+We already introduced in equation~\ref{eq:Y_model} parameters
+$\alpha_0$, $\alpha_x$, $\vect{\beta_u}$, $\vect{\beta_z}$, and
+$\sigma^2$. Of these, $\alpha_x$ is what an analyst will be most
+interested in, since it shows the relationship of the outcome to the
+exposure. But to understand the model and be able to tune the package,
+you should be aware of the remaining parameters.
+
+Remember that $W_j$ is a noisy surrogate for $Z_j$. If we assume that
+the measurement errors for the components of $\vect{Z}$ are
+uncorrelated with each other, we can model
+
+\begin{equation}
+  \label{eq:W_model}
+  (\vect{W}|Y, \vect{U}, \vect{Z}, X) 
+      \sim N_p(\vect{Z}, diag(\tau_1^2, \dots, \tau_p^2))
+\end{equation}
+
+Next, we specify a normal model for the distribution of exposure and
+near-observed confounders as:
+
+\begin{equation}
+  \label{eq:XZ_model}
+  \left(
+    \begin{array}{c}
+      X \\
+      \vect{Z}
+    \end{array}
+  \right)
+  \sim N_{p+1}(0, \tilde{\Sigma}(\tau^2))
+\end{equation}
+where $\tilde{\Sigma} = \Sigma - diag(0, \tau_1^2, \dots, \tau_p^2)$,
+and we pretend to know $\Sigma = Var{(X, \vect{W}')}$. (Note that
+$\Sigma$ will have unit diagonal elements if $X$ and $\vect{W}$ are
+standardized, simplifying the calculation.)
+
+Finally, we need to link $\vect{U}$ to $(X, \vect{Z})$. We can
+simplify the model by assuming there is just a single unobserved
+confounder $U$ as
+\begin{equation}
+  \label{eq:U_model}
+  \left\{ U
+    \left|
+      \left(
+        \begin{array}{c}
+          X \\
+          \vect{Z}
+        \end{array}
+      \right)
+    \right.
+  \right\}
+  \sim N(\gamma_x X + \vect{\gamma_z}' \vect{Z}, c^2)
+\end{equation}
+
+The choice of the single unobserved confounder corresponds to the
+situation where the investigator is concerned about the possible
+existence of one or more important confounders whose identities, and
+mutual relationships, are unknown.
+
+\section{Example}
+\label{sec:example}
+
+Let us work with a simulated dataset $(Y, X, Z_1, Z_2, U)$, where the
+exposure $X$ and the true confounders, $(\vect{Z}, U)$ are
+equi-correlated with corr=.6:
+<<keep.source=TRUE>>=
+  set.seed(42)
+  n <- 100
+  tmp <- sqrt(0.6) * matrix(rnorm(n), n, 4) +
+    sqrt(1 - 0.6) * matrix(rnorm(n * 4), n, 4)
+  x <- tmp[, 1]
+  z <- tmp[, 2:4]
+@
+while the observed outcome $Y$ is generated according to
+Equation~(\ref{eq:Y_model}):
+<<>>=
+  y <- rnorm(n, x + z%*%rep(.5,3), .5)
+@ 
+
+The two near-observed confounders $\vect{Z}$ are mismeasured as
+$\vect{W}$ with ICC=0.7, while $U$ is unobserved:
+<<keep.source=TRUE>>=
+  w <- z[, 1:2]
+  w[, 1] <- w[, 1] + rnorm(n, sd = sqrt(1/0.7 - 1))
+  w[, 2] <- w[, 2] + rnorm(n, sd = sqrt(1/0.7 - 1))
+@ 
+
+Finally, we standardize $X$ and $\vect{W}$:
+<<>>=
+  standardize <- function(x) (x-mean(x))/sqrt(var(x))
+  x.sdz <- standardize(x)
+  w.sdz <- apply(w, 2, standardize)
+@ 
+Note: The package will check if these arguments have been
+standardized and will warn you if they have not.
+
+
+\subsection{Analysis}
+\label{sec:example-analysis}
+
+Let's use SBSA to estimate the parameters of the model given the
+observed data $(Y, X_{sdz}, \vect{W_{sdz}})$. There is a single entry
+point function in the SBSA package, \texttt{fitSBSA}. It runs MCMC for
+the specified number of steps, using the observed data and prior
+information. There is also a number of user-tunable parameters, which
+we will cover as we go along.
+
+
+\subsubsection{Describing the prior}
+\label{sec:analysis-prior}
+
+Let's first express some prior information about the confounders.
+Recall that $1-\tau_j^2$ is the ICC describing the reliability of
+$W_j$ as a surrogate for $Z_j$. We can think of a prior under which
+each $\tau_j^2$ is independently distributed as $\textrm{Beta}(a_j,
+b_j)$. If, in this example, we believe that ICC is very likely above
+0.6 with mode at 0.8, we can express that via $\textrm{Beta}(6,21)$
+distribution:
+<<>>=
+  a <- 6
+  b <- 21
+@ 
+
+To check, remember that the mode of $\textrm{Beta}(a,b) =
+\frac{a-1}{a+b-2}$, so the mode of ICC would be $1 - \frac{a-1}{a+b-2}$.
+For $\textrm{Beta}(6,21)$, the ICC mode is then:
+
+<<>>=
+1 - (a-1)/(a+b-2)
+@ 
+
+Similarly, for ICC to likely be above 0.6, $\tau^2$ should be likely
+to be \emph{below} that value, which we can check via the value of
+the distribution function of $\textrm{Beta}(6,21)$ at 0.6, or in R:
+<<>>=
+pbeta(0.6, a, b)
+@ 
+
+
+\subsubsection{Choosing sampler jumps}
+\label{sec:analysis-jumps}
+
+Having thus chosen our prior, we can move on. SBSA's algorithm uses
+MCMC with reparametrizing block-sampling, using the following six
+blocks: $(\vect{\alpha^\star})$, $(\vect{\beta_z^\star})$,
+$(\vect{\tau^{2\star}})$, $(\sigma^{2\star})$,
+$(\vect{\gamma_z^\star})$, $(\gamma_x^\star,
+\beta_u^\star)$.\footnote{See Gustafson \emph{et
+    al.}~\cite{Gustafson_etal:2010} for details of reparametrization.}
+We will see this block structure both in inputs when specifying block
+sampler jumps to the algorithm, and in the output, where acceptance
+rates are reported for each block separately.
+
+For each block, we need to specify the value of the sampler jump;
+$0.1$ is a reasonable enough choice to try first:
+<<>>=
+ sampler.jump <- c(alpha=.1, beta.z=.1,
+                   sigma.sq=.1, tau.sq=.1,
+                   beta.u.gamma.x=.1, gamma.z=.1)
+@ 
+
+
+\subsubsection{Running SBSA}
+\label{sec:analysis-running}
+
+We will leave all other parameters at their default settings, and run
+the MCMC for 20,000 steps:
+<<keep.source=TRUE>>=
+sbsa.fit <- fitSBSA(y, x.sdz, w.sdz, a, b, nrep = 20000,
+                    sampler.jump = sampler.jump)
+@
+
+As used above, we passed the following arguments to \texttt{fitSBSA}:
+\begin{itemize}
+\item the observed data, $(Y, X_{sdz}, \vect{W_{sdz}})$
+\item prior's hyperparameters \texttt{a} and \texttt{b}
+\item number of MCMC iterations, \texttt{nrep}
+\end{itemize}
+
+The result of SBSA, captured here in variable \texttt{sbsa.fit},
+contains the estimated parameters $\vect{\alpha}$, $\vect{\beta_z}$,
+$\beta_u$, $\vect{\gamma_z}$, $\gamma_x$, $\vect{\tau^2}$, and
+$\sigma^2$, in respective elements of the output:
+
+<<>>=
+names(sbsa.fit)
+@
+
+An additional element of the output, \texttt{acc}, contains the
+acceptance rate of each block.
+
+\subsubsection{Tuning the acceptance rate}
+\label{sec:tuning-accept-rate}
+
+Before proceeding with analysis, we should do some high-level checks
+of the sampler's output. Let's begin by checking the acceptance count
+of the sampler:
+<<>>=
+sbsa.fit$acc
+@ 
+
+Again, we can see the block-sampling structure in \texttt{acc}, where
+each MCMC sampling block gets a named element indicating the number of
+accepted updates. Checking the MCMC acceptance rate is an important
+first step before interpreting the results. The reason is that we want
+the algorithm to explore the state space efficiently, and acceptance
+rate is an indication of this. An acceptance rate that's either too
+high or too low means that the sampling is inefficient: high
+acceptance rate means that the chain is moving slowly and sampling
+largely around the current point; alternatively low acceptance rate
+means that proposed samples are often rejected and the chain is not
+moving much at all. Either way, the chain will explore the state space
+poorly, which we want to avoid.
+
+What acceptance rate is ``just right'' is open to much debate
+(see~\cite{Gelman_etal:1996}, \cite{Geyer_Thompson:1995},
+\cite{Roberts_etal:1997}), but a rule of thumb given by Roberts and
+Rosenthal~\cite{Roberts_Rosenthal:2001} recommends a rate between 0.15
+and 0.5. So let us try to get the acceptance rate for each block to
+30--40\%, that is, \texttt{acc} in the 6000--8000 range. This is done
+by adjusting the size of the block's sampling jump: when the
+acceptance rate is too low, we decrease the jump and, vice versa, when
+the acceptance rate is too high, we increase the jump. Keeping in mind
+is that changing one block's jump may change the acceptance rate of
+other blocks, it's still best to adjust the jump one block at a time
+until all are within the desired range.
+
+<<>>=
+sbsa.fit <- fitSBSA(y, x.sdz, w.sdz, a, b, nrep=20000, 
+                    sampler.jump=c(alpha=.2, beta.z=.1,
+                      sigma.sq=.1, tau.sq=.1,
+                      beta.u.gamma.x=.1, gamma.z=.1))
+sbsa.fit$acc
+
+sbsa.fit <- fitSBSA(y, x.sdz, w.sdz, a, b, nrep=20000, 
+                    sampler.jump=c(alpha=.15, beta.z=.1,
+                      sigma.sq=.1, tau.sq=.1,
+                      beta.u.gamma.x=.1, gamma.z=.1))
+sbsa.fit$acc
+
+sbsa.fit <- fitSBSA(y, x.sdz, w.sdz, a, b, nrep=20000, 
+                    sampler.jump=c(alpha=.15, beta.z=.2,
+                      sigma.sq=.1, tau.sq=.1,
+                      beta.u.gamma.x=.1, gamma.z=.1))
+sbsa.fit$acc
+@ 
+
+And so on until we reach a satisfactory acceptance rate:
+<<>>=
+sbsa.fit <- fitSBSA(y, x.sdz, w.sdz, a, b, nrep=20000, 
+                    sampler.jump=c(alpha=.15, beta.z=.2,
+                      sigma.sq=.35, tau.sq=.1,
+                      beta.u.gamma.x=.7, gamma.z=1.1))
+sbsa.fit$acc
+@ 
+
+\subsubsection{Checking parameter mixing}
+\label{sec:check-param-mixing}
+
+Once we have found good sampling jumps, we should check that the
+chains mix well by plotting parameter values as time series:
+
+<<label=traceplotCode, result=false>>=
+mfrow <- par(mfrow=c(2,2))
+plot(window(ts(sbsa.fit$alpha[,1]), deltat=30), ylab=expression(alpha[0]))
+plot(window(ts(sbsa.fit$alpha[,2]), deltat=30), ylab=expression(alpha[x]))
+plot(window(ts(sbsa.fit$beta.u), deltat=30), ylab=expression(beta[u]))
+plot(window(ts(sbsa.fit$gamma.x), deltat=30), ylab=expression(gamma[x]))
+par(mfrow=mfrow)
+@ 
+
+\begin{figure}[htb]
+  \centering
+<<label=traceplotFig,echo=false,fig=true>>=
+<<traceplotCode>>
+@ 
+  \caption{Parameter traces, thinned to every thirtieth sample}
+  \label{fig:traceplot-alpha.x}
+\end{figure}
+
+As you can see in Figure~\ref{fig:traceplot-alpha.x}, the mixing
+appears to be fine, so we can proceed with the analysis.
+
+\subsubsection{Parameter inference}
+\label{sec:parameter-inference}
+
+Finally, we can have a look at the estimated value of each parameter.
+Here, we look at $\alpha_x$, but throw away the first 10,000
+iterations as the burn-in:
+
+<<>>=
+  mean(sbsa.fit$alpha[10001:20000, 2])
+  sqrt(var(sbsa.fit$alpha[10001:20000, 2]))
+@ 
+
+Keep in mind that these parameters are estimated using $X_{sdz}$ and
+$\vect{W_{sdz}}$, the standardized $X$ and $\vect{W}$. In order to get them
+back we need to reverse the standardizing transformation:
+
+<<>>=
+trgt <- sbsa.fit$alpha[10001:20000,2]/sqrt(var(x))
+c(mean(trgt),sqrt(var(trgt)))
+@ 
+
+
+\subsection{Handling different levels of mis-measurement}
+\label{sec:example-components}
+
+
+What about the case where we believe that different confounders are
+measured with different accuracy? In this case, $\tau_i \neq \tau_j$,
+and we would like the model to reflect our assumption.
+
+In the following examples, we'll work with a modified $\vect{W}$, in
+which one component is mismeasured with ICC=0.7, while the other is
+measured more accurately, with ICC=0.95:
+<<keep.source=TRUE>>=
+  w <- z[, 1:2]
+  w[, 1] <- w[, 1] + rnorm(n, sd = sqrt(1/0.7 - 1))
+  w[, 2] <- w[, 2] + rnorm(n, sd = sqrt(1/0.95 - 1))
+
+  w.sdz <- apply(w, 2, standardize)
+@ 
+
+The prior can reflect our new belief about $\vect{W}$ by expressing
+the ICC (or rather, $\tau_j$) of each component separately. As before,
+we believe that the ICC of $W_1$ is very likely above 0.6 with mode at
+0.8, modelled via Beta(6, 21). But we now also believe that the ICC of
+$W_2$ is very likely above 0.8 with mode at 0.95, which we can model
+via $\tau_2^2 \sim \textrm{Beta}(3, 39)$:
+
+<<>>=
+  a <- c(6, 3)
+  b <- c(21, 39)
+@ 
+
+We check our choices of $a$ and $b$ as before. First, the ICC mode:
+
+<<>>=
+1 - (a-1)/(a+b-2)
+@ 
+and the likelihood of ICC being above the desired value for each
+component:
+<<>>=
+pbeta(c(0.6, 0.8), a, b)
+@ 
+
+Generally with the random walk Metropolis-Hastings algorithm, the best
+mixing is obtained if the component jump sizes scale according to the
+corresponding posterior standard deviations. This means that the
+magnitude of jump of the $\vect{\tau^{2\star}}$ block sampler might
+also reasonably be different for each component of $\vect{\tau^2}$. We
+specify per-component jump by giving a numeric vector as the
+\texttt{tau.sq} element of the \texttt{sampler.jump} argument, in this
+case using the previous jump value for the first component (0.1) and
+trying half the size for the second (0.05):\footnote{Note that this
+  means \texttt{sampler.jump} now has to be a list, because its
+  elements have differing lengths.}
+<<>>=
+sbsa.fit <- fitSBSA(y, x.sdz, w.sdz, a, b, nrep=20000, 
+                    sampler.jump=list(alpha=.15, beta.z=.2,
+                      sigma.sq=.35, tau.sq=c(.1, .05),
+                      beta.u.gamma.x=.7, gamma.z=1.1))
+sbsa.fit$acc
+@ 
+
+We still need to decrease slightly the magnitude of jump for some of
+the blocks:
+<<>>=
+sbsa.fit <- fitSBSA(y, x.sdz, w.sdz, a, b, nrep=20000, 
+                    sampler.jump=list(alpha=.14, beta.z=.15,
+                      sigma.sq=.25, tau.sq=c(.1, .05),
+                      beta.u.gamma.x=.6, gamma.z=1.1))
+sbsa.fit$acc
+@ 
+
+Finally, with all acceptance counts are still within the desired
+range, we move on to checking the mixing of the chains
+(Fig.~\ref{fig:traceplot2}):
+
+<<label=traceplotCode, result=false>>=
+mfrow <- par(mfrow=c(2,2))
+plot(window(ts(sbsa.fit$alpha[,1]), deltat=30), ylab=expression(alpha[0]))
+plot(window(ts(sbsa.fit$alpha[,2]), deltat=30), ylab=expression(alpha[x]))
+plot(window(ts(sbsa.fit$beta.u), deltat=30), ylab=expression(beta[u]))
+plot(window(ts(sbsa.fit$gamma.x), deltat=30), ylab=expression(gamma[x]))
+par(mfrow=mfrow)
+@ 
+
+\begin{figure}[htb]
+  \centering
+<<label=traceplotFig,echo=false,fig=true>>=
+<<traceplotCode>>
+@ 
+  \caption{Parameter traces, thinned to every thirtieth sample}
+  \label{fig:traceplot2}
+\end{figure}
+
+We can see the difference in the magnitude of error in the two
+components of $\vect{W}$ in the posterior density of $\tau^2$
+(Figure~\ref{fig:tau2-contour}):
+<<label=tauCode, result=false, keep.source=TRUE>>=
+tau.density <- kde2d(sbsa.fit$tau.sq[, 1], 
+                     sbsa.fit$tau.sq[, 2], 
+                     lims = c(0, max(sbsa.fit$tau), 
+                              0, max(sbsa.fit$tau)))
+filled.contour(tau.density,
+               color.palette = function(n) grey(n:0 / n),
+               xlab = expression({tau[1]}^2), 
+               ylab = expression({tau[2]}^2))
+@ 
+
+\begin{figure}[htb]
+  \centering
+<<label=tauPlot,echo=false,fig=true>>=
+<<tauCode>>
+@ 
+  \caption{Contours of posterior density for $\tau^2$}
+  \label{fig:tau2-contour}
+\end{figure}
+
+Finally, let's have a look at $\alpha_x$, again throwing away the first 10,000
+iterations as the burn-in:
+
+<<>>=
+  mean(sbsa.fit$alpha[10001:20000, 2])
+  sqrt(var(sbsa.fit$alpha[10001:20000, 2]))
+@ 
+
+And reversing the standardizing transformation:
+
+<<>>=
+trgt <- sbsa.fit$alpha[10001:20000,2]/sqrt(var(x))
+c(mean(trgt),sqrt(var(trgt)))
+@ 
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+In this vignette, we guided you through a session using SBSA. We
+covered the basic arguments of the \texttt{fitSBSA} function, and how
+the result can be checked, tuned, and analyzed. There are other
+parameters of the algorithm that can be changed, but we refer you to
+the manual for full details.
+
+In addition, the data we used in our example was continuous in $Y$. If
+your outcome variable is binary, you should pass argument
+\texttt{family='binary'} to \texttt{fitSBSA} function, which will
+switch to use a variant of the SBSA algorithm designed for binary $Y$.
+This variant does not use some of the parameters used by the algorithm
+for the continuous case (notably, jump for $\sigma^2$), and introduces
+additional ones. Once again, we refer you to the package manual for
+information on using the function, and to Gustafson \emph{et
+  al.}~\cite{Gustafson_etal:2010} for details of the statistical model
+used.
+
+\begin{thebibliography}{100}
+
+\bibitem{Gelman_etal:1996}
+A.~Gelman, G.~O.~Roberts, and W.~R.~Gilks. (1996)
+\newblock Efficient Metropolis jumping rules.
+\newblock {\em Bayesian Statistics}, 5, 599--607.
+
+\bibitem{Geyer_Thompson:1995}
+C.~J.~Geyer and E.~A.~Thompson. (1995)
+\newblock Annealing Markov chain Monte Carlo with applications to
+ancestral inference
+\newblock {\em Journal of the American Statistical Association}, 90,
+909--920.
+
+\bibitem{Gustafson_etal:2010}
+P.~Gustafson, L.~C.~McCandless, A.~R.~Levy, and S.~Richardson. (2010)
+\newblock Simplified Bayesian Sensitivity analysis for mismeasured
+  and unobserved confounders.
+\newblock {\em Biometrics}, 66(4):1129--1137.
+DOI: 10.1111/j.1541-0420.2009.01377.x
+
+\bibitem{Roberts_etal:1997}
+G.~O.~Roberts, A.~Gelman, and W.~R.~Gilks. (1997)
+\newblock Weak convergence and optimal scaling of random walk Metropolis algorithms.
+\newblock {\em Annual of Applied Probability}, 7, 110--120.
+
+\bibitem{Roberts_Rosenthal:2001}
+G.~O.~Roberts, and J.~S.~Rosenthal. (2001)
+\newblock Optimal scaling for various Metropolis-Hastings algorithms.
+\newblock {\em Statistical Science}, 16, 351--367.
+\end{thebibliography}
+
+\end{document}

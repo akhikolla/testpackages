@@ -1,0 +1,371 @@
+---
+title: "Visualizing Multivariate Data with Radviz"
+author: "Yann Abraham"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{Visualizing Multivariate Data with Radviz}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r,echo=FALSE}
+knitr::opts_chunk$set(warning=FALSE,
+                      fig.height = 6,
+                      fig.width = 8,
+                      fig.retina=1,
+                      fig.keep='high',
+                      fig.align='center')
+```
+
+# Abstract
+
+The Radviz package implements the concept of dimensional anchors to visualize multivariate datasets in a 2D projection, as originally described in [Hoffman *et al* 1999](http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.135.889). Additional work for ordering of dimensional anchor is taken from [Di Caro *et al* 2012](http://link.springer.com/chapter/10.1007/978-3-642-13672-6_13).
+
+# Introduction
+
+So called big data has focused our attention on datasets that comprise a large number of items (or *things*). As a consequence the fact that we are measuring (or recording) more and more parameters (or *stuff*) is often overlooked, even though this large number of *things* is enabling us to explore the relationships between the different *stuff* with unprecedented efficacy.
+
+Yet, this increase in the *stuff* we measure comes with a so-called Curse of Dimensionality: as our brains are unable to efficiently deal with more than 3 dimensions, we need new tools to visually explore larger (more than 3 dimensions) sets.
+
+Several such tools exist that rely on projection into lower number of dimensions, such as PCA. Although those tools represent an efficient solution, they do not allow for direct interpretation of the position of the points in space.
+
+Radviz provides an elegant solution to this problem, by projecting a N-dimensional data set into a simple 2D space where the influence of each dimension can be interpreted as a balance between the influence of all dimensions.
+
+## Building a Radviz projection
+
+In Radviz, each dimension in the dataset is represented by a dimensional anchor, and each dimensional anchor is distributed evenly on a unit circle. Each line in the data set corresponds to a point in the projection, that is linked to every dimensional anchor by a spring. Each spring's stiffness corresponds to the value for that particular *thing* in that particular dimension. The position of the point is defined as the point in the 2D space where the spring's tension is minimum.
+
+## Installation
+
+The package can be installed using the following command:
+
+```
+install.packages('Radviz')
+```
+
+Once installed the package can be loaded using the standard `library` command.
+
+```{r}
+library(Radviz)
+```
+
+Additional packages that are useful for Radviz are:
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+```
+
+# Visualizing High Dimensional Data: the `bodenmiller` dataset
+
+We will use data from the [Bodenmiller *et al* 2012](http://www.nature.com/nbt/journal/v30/n9/full/nbt.2317.html) publication. The [bodenmiller](https://github.com/yannabraham/bodenmiller) package contains a subset of the data that can be used for testing purpose. The package can be installed by running the following command:
+
+```
+install.packages('bodenmiller')
+```
+
+Data has already been cleaned and transformed, and can be used as is.
+
+```{r}
+library(bodenmiller)
+data(refPhenoMat)
+data(refFuncMat)
+data(refAnnots)
+ref.df <- data.frame(refAnnots,
+                     refPhenoMat,
+                     refFuncMat)
+```
+
+## Normalizing the data
+
+Radviz requires that all dimensions have the same range. The simplest way to achieve that is to normalize every numerical column to its range, so that all values fall in the `[0,1]` interval. The `do.L` function performs this operation for us:
+
+```{r}
+trans <- function(coln) do.L(coln,fun=function(x) quantile(x,c(0.005,0.995)))
+```
+
+The function is wrapped so that it can be applied directly within the `do.radviz` function. The extra argument `fun` is used to remove the top and bottom of each distribution which correspond to outliers:
+
+```{r}
+hist(ref.df$CD3)
+abline(v=quantile(ref.df$CD3,c(0.005,0.995)),
+       col=2,lty=2)
+```
+
+
+## Defining the anchors
+
+Let's define a Spring object that contains the position of each dimension on the unit circle. The dimensions will be matched by column name to the data, so it is important to make sure that column names are syntactically valid, using the `make.names` function.
+
+The `make.S` function will take a vector of column names and return a matrix of `[x,y]` positions. The order of the column names will dictate the position on the circle, starting at 12:00 and going clockwise. It is not required to use all available columns: it might be worth splitting the dimensions
+depending on what they represent (continuous versus categorical variables, phenotypic versus functional markers, etc.).
+
+```{r}
+ct.S <- make.S(dimnames(refPhenoMat)[[2]])
+```
+
+## Optimizing the position of anchors
+
+The position of dimensional anchors on the circle is critical: the best projection (as judged by the separation of points in the display) is achieved when dimensional anchors that correspond to highly correlated dimensions in the data are placed closer on the unit circle.
+
+Optimization of the position of dimensional anchors is discussed in [Di Caro *et al* 2012](http://link.springer.com/chapter/10.1007/978-3-642-13672-6_13), where the authors suggest 2 metrics that can be used in an optimization process. Both methods start with a similarity matrix where every value represents the similarity between any 2 dimensions. The first method assumes that dimensional anchors corresponding to similar dimensions should be close on the circle (radviz-independent); the second method uses a projection of the similarity matrix in Radviz and computes the distance of the dimensional anchors to the projected dimensions they represent
+(radviz-dependent) [Di Caro *et al* 2012](http://link.springer.com/chapter/10.1007/978-3-642-13672-6_13).
+
+The Radviz-dependent and independent methods have been implemented in the `Radviz` package, as well as the recommended cosine similarity measure.
+
+```{r}
+## compute the similarity matrix
+ct.sim <- cosine(as.matrix(ref.df[,row.names(ct.S)]))
+## the current Radviz-independent measure of projection efficiency
+in.da(ct.S,ct.sim)
+## the current Radviz-independent measure of projection efficiency
+rv.da(ct.S,ct.sim)
+```
+
+The Radviz-independent score should be maximal when the dimensional anchor positions are optimal. The Radviz-dependent score should be minimal when the dimensional anchor positions are optimal.
+
+The optimization procedure works as follows:
+
+```{r}
+optim.ct <- do.optimRadviz(ct.S,ct.sim,iter=100,n=1000)
+ct.S <- make.S(get.optim(optim.ct))
+```
+
+The original anchor position corresponds to the order of the columns in the matrix:
+
+```{r,echo=FALSE,results='asis'}
+ksink <- lapply(dimnames(refPhenoMat)[[2]],function(x) cat(' *',x,'\n'))
+```
+
+The optimized anchors are:
+
+```{r,echo=FALSE,results='asis'}
+ksink <- lapply(row.names(ct.S),function(x) cat(' *',x,'\n'))
+```
+
+It is possible to rotate the anchors so that a particular dimension is at the top of the circle, using the function `recenter`:
+
+```{r}
+ct.S <- recenter(ct.S,'CD3')
+```
+
+Leading to :
+
+```{r,echo=FALSE,results='asis'}
+ksink <- lapply(row.names(ct.S),function(x) cat(' *',x,'\n'))
+```
+
+## Projection
+
+The `do.radviz` function will then project values in the context of the  **Springs**:
+
+```{r}
+ct.rv <- do.radviz(ref.df,ct.S,trans=trans)
+```
+
+`do.radviz` will scale all values to [0,1] using `do.L` by default.
+
+## Visualizing the results
+
+Internally the Radviz projection is a `ggplot` object. Details about the data and corresponding projection are available through Radviz-specific versions of `S3` generic functions:  
+
+```{r}
+summary(ct.rv)
+```
+
+```{r}
+head(ct.rv)
+```
+
+```{r}
+dim(ct.rv)
+```
+
+The `print.radviz` `S3` method shows the dimensional anchors:
+
+```{r}
+ct.rv
+```
+
+To visualize the projected points one should use the `plot.radviz` method:
+
+```{r}
+plot(ct.rv,anchors.only=FALSE)
+```
+
+By default the `plot.radviz` function will only show the anchors and return the `ggplot` object so that other layers can be added:
+
+```{r}
+plot(ct.rv)+
+  geom_point()
+```
+
+From there on all `ggplot2` geoms and options are available:
+
+```{r}
+plot(ct.rv)+
+  geom_point(data=. %>% 
+               arrange(CD4),
+             aes(color=CD4))+
+  scale_color_gradient(low='grey80',high="dodgerblue4")
+```
+
+This simple plot is already enough to show some of the underlying structure of the dataset.
+
+Using standard visualizations developed for FACS data analysis, one can further explore the data. The first alternative uses smoothed densities returned by a kernel density estimate to generate a 2D density plot:
+
+```{r}
+smoothRadviz(ct.rv)
+```
+
+`smoothRadviz` is actually a wrapper around `stat_density2d`, and returns the underlying `ggplot` object so that extra methods can be used:
+
+```{r}
+smoothRadviz(ct.rv)+
+  geom_point(shape='.',alpha=1/5)
+```
+
+Another alternative is contour plot, provided through the `contour.radviz` function:
+
+```{r}
+contour(ct.rv)
+```
+
+This method can be used to highlight specific cell populations, in combination with `subset.radviz`:
+
+```{r}
+cur.pop <- 'igm+'
+sub.rv <- subset(ct.rv,refAnnots$Cells==cur.pop)
+smoothRadviz(ct.rv)+
+  geom_density2d(data=sub.rv$proj$data,
+                 aes(x=rx,y=ry),
+                 color='black')
+```
+
+The contour corresponds to `r cur.pop` cells, in the context of the full sample visualized as a smooth scatter.
+
+## Visualizing Signal Intensity for Functional Channels
+
+Further insight can be gained from the use of hexagonal binning:
+
+```{r}
+hexplot(ct.rv)
+```
+
+Each bin can then be colored according to other dimensions in the dataset, such as CD4 signal intensity:
+
+```{r}
+hexplot(ct.rv,color='CD4')
+```
+
+But also S6 phosphorylation:
+
+```{r}
+hexplot(ct.rv,color='pS6')
+```
+
+To be compared with phospho-Akt signal:
+
+```{r}
+hexplot(ct.rv,color='pAkt')
+```
+
+And phospho-Erk signal:
+
+```{r}
+hexplot(ct.rv,color='pErk')
+```
+
+## Visualizing Cell Populations
+
+Cells have been manually gated, leading to 14 sub-populations:
+
+```{r,results='asis'}
+ksink <- lapply(levels(refAnnots$Cells),function(x) cat(' *',x,'\n'))
+```
+
+To visualize the different populations, we compute a a bubble chart: the bubble position corresponds to the median signal intensity of each channel for this specific population, and the bubble size is proportional to the number of cells in this population:
+
+```{r}
+bubbleRadviz(ct.rv,group = 'Cells')
+```
+
+Alternatively, bubbles can be colored after signal intensity of a functional channel, such as S6:
+
+```{r}
+bubbleRadviz(ct.rv,group = 'Cells',color='pS6')
+```
+
+## Visualizing Functional Changes
+
+Radviz can also be used to visualize changes in functional space. We start by adding data from the Bodenmiller package. 
+
+```{r}
+data(untreatedPhenoMat)
+data(untreatedFuncMat)
+data(untreatedAnnots)
+untreated.df <- bind_rows(ref.df %>% 
+                            mutate(Treatment='unstimulated',
+                                   Source=as.character(Source),
+                                   Cells=as.character(Cells)),
+                          data.frame(untreatedAnnots,
+                                     untreatedPhenoMat,
+                                     untreatedFuncMat) %>% 
+                            mutate(Treatment=as.character(Treatment),
+                                   Source=as.character(Source),
+                                   Cells=as.character(Cells))) %>% 
+  mutate(Treatment=factor(Treatment),
+         Treatment=relevel(Treatment,'unstimulated'),
+         Cells=factor(Cells))
+```
+
+For this analysis we will focus on CD4+ and CD8+ T cells:
+
+```{r}
+tcells.df <- untreated.df %>% 
+  filter(Cells %in% c('cd4+','cd8+'))
+tcells.df %>% 
+  count(Cells,Treatment)
+```
+
+Next we optimize the channel order, and create the projection:
+
+```{r}
+func.S <- make.S(dimnames(refFuncMat)[[2]])
+func.sim <- cosine(as.matrix(tcells.df[,row.names(func.S)]))
+optim.func <- do.optimRadviz(func.S,func.sim,iter=100,n=1000)
+func.S <- make.S(tail(optim.func$best,1)[[1]])
+func.rv <- do.radviz(tcells.df,func.S,trans=trans)
+```
+
+The overall T cell functional landscape is shown below:
+
+```{r,fig.width=12}
+smoothRadviz(subset(func.rv,tcells.df$Treatment=='unstimulated'))+
+  facet_grid(~Cells)
+```
+
+The effect of different stimulations can then be visualized using contour plots:
+
+```{r,fig.width=12}
+plot(func.rv)+
+  geom_density2d(aes(color=Treatment))+
+  facet_grid(~Cells)
+```
+
+Where one can see that *BCR/FcR-XL* has no effect and overlaps with *unstimulated* while *PMA/Ionomycin* increases pS6 and *vanadate* increases pSlp76:
+
+```{r}
+tcells.df %>% 
+  select(Cells, Treatment, pS6, pSlp76) %>% 
+  gather('Channel','value',one_of('pS6','pSlp76')) %>% 
+  ggplot(aes(x=Treatment,y=value))+
+  geom_boxplot(aes(fill=Treatment))+
+  facet_grid(Channel~Cells)+
+  theme_light()+
+  theme(axis.text.x=element_text(angle=45,hjust=1))
+```

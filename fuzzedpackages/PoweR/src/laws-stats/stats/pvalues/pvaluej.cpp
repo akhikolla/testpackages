@@ -1,0 +1,6 @@
+double pval = 0.0;
+// ADD YOUR CODE HERE TO COMPUTE THE PVALUE pval.
+// THE LAST LINE SHOULD BE:
+pvalue[0] = pval;
+// NOTE: IF IT IS NOT POSSIBLE TO COMPUTE THE P-VALUE, THIS FILE SHOULD ONLY CONTAIN:
+pvalcomp[0] = 0; // And not 0.0 !

@@ -1,0 +1,45 @@
+#' @include run_LeMans.R
+#' @include param_setup.R
+NULL
+
+
+#' Calculate Spawning Stock Biomass (SSB) or total biomass
+#'
+#' @description Calculates the spawning stock biomass (SSB) or total biomass of each species in the model.
+#' @param wgt A matrix with dimensions \code{nsc} and \code{nfish} representing the weight of each species in each length class.
+#' @param mature A matrix with dimensions \code{ncs} and \code{nfish} with elements in the range 0-1 representing the proportion of mature individuals of each species in each length class.
+#' @param N A matrix with dimensions \code{nsc} and \code{nfish} representing the number of individuals in each length class for the current time step.
+#' @details The Spawning Stock Biomass is equal to \code{colSums(mature*N*wgt)} and the total biomass is equal to \code{colSums(mature*N*wgt)}.
+#' @return \code{calc_SSB} returns a numeric vector of length \code{nfish} representing the SSB of each species (g).
+#' @return \code{calc_biomass} returns a numeric vector of length \code{length(species)} where the \code{j}th element is the biomass (g) of the \code{j}th species.
+#' @seealso \code{\link{calc_recruits}}
+#' @examples
+#' # Set up and run the model
+#' NS_params <- LeMansParam(NS_par, tau=NS_tau, eta=rep(0.25, 21), L50=NS_par$Lmat, other=1e12)
+#' effort <- matrix(0.5, 10, dim(NS_params@Qs)[3])
+#' model_run <- run_LeMans(NS_params, years=10, effort=effort)
+#'
+#' # Calculate SSB
+#' calc_SSB(wgt=NS_params@wgt, mature=NS_params@mature, N=model_run@N[,,101])
+#'
+#' # Calculate biomass in the last time step
+#' calc_biomass(wgt=NS_params@wgt, N=model_run@N[,,101])
+#' @export
+calc_SSB <- function(wgt, mature, N) {
+  SSB <- mature*N*wgt
+  if (is.matrix(SSB)) {
+    return(colSums(SSB))
+  }
+  return(sum(SSB))
+}
+
+#' @rdname calc_SSB
+#' @export
+calc_biomass <- function(wgt, N){
+  biomass <- N*wgt
+  if (is.matrix(biomass)){
+    return(colSums(biomass))
+  }
+  return(sum(biomass))
+}
+

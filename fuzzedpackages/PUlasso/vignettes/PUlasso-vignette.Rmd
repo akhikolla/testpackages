@@ -1,0 +1,137 @@
+---
+title: "PUlasso: High-dimensional variable selection with presence-only data"
+author: "Hyebin Song"
+header-includes:
+   - \usepackage{amsmath}
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{PUlasso-vignette}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r,include=F}
+library(PUlasso)
+library(Matrix)
+```
+
+# Introduction
+PUlasso is an algorithm for parameter estimation and classification using Positive and Unlabelled(PU) data. More concretely, presented with two sets of sample such that the first set consisting of $n_l$ positive and labelled observations and a second set containing $n_u$ observations randomly drawn from the population with only covariates not the responses being observed and the true positive prevalence information $P(Y=1)$, PUlasso algorithm models the relationship between the probability of a response being positive and $(x, \theta)$ using the standard logistic regression model:$P_\theta(y=1|x) := 1/(1+exp(-\theta^Tx))$ and solves the following optimization problem:
+\begin{equation}\label{objFunc}
+\underset{\theta}{\operatorname{argmin}} -\log L(\theta;x,z) + P_\lambda(\theta)
+\end{equation}
+where $\log L(\theta;x,z)$ is an observed log-likelihood based on covariates and labels $(x,z)$, and $P_\lambda(\theta)$ is $\ell_1$ or $\ell_1/\ell_2$ penalty. For more detailed discussion, please see our paper [https://arxiv.org/abs/1711.08129](PUlasso)
+
+# Basic usage of __PUlasso__ package
+
+We demonstrate basic usage of PUlasso package using simulated PU data. 
+
+```{r}
+data("simulPU")
+```
+This loads simulPU object which contains the input matrix $X$, labels $z$, true (latent) responses $y$, and the positive prevalence true$PY1$. We first visualize the data. We plot the first two columns $X1-X2$ colored by $z$ or $y$ as the first two variables are set to be active in the simulation. From the following plots, we see that many positive samples are marked as unlabelled. For more details about the simulation setting, do `help(simulPU)`
+
+```{r,echo=F,fig.show='hold'}
+dt=data.frame(x1=simulPU$X[,1],x2=simulPU$X[,2],y=simulPU$y,z=simulPU$z)
+par(mar=c(2,2,2,2))
+plot(dt$x1,dt$x2,col=adjustcolor(ifelse(simulPU$z,"red","navy"),alpha.f=0.5),pch=20,main="labelled/unlabelled",xlab="x1",ylab="x2")
+legend("bottomright",bg="transparent",legend=c("labelled","unlabelled"),col=c("red","navy"),bty="n"
+       ,text.col = c("red", "navy"),pt.bg = c("red","navy"), pch = c(20,20))
+
+plot(dt$x1,dt$x2,col=adjustcolor(ifelse(simulPU$y,"red","blue"),alpha.f=0.5),pch=20,main="(latent) positive/negative",xlab="x1",ylab="x2")
+legend("bottomright",bg="transparent",legend=c("positive","negative"),col=c("red","blue"),bty="n"
+       ,text.col = c("red", "blue"),pt.bg = c("red","blue"), pch = c(20,20))
+
+```
+
+We fit the model using the most basic call. By default it fits the model for 100 values of $\lambda$ starting from the null model with lasso penalty.
+
+```{r}
+(fit=grpPUlasso(X=simulPU$X,z=simulPU$z,py1=simulPU$truePY1))
+```
+
+coefficients can be extracted using `coef` function. Here we extract estimated coefficients for 30th $\lambda$. By default, coefficients are returned in an original scale. If desired, we can set `std.scale=T` to obtain coefficients in the standardizeds scale.
+```{r}
+coef(fit, lambda=fit$lambda[30])
+```
+
+If we want to predict responses at certain $x$, we use the `predict` function. By default, it returns estimated probabilities.
+
+```{r}
+xnew = matrix(rnorm(10),2,5)
+predict(fit,newdata = xnew,lambda = fit$lambda[30])
+```
+It is a common practice to choose $\lambda$ based on cross-validation. Main function for the k-fold cross-validation is `cv.grpPUlasso`.
+
+```{r}
+(cv.fit = cv.grpPUlasso(X=simulPU$X,z=simulPU$z,py1=simulPU$truePY1))
+```
+
+We use deviance for a measure of model fit. Average deviance and standard error of deviance over all $k$-folds for all $\lambda$ values saved in `cv.fit$cvm` and `cv.fit$cvsd`, respectively. We are particularly interested in two lambda values : lambda.min which gives the minimum mean cross-validation deviance, and lambda.1se which corresponds to the largest $\lambda$ such that cvm is within one standard error of the minimum. We can also extract coefficients corresponding to such lambda levels.
+
+```{r,include=F}
+# qplot(log(cv.fit$lambda),cv.fit$cvm)+
+#   geom_errorbar(aes(ymin=cv.fit$cvm-cv.fit$cvsd,ymax=cv.fit$cvm+cv.fit$cvsd))+
+#   xlab("log(lambda)")+ylab("cross-validation deviance")
+```
+
+```{r}
+coef(cv.fit,lambda=cv.fit$lambda.1se)
+```
+
+We finalize this section by demonstrating how to do a classification based on fitted models. A natural threshold of .5 is applied for a classification. We plot $X1-X2$ colored by $\hat{y}$ to check classification performances.
+
+```{r}
+phat<-predict(cv.fit,newdata = simulPU$X,lambda = cv.fit$lambda.1se,type = "response")
+yhat<-1*(phat>0.5)
+```
+```{r,echo=FALSE}
+dt=cbind(dt,yhat)
+par(mar=c(2,2,2,2))
+plot(dt$x1,dt$x2,col=adjustcolor(ifelse(dt$yhat,"red","blue"),alpha.f=0.5),pch=20,main="(estimated) positive/negative",xlab="x1",ylab="x2")
+legend("bottomright",bg="transparent",legend=c("hat_negative","hat_positive"),col=c("red","blue"),bty="n",text.col = c("red", "blue"),pt.bg = c("red","blue"), pch = c(20,20))
+```
+
+## Group Penalty
+We can also use a group lasso penalty. Suppose $X1$ is in group 1, $X2-X3$ are in group 2, and $X4-X5$ are in group 3. We only need to provide a membership information using an additional vector, here named as a `grpvec`.
+```{r}
+grpvec = c(1,2,2,3,3)
+fit.grp = grpPUlasso(X=simulPU$X,z=simulPU$z,py1=simulPU$truePY1,group = grpvec)
+```
+
+All members in the group are either all included or not included. For example, we see from 13th $\lambda$ to 14th $\lambda$, members in group 2 are entered the model together.
+
+```{r}
+coef(fit.grp,fit.grp$lambda[12:15])
+```
+
+## Fitting with a sparse matrix
+
+PUlasso can exploit a sparsity in an input matrix for a more efficient calculation. If `dgCMatrix` type of the input matrix is provided, PUlasso automatically performs a sparse calculation. 
+
+For a simple demonstration, here we create `dgCMatrix` objects based on $X$. First we create a sparse matrix sparseX by imposing 0 on 95% of the entries of $X$.
+
+```{r}
+sparseX <- simulPU$X
+sparseX[sample(1:length(simulPU$X),size = length(simulPU$X)*0.95)]<-0
+sparseX<-Matrix(sparseX)
+class(sparseX)
+```
+
+Those input matrices can be used in the same way. For example,
+
+```{r}
+(spfit<-grpPUlasso(sparseX,simulPU$z,simulPU$truePY1))
+newx = matrix(rnorm(10),2,5)
+predict(spfit,newdata = newx,lambda = spfit$lambda[10])
+```
+ 
+## Optimization
+
+By default, PUlasso uses a block-coordinate descent algorithm to solve optimization problem \ref{objFunc}. However, it provides other optimization options such as proximal full gradient descent(GD), stochastic gradient descent(SGD), and variants of SGD including stochastic variance-reduced gradient(SVRG) and stochastic average gradient(SAG). For example, using SVRG method, we fit, 
+  
+```{r}
+(fit.SVRG = grpPUlasso(X=simulPU$X,z=simulPU$z,py1=simulPU$truePY1,method="SVRG",eps = 1e-6,lambda =fit$lambda[2]))
+```
+By default, PUlasso does 10*number of observations iterations. The algorithm terminates early if the difference of current parameter value from the previous one is less than the eps. 

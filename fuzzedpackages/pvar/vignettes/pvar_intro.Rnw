@@ -1,0 +1,198 @@
+\documentclass{article}
+
+%\VignetteEngine{knitr::knitr}
+%\VignetteIndexEntry{The brief intro into the package}
+%\VignetteDepends{}
+%\VignetteKeywords{string, misc}
+%\VignettePackage{pvar}
+
+\usepackage[utf8]{inputenc}
+ 
+<<setup, echo=FALSE, cache=FALSE>>=
+library("pvar")
+@
+
+
+
+\title{pvar: the calculation and applications of $p$-variation }
+\author{Vygantas Butkus \\
+\small{Vygantas.Butkus@gmail.com}}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+In this vignette we will give a brief introduction to the $p$-variations.
+Later on, we will give some illustrative examples of the main functions in
+\emph{pvar} package.
+\end{abstract}
+
+\section{Introduction}
+
+Let start with the definitions.
+Originally $p$-variation is defined for a functions.
+For a function $f:[0,1] \rightarrow R$ and $0 < p < \infty$ 
+$p$-variation is defined as 
+$$
+ v_p(f) = \sup \left\{ \sum_{i=1}^m |f(t_i) - f(t_{i-1})|^p : 0=t_0<t_1<\dots<t_m=1, m \geq 1 \right\}.
+$$
+
+Suppose $X=\{X_{i}\}_{i=0}^{n}$ is any real-value sequence of numbers. 
+We will call such sequence a \emph{sample}, 
+whereas $n$ will be referred to as a \emph{sample size}.
+The $p$-variation of the sample could be expressed as
+$$
+  v_p(X) = \max\left\{ \sum_{i=1}^k |X_{j_i} - X_{j_{i-1}}|^p :
+  0=j_0<\dots<j_k=n,\; k=1,\dots,n  \right\}.
+$$
+The set of index $j_0,\dots,j_k$ that achieves the maximum is refereed as supreme partition.
+
+Lots and detailed information on the known properties 
+of $p$-variation can be found in the books of  Norvai\v{s}a and
+Dudley (see \cite{DudleyNorvaisa1998} and \cite{DudleyNorvaisa1999}). 
+There are formulated and proved a lot of the properties of $p$-variation.
+In addition, the comprehensive bibliography of $p$-variation is include.
+
+
+The core functions of the package is based on algorithm described in \cite{ButkusNorvaisa2018}.
+The calculation of $p$-variation was inspired by paper \cite{NorvaisaRackauskas2008}, where
+authors Norvai\v{s}a and Ra\v{c}kauskas presented
+necessary and sufficient conditions
+for the convergence in law of partial sum processes in
+$p$-variation norm. Based on the result of this paper, Ra\v{c}kaskas proposed 
+the method of testing sample of multiple shift in mean. This test is also implemented in this package.
+
+
+The algorithm is written in C++, therefore it is quite fast.
+It is worth noting, that \emph{pvar} package  could be used to calculate $p$-variation
+for any piecewise monotone functions and to investigate
+general properties of $p$-variation.
+
+
+
+\section{Main function}
+
+The main function in \emph{pvar} package is \emph{pvar} (that a surprise). It calculates the 
+supreme partition and the value of $p$-variation. The main usage of \emph{pvar} function goes as follows
+<<pvar_basic>>=
+N <- 1000
+p <- 2
+x <- rwiener(N)
+pv <- pvar(x, p)
+pv
+summary(pv)
+@
+
+
+Moreover, the data and supreme partition could be illustrated with \emph{plot} function
+<<pvar_plot>>=
+plot(pv)
+@
+
+The points in supreme partition (the red points) are actually used in $p$-variation. 
+All the other points are redundant and could be dropped out with out any effect to $p$-variation.
+This fact is illustrated in the example below.
+
+<<pvar_partition>>=
+pv.PP = pvar(x[pv$partition], TimeLabel=time(x)[pv$partition], 2)
+plot(pv.PP, main='The same pvar without redundant points')
+@
+
+Moreover, $p$-variation on different intervals could be merged into unified sample. 
+Let look at the example
+
+<<pvar_add>>=
+x = rwiener(1000)
+pv1 = pvar(x[1:500], 2)
+pv2 = pvar(x[500:length(x)], 2)
+sum_pv1_pv2 = pv1 + pv2
+@
+
+The illustration of this looks like this
+
+<<pvar_add_picture, echo=FALSE>>=
+layout(matrix(c(1,3,2,3), 2, 2))
+# par(mar=c(4,4,2,1))
+plot(pv1, main="pv1")
+plot(pv2, main="pv2")
+plot(sum_pv1_pv2, main="p-variation of pv1+pv2")
+layout(1)
+@
+
+\section{PvarBreakTest}
+
+A. Ra\v{c}kauskas has proposed a method of detection of multiple changes in a sequence of independent observations.
+This method is based on results presented in \cite{NorvaisaRackauskas2008}.
+This method is realized in this package under the name of Pvar Break Test (or $PBT$ for short).
+It is implemented in \emph{PvarBreakTest} function.
+
+Lets consider the example. Let construct the data $x$ with multiple shifts in mean.
+
+<<test_data, echo=TRUE>>=
+set.seed(1)
+MiuDiff <- 0.3
+x <- rnorm(250*4, rep(c(0, MiuDiff, 0, MiuDiff), each=250))
+@
+
+
+<<test_plotdata, echo=FALSE>>=
+plot(x, pch=19, cex=0.5, main="Original data, with several shifts in mean")
+k <- 50
+moveAvg <- filter(x, rep(1/k, k))
+lines(time(x), moveAvg, lwd=2, col=2)
+legend("topleft", c("sample", "moving average (k="%.%k%.%")"),
+  lty=c(NA,1), lwd=c(NA, 2), col=1:2, pch=c(19,NA), pt.cex=c(0.7,1)
+  ,inset = .03, bg="antiquewhite1")  
+@
+
+From the original data, it is not obvious if there are any breaks in sample.
+To test whether there is a multiple break, we can apply \emph{PvarBreakTest} test.
+The results are remarkable good. Look below.
+
+
+<<test_result, echo=TRUE>>=
+xtest <- PvarBreakTest(x)
+xtest
+@
+
+<<test_plot, echo=FALSE>>=
+plot(xtest)
+@
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+\begin{thebibliography}{99}  
+
+% Musu stripsnis
+\bibitem{ButkusNorvaisa2018} 
+V. Butkus, R. Norvai\v{s}a. Lith Math J (2018). https://doi.org/10.1007/s10986-018-9414-3
+
+\bibitem{DudleyNorvaisa1998} 
+R. M. Dudley, R. Norvai\v{s}a. An Introduction to
+$p$-variation and Young Integrals, Cambridge, Mass., 1998.
+
+
+\bibitem{DudleyNorvaisa1999} 
+R. M. Dudley, R. Norvai\v{s}a. Differentiability of 
+Six Operators on Nonsmooth Functions and $p$-variation, 
+Springer Berlin Heidelberg, 
+Print ISBN 978-3-540-65975-4, Lecture Notes in Mathematics Vol.~1703, 1999.
+
+ 
+\bibitem{NorvaisaRackauskas2008}
+R. Norvai\v{s}a, A. Ra\v{c}kauskas. Convergence in law of partial sum processes in p-variation norm // Lth. Math. J., Vol. 48, No. 2, 212–227, 2008.
+
+
+\bibitem{Qian}
+J. Qian. The $p$-variation of partial sum processes and the empirical process // Ph.D. thesis, Tufts University, 1997.
+
+
+
+
+\end{thebibliography}
+
+
+
+\end{document}

@@ -1,0 +1,15 @@
+#' Example datasets
+#'
+#' This data list, \code{example.data}, includes three datasets generated based on Saturation mutagenesis results (M. Kircher, et al.,2019) and the DeepSEA features (Zhou & Troyanskaya, 2015).
+#' The training and testing datasets in the data list include binary response vectors, which are truncations of the P values of tissue K562 from the Saturation mutagenesis results,
+#' and reduced versions of the DeepSEA features for a faster computational demonstration.
+#'
+#'@usage data(example.data)
+#' @format The \code{example.data$train.data} and \code{example.data$test.data} are dataframes with 220 and 100 observations and 146 variables.
+#' \describe{
+#'   \item{response}{A binary response vector}
+#'   \item{features}{Standardized 145 DeepSEA features}
+#' }
+#'
+"example.data"
+

@@ -1,0 +1,622 @@
+% -*- mode: noweb; noweb-default-code-mode: R-mode; -*-
+\documentclass[nojss]{jss}
+\usepackage{dsfont}
+\usepackage{bbm}
+\usepackage{amsfonts}
+\usepackage{wasysym}
+\usepackage{amssymb}
+
+%\title{Programmers' Niche: Efficient Multivariate polynomials in \R}
+%\subtitle{The \pkg{spray} package}
+%\author{Robin K. S. Hankin}
+%\maketitle
+
+
+\author{Robin K. S. Hankin\\Auckland University of Technology}
+\title{Sparse arrays and multivariate polynomials in \proglang{R}}
+%\VignetteIndexEntry{A vignette for the spray package}
+%% for pretty printing and a nice hypersummary also set:
+\Plainauthor{Robin K. S. Hankin}
+\Plaintitle{Sparse arrays and multivariate polynomials in R}
+\Shorttitle{Sparse arrays and multivariate polynomials in \proglang{R}}
+
+%% an abstract and keywords
+\Abstract{In this short article I introduce the \pkg{spray} package,
+  which provides some functionality for handling sparse arrays.  The
+  package uses the~\proglang{C++} Standard Template Library's
+  \proglang{map} class~\citep{musser2009} to store and retrieve
+  elements.  One natural application for sparse arrays is multivariate
+  polynomials and I give two examples of the package in use, one drawn
+  from the fields of random walks on lattices and one from the field
+  of recreational combinatorics.}
+\Keywords{Multivariate polynomials, \proglang{R}, sparse arrays}
+\Plainkeywords{Multivariate polynomials, R}
+
+%% publication information
+%% NOTE: This needs to filled out ONLY IF THE PAPER WAS ACCEPTED.
+%% If it was not (yet) accepted, leave them commented.
+%% \Volume{13}
+%% \Issue{9}
+%% \Month{September}
+%% \Year{2004}
+%% \Submitdate{2004-09-29}
+%% \Acceptdate{2004-09-29}
+%% \Repository{https://github.com/RobinHankin/spray} %% this line for Tragula
+
+%% The address of (at least) one author should be given
+%% in the following format:
+\Address{
+  Robin K. S. Hankin\\%\orcid{https://orcid.org/0000-0001-5982-0415}\\
+  Auckland University of Technology\\
+  New Zealand
+}
+%% It is also possible to add a telephone and fax number
+%% before the e-mail in the following format:
+%% Telephone: +43/1/31336-5053
+%% Fax: +43/1/31336-734
+
+%% for those who use Sweave please include the following line (with % symbols):
+%% need no \usepackage{Sweave.sty}
+
+%% end of declarations %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+<<setup,echo=FALSE,print=FALSE>>=
+ignore <- require(spray)
+options(prompt = "R> ", continue = "+  ", width = 70, useFancyQuotes = FALSE)
+@ 
+
+\SweaveOpts{}
+\begin{document}
+
+
+\section{Introduction}
+
+The \pkg{multipol} package~\citep{hankin2008} furnishes the
+\proglang{R} programming language with functionality for multivariate
+polynomials.  However, the \pkg{multipol} package was noted as being
+inefficient in many common cases: the package stores multivariate
+polynomials as arrays and this often involves storing many zero
+elements which consume computational and memory resources
+unnecessarily.
+
+One suggestion was to use sparse arrays---in which nonzero elements
+are stored along with an index vector describing their
+coordinates---instead of arrays.  In this short document I introduce
+the \pkg{spray} package which provides functionality for sparse arrays
+and interprets them as multivariate polynomials.  Some of the
+underlying design philosophy is discussed in the appendix.  Here,
+`sparse multinomial' is defined as one whose array representation is
+sufficiently sparse to make taking advantage of is sparseness
+worthwhile.  However, other definitions of sparseness may be useful
+and I outline some below.
+
+\subsection{Existing work}
+
+The~\pkg{slam} package~\citep{hornik2014} provides some sparse array
+functionality but is not intended to interpret arbitrary dimensional
+sparse arrays as multivariate polynomials; the \pkg{rSympy} package
+does not, as of 2017, implement sparse multivariate polynomials.  The
+\pkg{mpoly}~\citep{kahle2013} package handles multivariate polynomials
+but does not accept negative powers, nor is it designed for
+efficiently processing large multivariate polynomials; I present some
+timings below.  The \pkg{mpoly} package is different in philosophy
+from both the~\pkg{spray} package and~\pkg{multipol} in
+that~\pkg{mpoly} is more ``symbolic'' in the sense that it
+admits---and handles appropriately---named variables, whereas my
+packages do not make any reference to the {\em names} of the
+variables.  As~\citeauthor{kahle2013} points out, naming the variables
+allows a richer and more natural suite of functionality;
+straightforward \pkg{mpoly} idiom is somewhat strained in \pkg{spray}.
+
+(The \code{mvp} package~\citep{hankin2019} is now available; this uses
+a more powerful concept of sparsity).
+
+
+\section{Sparse arrays}
+
+Base R has extensive support for multidimensional arrays.  Consider
+
+<<array_a>>=
+a <- array(1, dim=2:5)
+@ 
+
+\noindent The resulting object requires storage of~$2\times 3\times
+4\times 5=120$ floating point numbers, which are represented in an
+elegant format amenable to cartesian extraction and replacement.
+However, arrays in which many of the elements are zero are common and
+in this case storing only the nonzero elements and their positions
+would be a more compact and efficient representation.  To create a
+sparse array object in the \pkg{spray} package, one specifies a matrix
+of indices \code{M} with each row corresponding to the position of a
+nonzero element, and a numeric vector of values:
+
+<<define_S>>=
+library("spray")
+M <- matrix(c(0, 0, 0, 1, 0, 0, 1, 1, 1, 2, 0, 3), ncol=3)
+M
+S1 <- spray(M, 1:4)
+S1
+@ 
+
+Thus \code{S1[0,0,2] = 2}.  The representation of the spray object
+does not preserve the order of the index rows in the argument,
+although a particular index row is associated unambiguously with a
+unique numeric value.  This is because the \proglang{STL} map class
+does not preserve the orders of its elements.  This does not matter,
+as the order in which the elements are stored is immaterial in the
+use-cases presented here.  
+
+Extract and replace methods require the index to be a
+matrix\footnote{Indexing with a vector (interpreted as a row of the
+index matrix) is problematic.  The package requires idiom such
+as~\code{S[1,2,3]} and~\code{S[1,1:3,3]} to work as expected; and
+because \code{[.spray()} and \code{[<-.spray()} dispatch on the first
+argument, the package does not attempt to guess what the user
+intended.}:
+<<use_set_and_extractor_methods>>=
+S1[diag(3)] <- -3
+S1
+@   
+
+\noindent We can see that a value with an existing index is
+overwritten, while new elements are created as necessary.  Addition is
+implemented:
+
+<<define_S1>>=
+M2 <- matrix(c(
+    6, -7,  8,
+    0,  0,  2,
+    1,  1,  3), byrow=TRUE, ncol=3)
+S2 <- spray(M2, c(17, 11 ,-4))
+S2
+S1 <- S1 + S2
+S1
+@ 
+
+\noindent Thus element~\code{[0,0,2]} becomes $2+11=13$, while
+element~\code{[1,1,3]} cancels and thus vanishes.  There is no
+requirement for indices to be positive: Element~\code{[6,-7,8]} is new
+(with value~17).  Even though the representation of the spray object
+does not preserve the order of the index rows in the argument, a
+particular index row is associated unambiguously with a unique numeric
+value.
+
+\section{The spray package and multivariate polynomials}
+
+One natural application for \code{spray} objects is multivariate
+polynomials~\citep{hankin2008}.  I will first discuss the
+univariate case and then progress to multivariate polynomials.
+
+\subsection{Univariate polynomials}
+Univariate polynomials are a good place to start.  Suppose the
+polynomial
+
+\[
+A = 1+2x^3 + 6x^8
+\]
+
+\noindent were to be represented using R objects.  One natural
+approach, taken in the \pkg{polynomial} package~\citep{venables2016},
+is to store the coefficients in a vector:
+
+<<polynom_example>>=
+library("polynom")
+A <- polynomial(c(1, 0, 0, 2, 0, 0, 0, 0, 6))
+dput(A)
+A
+@ 
+
+\noindent But again see how the \proglang{R} object thus created
+stores zero elements, which can be problematic if the polynomial in
+question is large degree and sparse.  Similar issues arise in the case
+of multivariate polynomials.  The~\pkg{multipol}
+package~\citep{hankin2008} uses a similar methodology, storing
+coefficients as an arbitrary-dimensional array.  However, as noted
+above, this often leads to inefficient computation.
+
+\subsection{Multivariate polynomials}
+
+One natural and useful interpretation of a sparse array is as a
+multivariate polynomial.  Conisder the following sparse array:
+
+<<show_S1_again>>=
+S3 <- spray(matrix(c(0,0,0, 0,0,1, 1,1,1, 3,0,0), byrow=TRUE, ncol=3), 1:4)
+S3
+@ 
+
+\noindent It is natural to interpret the rows of the index matrix as
+powers of different variables of a multivariate polynomial, and the
+values as being the coefficients.
+
+This is realised in the package using the \code{polyform} option,
+which if set to \code{TRUE}, modifies the print method:
+
+<<show_a_multivariate_polynomial>>=
+options(polyform = TRUE)
+S1
+@ 
+
+\noindent (only the print method has changed; \code{S1} is as before).
+The print method interprets, by default, the three columns as
+variables $x,y,z$ although this behaviour is user-definable.  With
+this interpretation, multiplication and addition have natural
+definitions as multivariate polynomial multiplication and addition:
+
+<<exhibit.multiplication>>=
+S1 + S2
+S1 * S2
+S1^2
+@ 
+
+It is possible to introduce an element of symbolic calculation,
+exhibiting familiar algebraic identities.  Consider the \code{lone()}
+function, which creates a sparse array whose multivariate polynomial
+interpretation is a single variable:
+
+<<symbolic>>=
+x <- lone(1, 3)
+y <- lone(2, 3)
+z <- lone(3, 3)
+options(polyform = FALSE)
+list(x, y, z)
+options(polyform = TRUE)
+(1 + x + y)^3
+(x + y) * (y + z) * (x + z) - (x + y + z) * (x*y + x*z + y*z)
+(x + y) * (x - y) - (x^2 - y^2)
+@ 
+
+\subsection{The null polynomial and arity issues}
+
+The package is intended to provide functionality for sparse arrays,
+one interpretation of which is multivariate polynomials.  The package,
+implementing sparse arrays, forbids the addition of two sparse arrays
+with different dimensionalities:
+
+\begin{Schunk}
+\begin{Sinput}
+R>  lone(1, 2) + lone(1, 1)
+\end{Sinput}
+\begin{Soutput}
+Error: arity(S1) == arity(S2) is not TRUE
+\end{Soutput}
+\end{Schunk}
+
+One problematic object is the empty array.  Zero multinomials are
+represented with a zero-row index matrix and zero-length numeric
+vector of values.  Because a spray object is a sparse array, a zero
+multinomial must have a specific arity\footnote{This philosophy is
+  different from earlier versions of the software which treated the
+  empty array as the zero multinomial, with which addition and
+  multiplication were defined algebraically.  I would like to thank an
+  anonymous \emph{R Journal} referee for this insight.}.
+
+\subsection{Algebraic identities}
+
+Similar but more involved techniques can be used to prove Euler's
+four-square identity and Degen's eight-square identity, given in the
+package's test suite.  However, it should be noted that the
+\pkg{mpoly} package has a more natural idiom and does not suffer from
+the visual defect of arbitrary term ordering.
+
+\subsection{Further functionality}
+
+Multivariate polynomials have a natural interpretation as functions:
+  
+<<exhibit.function.coercion>>=
+(S4 <- spray(cbind(1:3, 3:1), 1:3))
+f <- as.function(S4)
+f(c(1, 2))
+@ 
+
+The last line showing the result of substituting~$x=1,y=2$
+into~\code{S4}.  Other algebraic operations include substitution and
+partial differentiation.  Consider the homogenous polynomial in three
+variables:
+
+<<homog_show>>=
+(S5 <- homog(3, 3))
+@   
+
+Interpreting~\code{S5} as a multivariate polynomial with
+variables~$x,y,z$ we may substitute~$y=5$ using the \code{subs()}
+function:
+
+<<subsy5>>=
+subs(S5, 2, 5)
+@ 
+
+Differentiation is also straightforward.  Suppose we wish to calculate
+the multivariate polynomial corresponding to
+ 
+\[
+\frac{\partial^6}{\partial x\,\partial^2y\,\partial^3z}
+\left(xyz + x+2y+3z\right)^3
+\]
+
+This would be
+
+<<>>=
+aderiv((xyz(3) + linear(1:3))^3, 1:3)
+@ 
+
+
+\section{The package in use: some examples}
+
+Multivariate polynomials are useful and efficient structures in a
+variety of applications.  Here I give two examples of the package in
+use: One drawn from the field of random walks on lattices, and one
+from recreational combinatorics.
+
+\subsection{Random walks on lattices}
+
+Random walks on periodic lattices find application in a wide range of
+applied mathematics including the study of molecular and ionic
+crystals~\citep{hollander1982}, polymers~\citep{scheunders1989} and
+photosynthetic units~\citep{montroll1969}.  The basic idea is that
+some entity (exciton, ion, etc) has a well-defined position on a
+periodic lattice~$\left(\mathbb{Z}/n\mathbb{Z}\right)^d$; it then
+moves on the lattice, performing a random walk.  The examples here
+have~$d=2$ but extension to arbitrary dimensions is immediate.
+
+The periodic lattice itself may be identified with a multivariate
+polynomial in~$d$ variables, here~$x$ and~$y$; the probability of the
+entity being at point~$(n,m)$ is the coefficient of~$x^ny^m$.
+
+The entity typically moves between adjacent nodes according to a
+\emph{kernel} polynomial whose coefficients are the probabilites of
+the moves.  Periodicity may be enforced simply by wrapping the
+polynomial using modular arithmetic.
+
+In many cases, entities are not necessarily conserved: the entity may
+decay (usually with a fixed probability per timestep), or be
+annihilated when it encounters a particular node in the lattice (a
+`trap'~\citep{scheunders1989}, corresponding to the formation of sugar
+in the cell).  Here, we work on a~$17\times 17$ lattice as a large but
+computationally tractable domain.
+
+All these processes have natural and efficient~\proglang{R} idiom in
+the \pkg{spray} package.  We may specify a kernel allowing movement to
+adjacent nodes, or to stay in the same place with equal probability:
+
+<<>>=
+d <- 2
+kernel <- spray(rbind(0, diag(d), -diag(d)))/(1 + 2*d)
+@ 
+
+\noindent At the first timestep, the the entity is at, say,
+point~$\left(10,10\right)$ with probability 1:
+
+<<>>=
+initial <- spray(rep(10, d))
+@ 
+
+\noindent Finding the probability mass function of the entity after,
+say 14 timesteps, is straightforward:
+
+<<>>=
+t14 <- initial * kernel^14
+@ 
+
+Traps may be assigned using standard indexing and we will work with
+a~$17\times 17$ array:
+
+<<>>=
+
+traps <- matrix(c(2, 3, 3, 5), 2, 2)
+n <- 17
+@ 
+
+Then we may calculate the evolution of the probability mass function as follows:
+
+<<>>=
+timestep <- function(state, kernel, traps){
+  state <- state * kernel
+  state <- spray(index(state)%%n, value(state), addrepeats = TRUE)
+  state[traps] <- 0
+  return(state)
+}
+@
+
+In function \code{timestep()}, the first line uses standard
+multivariate polynomial multiplication to advance the state of the
+entity; the second enforces periodic boundary conditions, and the
+third implements the traps' annihilation of the entity.  The
+probability of the entity still existing after 100 timesteps is then:
+
+<<>>=
+state <- initial
+for(i in 1:100){state <- timestep(state, kernel, traps)}
+sum(value(state))
+@ 
+
+Note the streamlined \proglang{R} idiom: It is not clear how such
+manipulations could be performed using the \pkg{mpoly} or the
+\pkg{multipol} packages.
+
+\subsection{Recreational combinatorics}
+
+Suppose we consider a chess knight and ask how many ways are there for
+the knight to return to its starting square in 6 moves.  Such
+questions are most naturally answered by using generating functions.
+
+On an infinite chessboard, we might define the multivariate generating
+polynomial\footnote{Standard terminology, although it might be more
+  accurately referred to as a multivariate Laurent polynomial.}~$k$
+for a knight as
+
+\[
+k = x^{2}y + x^2y^{-1} + x^{-2}y + x^{-2}y^{-1} + xy^{2} + xy^{-2} + x^{-1}y^{2} + x^{-1}y^{-2} 
+\]
+
+
+where we have identified powers of~$x$ with squares moved horizontally
+(counted algebraically, negative powers mean move to the left), and
+powers of~$y$ with squares moved vertically.  Then the coefficient
+of~$x^{a}y^{b}$ in~$k$ is the number of ways of moving from the origin
+[that is, $x^{0}y^{0}$] to square~$(a,b)$.  Similarly, $k^n$ is the
+generating function for a knight which makes~$n$ moves: The
+coefficient of~$x^{a}y^{b}$ in~$k^n$ is the number of ways of moving
+from the origin to square~$(a,b)$.
+
+The \proglang{R} idiom for this is straightforward; we define
+\code{chess\_knight}, a spray object with rows corresponding to the
+possible moves the chess piece may make:
+  
+<<knight_generating_function>>=
+chess_knight <- 
+  spray(matrix(
+      c(1, 2, 1, -2, -1, 2, -1, -2, 2, 1, 2, -1, -2, 1, -2, -1),
+      byrow = TRUE,ncol = 2))
+options(polyform = FALSE)
+chess_knight
+options(polyform = TRUE)
+chess_knight
+@ 
+
+\noindent Then \code{chess\_knight[i,j]} gives the number of ways the
+piece can move from square~\code{[0,0]} to~\code{[i,j]};
+and~\code{(chess\_knight\^{}n)[i,j]} gives the number of ways the
+piece can reach~\code{[i,j]} in \code{n} moves.  To calculate the
+number of ways that the piece can return to its starting square we
+simply raise \code{chess\_knight} to the sixth power and extract the
+\code{[0,0]} coefficient:
+<<knight_six_moves>>=
+constant(chess_knight^6, drop = TRUE)
+@   
+
+(function \code{constant()} extracts the coefficient corresponding to
+zero power).  One natural generalization would be to arbitrary
+dimensions.  A d-dimensional knight moves two squares in one
+direction, followed by one square in another direction:
+
+<<define.d.dimensional.knight>>=
+knight <- function(d){
+  n <- d * (d - 1)
+  out <- matrix(0, n, d)
+  out[cbind(rep(seq_len(n), each=2), c(t(which(diag(d)==0, arr.ind=TRUE))))] <- seq_len(2)
+  spray(rbind(out, -out, `[<-`(out, out==1, -1),`[<-`(out, out==2, -2)))
+}
+@ 
+
+Then, considering a four-dimensional chessboard
+(Figure~\ref{four_dimensional_knight}):
+
+\begin{figure}[h]
+  \centering \includegraphics[width=10cm]{four_dimensional_knight.pdf}
+  \caption{Four-dimensional knight\label{four_dimensional_knight} on a $4\times 4\times 4\times 4$ board.  Cells attacked by the knight shown by dots}
+\end{figure}
+
+<<dnightmoves>>=
+constant(knight(4)^6, drop = TRUE)
+@ 
+
+It is in such cases that the efficiency of the \proglang{map} class
+becomes evident: On my system (3.4\,GHz Intel Core i5 iMac), the
+above call took just under~0.4 seconds of elapsed time whereas the
+same\footnote{Because \pkg{mpoly} does not accept negative powers, the
+  calculation was equivalent to \code{(knight(4) + xyz(4)\^{}2)\^{}6}.
+  Also note that the \pkg{multipol} package is not able to execute
+  these commands in a reasonable time.} calculation took over 173
+seconds using \pkg{mpoly}.
+
+If we want the number of ways to return to the starting point in 6 or
+fewer moves, we can simply add the unit multinomial and take the sixth
+power of the sum:
+  
+<<dnightmoves_can_wait>>=
+constant((1 + knight(4))^6, drop=TRUE)
+@ 
+  
+(0.6 seconds for~\pkg{spray} vs 275 seconds for~\pkg{mpoly}).  For 8
+moves, the differences are more pronounced, with \pkg{spray} taking
+4.0 seconds and~\pkg{mpoly} requiring more than 1500 seconds).
+
+\section{Conclusions and further work}
+
+The \pkg{spray} package provides functionality for sparse,
+arbitrarily-dimensioned arrays.  One natural interpretation of a
+sparse array is as a multivariate polynomial and the package leverages
+the \proglang{map} class of \proglang{C++} to give fast polynomial
+multiplication.
+
+The functionality provided overlaps with that of \pkg{multipol} and
+\pkg{mpoly}.  The \pkg{multipol} package is too slow to be of
+practical value for any but the smallest illustrative objects.
+
+The different name-based philosophy employed by the \pkg{mpoly}
+package is certainly an advantage in terms of natural \proglang{R}
+idiom, although there is a performance penalty.  There are also
+occasional applications of multivariate polynomials (such as random
+walks on lattices) in which the structure of \pkg{spray} is a
+conceptual advantage.
+
+British mathematician J. H. Wilkinson famously defined a matrix to be
+``sparse'' if it has enough zeros that it pays to take advantage of
+them; this definition applies to the arrays considered here.  However,
+other definitions of sparsity are possible.  Consider the following
+example, taken from \cite{kahle2013}:
+
+\[
+ab^2+bc^2+cd^2+\cdots+yz^2+za^2
+\].
+
+The \pkg{spray} idiom for such an expression is
+
+<<>>=
+a <- diag(26)
+options(sprayvars = letters)
+a[1 + cbind(0:25, 1:26) %% 26] <- 2
+spray(a)
+@ 
+
+\noindent ---but it is clear that the index matrix has a large degree
+of sparseness which \pkg{mpoly} takes advantage of and \code{spray}
+does not.  Further work might include the development of name-based
+multivariate polynomials using concepts from \proglang{STL} to provide
+the best of both worlds (and indeed the \pkg{mvp}
+package~\citep{hankin2019} does just this, and more).
+
+\bibliography{spray}
+\newpage
+\appendix
+\section{Package philosophy}
+
+The \pkg{spray} package does not interact or depend on \pkg{multipol}
+in any way, owing to the very different design philosophies used.  The
+package uses the~\proglang{C++} Standard Template Library's
+\proglang{map} class~\citep{musser2009} to store and retrieve
+elements.
+
+A \emph{map} is an associative container that stores values indexed by
+a key, which is used to sort and uniquely identify the values.  In the
+package, the key is a \proglang{vector} object or a \proglang{deque}
+object with (signed) integer elements.
+
+In the \proglang{STL}, a \proglang{map} object stores keys and
+associated values in whatever order the software considers to be most
+propitious.  This allows faster access and modification times but the
+order in which the maps are stored is implementation specific.  In the
+case of sparse arrays, this is not an issue because the nonzero
+entries do not possess a natural order, unlike dense arrays in which
+lexicographic ordering is used.  For multivariate polynomials, the
+order of storage is not important algebraically because addition is
+commutative and associative.
+
+\subsection*{Compile-time options}
+
+At compile time, the package offers two options.  Firstly one may use
+the \proglang{unordered\_map} class in place of the \proglang{map}
+class.  This option is provided in the interests of efficiency.  An
+unordered map has lookup time~${\mathcal O}(1)$ (compare~${\mathcal
+  O}(\log n)$ for the map class), but overhead is higher.
+
+The other option offered is the nature of the key, which may be either
+\proglang{vector} class or \proglang{deque} class.  Elements of a
+\proglang{vector} are guaranteed to be contiguous in memory, unlike a
+\proglang{deque}.  This does not appear to make a huge difference to
+timings, but the default (\proglang{unordered\_map} indexed by a
+\proglang{vector}) appears to be marginally the fastest option.
+
+
+\end{document}
+ 

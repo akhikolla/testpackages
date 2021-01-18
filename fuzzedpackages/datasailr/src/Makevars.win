@@ -1,0 +1,74 @@
+CXX_STD=CXX11
+
+$(info $(R_ARCH))
+$(info $(ARCH))
+
+ONIGMO_PROJ_NAME=Onigmo
+ONIGMO_INSTALL=$(ONIGMO_PROJ_NAME)/_BUILD
+ONIGMO_LIB=$(ONIGMO_INSTALL)/lib
+ONIGMO_INCLUDE=$(ONIGMO_INSTALL)/include
+
+PKG_CXXFLAGS=-Ilibsailr -I$(ONIGMO_PROJ_NAME) # Option for compiler
+PKG_LIBS = $(LDFLAGS) -Llibsailr -lsailr -L$(ONIGMO_LIB) -l:libonigmo.a -Wl,-Bstatic -lstdc++ -lpthread -Wl,-Bdynamic
+# Note: -lxxx looks up for libraries in an order of libxxx.so and libxxx.a
+# Note: -l:libyyy.a directly looks up for the library with the filename of libyyy.a
+# https://stackoverflow.com/questions/6578484/telling-gcc-directly-to-link-a-library-statically
+
+PKG_CFLAGS=-Ilibsailr -I$(ONIGMO_PROJ_NAME) @add_r_include_path@ 
+
+REQUIRE_AUTOTOOLS=NO
+src_dir=$(strip $(shell pwd))
+
+# compile self-contained subdirectory
+# http://www.hep.by/gnu/r-patched/r-exts/R-exts_14.html#SEC14
+# https://stackoverflow.com/questions/17133550/building-shared-libraries-in-subdirectories
+
+
+.PHONY: all
+
+all: $(SHLIB)
+$(SHLIB): libsailr/libsailr.a
+
+libsailr/libsailr.a: $(ONIGMO_LIB)/onigmo.a
+	@echo "compiling libsailr engine."
+	$(MAKE) build --directory libsailr CC="$(CC)" \
+                              CFLAGS="$(CFLAGS) $(CPICFLAGS) -I. -I../$(ONIGMO_INCLUDE) @add_r_include_path@  " \
+                              CXX="$(CXX)" CXXFLAGS="$(CXXFLAGS) $(CPICFLAGS) -I. -Istring" \
+                              AR="$(AR) rvs" 
+
+
+ifeq ($(REQUIRE_AUTOTOOLS), YES)
+# If user has autotools
+
+$(ONIGMO_LIB)/onigmo.a:
+	@echo $$PATH
+	@echo "Makevars.win without autotools"
+	cd $(ONIGMO_PROJ_NAME)/; ./autogen.sh; ./configure --prefix=$(src_dir)/$(ONIGMO_INSTALL); make; make install;  cd ..; 
+	rm -f $(ONIGMO_LIB)/onigmo.dll
+	rm -f $(ONIGMO_LIB)/libonigmo.dll.a
+	rm -f $(ONIGMO_LIB)/libonigmo.la
+	rm -f $(ONIGMO_LIB)/onigmo.so
+
+else
+# If user does not have autotools, they cannot run ./aurogen.sh
+# For those users like CRAN, autogen.sh should be run beforehand, and configure script should be generated.
+
+$(ONIGMO_LIB)/onigmo.a: $(ONIGMO_PROJ_NAME)/m4/lt~obsolete.m4
+	@echo $$PATH
+	@echo "Makevars.win without autotools"
+	mkdir -p $(ONIGMO_LIB)
+	mkdir -p $(ONIGMO_INCLUDE)
+	cd $(ONIGMO_PROJ_NAME) && $(MAKE) -f win32/Makefile.mingw ARCH="$(ARCH)" CXX="$(CXX)" CC="$(CC)" CFLAGS="$(CFLAGS) $(CPICFLAGS)" CXXFLAGS="$(CXXFLAGS) $(CPICFLAGS)" ARLIB="$(AR)" ARDLL="$(CC)" RANLIB="$(RANLIB)" RC="$(RESCOMP)"
+	cp $(ONIGMO_PROJ_NAME)/build_$(ARCH)/libonigmo.a $(ONIGMO_LIB)/
+	cp $(ONIGMO_PROJ_NAME)/onigmo.h $(ONIGMO_INCLUDE)/
+
+# Note: RESCOMP makefile variable is only available (necessary) for Windows platform
+
+# lt~obsolete.m4 cannot be included for CRAN.
+
+$(ONIGMO_PROJ_NAME)/m4/lt~obsolete.m4: $(ONIGMO_PROJ_NAME)/m4/lt_obsolete.m4
+	mv $(ONIGMO_PROJ_NAME)/m4/lt_obsolete.m4 $(ONIGMO_PROJ_NAME)/m4/lt~obsolete.m4
+
+endif
+
+

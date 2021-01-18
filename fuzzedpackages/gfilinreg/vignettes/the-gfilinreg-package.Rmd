@@ -1,0 +1,244 @@
+---
+title: "The 'gfilinreg' package"
+output: 
+  rmarkdown::html_vignette:
+    css: vignette.css
+vignette: >
+  %\VignetteIndexEntry{The 'gfilinreg' package}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  fig.width = 6, fig.height = 5
+)
+```
+
+The main function of the 'gfilinreg' package, namely `gfilinreg`, returns some 
+weighted samples of the generalized fiducial distribution of the parameters of 
+a linear regression model whose error terms are distributed according to a 
+Gaussian, Student, Cauchy, or a logistic distribution.
+
+Let's have a look at a simple linear regression model with Gaussian errors:
+
+```{r simplereg}
+library(gfilinreg)
+set.seed(666L)
+x <- rgamma(6L, shape = 10, rate = 1)
+y <- rnorm(6L, mean = x, sd = 2)
+dat <- data.frame(x = x, y = y)
+fidsamples <- gfilinreg(y ~ x, data = dat, distr = "normal", L = 150L)
+```
+
+The algorithm involves a partition of the hypercube ${(0,1)}^{p+1}$, where $p$ 
+is the dimension of the model (the number of columns of the $X$ matrix), and 
+the integer argument `L` of the `gfilinreg` function is the desired number of 
+subdivisions of each edge of the hypercube.
+
+A quick summary of the fiducial samples is provided by the `gfiSummary` 
+function: 
+
+```{r simplereg_summary}
+gfiSummary(fidsamples)
+```
+
+Let's compare with `lm`:
+
+```{r simplereg_lm}
+lmfit <- lm(y ~ x, data = dat)
+coefficients(lmfit)
+sigma(lmfit)
+confint(lmfit)
+```
+
+Excepted for the scale parameter $\sigma$, results are very similar.
+
+One can generate simulations of fiducial predictive distributions and, based on 
+these distributions, one can get fiducial prediction intervals:
+
+```{r simplereg_predictions}
+new <- data.frame(x = c(9, 10, 11))
+fidpred <- gfilinregPredictive(fidsamples, newdata = new)
+gfiSummary(fidpred)
+predict(lmfit, newdata = new, interval = "prediction")
+```
+
+Again, there is a strong agreement between the fiducial results and the 
+frequentist results.
+
+
+## A small simulation study with Cauchy errors
+
+Now we perform some simulations of a "t-test model" with Cauchy errors, we 
+store the fiducial summaries for each simulated dataset and we also store the 
+maximum likelihood estimates thanks to the 'heavy' package. We simulate $500$ 
+datasets.
+
+```{r simulations, eval=FALSE}
+library(gfilinreg)
+library(heavy)
+library(data.table)
+
+nsims <- 500L
+MAXLHD <- matrix(NA_real_, nrow = nsims, ncol = 3L)
+colnames(MAXLHD) <- c("group1", "group2", "sigma")
+FIDlist <- vector("list", length = nsims)
+
+group <- gl(2L, 6L)
+set.seed(666L)
+
+for(i in 1L:nsims){
+  # simulated dataset
+  dat <- data.frame(
+    group = group,
+    y = c(rcauchy(6L), 2 + rcauchy(6L))
+  )
+  # max-likelihood estimates
+  hfit <- heavyLm(y ~ 0 + group, data = dat, family = Cauchy())
+  MAXLHD[i, ] <- c(hfit[["coefficients"]], sqrt(hfit[["sigma2"]]))
+  # fiducial stuff
+  fidsamples <- gfilinreg(y ~ 0 + group, data = dat, L = 100L, distr = "cauchy")
+  FIDlist[[i]] <- cbind(
+    parameter = c("group1", "group2", "sigma"), 
+    as.data.table(gfiSummary(fidsamples))
+  )
+}
+FID <- rbindlist(FIDlist)
+```
+
+The above simulations are not performed in this vignette. They are available in 
+the package:
+
+```{r load_simulations}
+library(data.table)
+data("FID")
+data("MAXLHD")
+```
+
+
+### Estimates
+
+Our three estimates of the `group1` parameter (maximum likelihood, 
+fiducial mean, fiducial median) have a similar distribution:
+
+```{r estimate_group1}
+library(kde1d)
+group1_maxlhd     <- MAXLHD[, "group1"]
+group1_fid_mean   <- FID[parameter == "group1"][["mean"]]
+group1_fid_median <- FID[parameter == "group1"][["median"]]
+
+kfit_maxlhd     <- kde1d(group1_maxlhd, mult = 4)
+kfit_fid_mean   <- kde1d(group1_fid_mean, mult = 4)
+kfit_fid_median <- kde1d(group1_fid_median, mult = 4)
+
+curve(
+  dkde1d(x, kfit_maxlhd), from = -4, to = 4, axes = FALSE,
+  lwd = 2, col = "red", lty = "dashed", xlab = "beta1", ylab = NA
+)
+axis(1)
+curve(
+  dkde1d(x, kfit_fid_mean), add = TRUE, 
+  lwd = 2, col = "green", lty = "dashed"
+)
+curve(
+  dkde1d(x, kfit_fid_median), add = TRUE, 
+  lwd = 2, col = "blue", lty = "dashed"
+)
+```
+
+A simulated dataset has yielded aberrant values of the fiducial mean and the 
+fiducial medians (I do not know why, perhaps a matrix at the edge of 
+non-invertibility has been inversed). After removing it, one observes that the
+distributions of the three estimates of the `group2` parameter are similar:
+
+```{r estimate_group2}
+group2_maxlhd     <- MAXLHD[, "group2"]
+group2_fid_mean   <- FID[parameter == "group2"][["mean"]][-333L]
+group2_fid_median <- FID[parameter == "group2"][["median"]][-333L]
+
+kfit_maxlhd     <- kde1d(group2_maxlhd, mult = 4)
+kfit_fid_mean   <- kde1d(group2_fid_mean, mult = 4)
+kfit_fid_median <- kde1d(group2_fid_median, mult = 4)
+
+curve(
+  dkde1d(x, kfit_maxlhd), from = -2, to = 8, axes = FALSE,
+  lwd = 2, col = "red", lty = "dashed", xlab = "beta2", ylab = NA
+)
+axis(1)
+curve(
+  dkde1d(x, kfit_fid_mean), add = TRUE, 
+  lwd = 2, col = "green", lty = "dashed"
+)
+curve(
+  dkde1d(x, kfit_fid_median), add = TRUE, 
+  lwd = 2, col = "blue", lty = "dashed"
+)
+```
+
+For the scale parameter `sigma`, there are some differences. The maximum 
+likelihood estimates often underestimate the true value, and the true value is 
+close to the median of the fiducial medians: 
+
+```{r estimate_sigma}
+sigma_maxlhd     <- MAXLHD[, "sigma"]
+sigma_fid_mean   <- FID[parameter == "sigma"][["mean"]][-333L]
+sigma_fid_median <- FID[parameter == "sigma"][["median"]][-333L]
+
+kfit_maxlhd     <- kde1d(sigma_maxlhd, xmin = 0, mult = 4)
+kfit_fid_mean   <- kde1d(sigma_fid_mean, xmin = 0, mult = 4)
+kfit_fid_median <- kde1d(sigma_fid_median, xmin = 0, mult = 4)
+
+curve(
+  dkde1d(x, kfit_maxlhd), from = 0, to = 4, axes = FALSE,
+  lwd = 2, col = "red", xlab = "sigma", ylab = NA
+)
+axis(1)
+abline(v = median(sigma_maxlhd), col = "red", lwd = 2, lty = "dashed")
+curve(
+  dkde1d(x, kfit_fid_mean), add = TRUE, 
+  lwd = 2, col = "green"
+)
+abline(v = median(sigma_fid_mean), col = "green", lwd = 2, lty = "dashed")
+curve(
+  dkde1d(x, kfit_fid_median), add = TRUE, 
+  lwd = 2, col = "blue"
+)
+abline(v = median(sigma_fid_median), col = "blue", lwd = 2, lty = "dashed")
+# true value:
+abline(v = 1, col = "yellow", lwd = 3)
+```
+
+### Frequentist coverage
+
+Below are the coverage probabilities of the fiducial confidence intervals 
+estimated from the $500$ simulations.
+
+```{r coverages}
+# group1
+group1 <- FID[parameter == "group1"]
+mean(group1[["lwr"]] < 0)
+mean(0 < group1[["upr"]])
+mean(group1[["lwr"]] < 0 & 0 < group1[["upr"]])
+# group2
+group2 <- FID[parameter == "group2"]
+mean(group2[["lwr"]] < 2)
+mean(2 < group2[["upr"]])
+mean(group2[["lwr"]] < 2 & 2 < group2[["upr"]])
+# sigma
+sigma <- FID[parameter == "sigma"]
+mean(sigma[["lwr"]] < 1)
+mean(1 < sigma[["upr"]])
+mean(sigma[["lwr"]] < 1 & 1 < sigma[["upr"]])
+```
+
+For the parameters `group1` and `group2`, the coverage probabilities are close 
+to the nominal level. For `sigma`, only the upper bound yields a coverage 
+probability close to the nominal level. The lower bound is too large on average. 
+But remember that the datasets we simulated are small ($6$ observations per 
+group).

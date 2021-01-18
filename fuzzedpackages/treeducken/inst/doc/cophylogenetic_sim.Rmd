@@ -1,0 +1,217 @@
+---
+title: "Cophylogenetic simulation"
+author: "Wade Dismukes"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Cophylogenetic simulation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+This vignette summarizes the workflow for simulating a host and symbiont tree using the `sim_cophylo_bdp` function. 
+
+## Introduction
+
+
+## Figuring out parameters and what they mean
+
+This model has a number of parameters that are input into the `sim_cophylo_bdp` function. Let us assume that we just want to simulate to a time of 2.0 units. We can then use `calculate_expected_leaves_sptree` and `calculate_expected_leaves_locustree` to figure out the average number of extant tips that will be on our host and symbiont trees respectively.
+
+```{r}
+
+library(treeducken)
+set.seed(42)
+
+exp_tips_host <- calculate_expected_leaves_sptree(1.0, 0.5, 2.0)
+# on average we will get about 5 tips
+# maybe we want something more like 8, so let's decrease the extinction rate
+exp_tips_host <- calculate_expected_leaves_sptree(1.0, 0.3, 2.0)
+# that looks about right, let's assume there are no host speciations that are
+# not cospeciations
+h_lambda <- 0.0
+h_mu <- 0.3
+c_lambda <- 1.0
+# now we need to worry about the symbiont tree since only cospeciations are
+# occurring
+# we can use the same math as for the locus tree simulator
+exp_tips_symb <- calculate_expected_leaves_locustree(t = 2.0,
+                                                     dup_rate = 0.2,
+                                                     loss_rate = 0.1, 8)
+# a little less than 10 symbiont tips on average
+s_lambda <- 0.2
+s_mu <- 0.1
+# let's assume that when symbionts speciate that they always inherit their
+# ancestor's host repertoire
+s_her <- 0.0
+```
+Now we have all the necessary parameters set with some idea of what they mean. 
+
+## Simulating a set of host and symbiont pairs
+
+We will now use the main function, `sim_cophylo_bdp` with the parameters we set in the previous section.
+Let's simulate ten sets and then we can print out a summary for each set.
+```{r} 
+# simulate 10 paired trees with our set parameters.
+host_symb_sets <- sim_cophylo_bdp(hbr = h_lambda,
+                hdr = h_mu,
+                sbr = s_lambda,
+                cosp_rate = c_lambda,
+                sdr = s_mu,
+                host_exp_rate = s_her,
+                time_to_sim = 2.0,
+                numbsim = 10)
+print(host_symb_sets, details = TRUE)
+```
+Notice that some of these are not particularly interesting with only 2 host or symbiont tips. 
+This is expected behavior, and occurs since there is a nonzero probability that no events occur in the time we simulated.
+
+## Examining the result & plotting some trees
+Let's check out one set.
+
+```{r}
+# # plot one or two of them
+tree_set_of_interest <- host_symb_sets[[1]]
+print(tree_set_of_interest)
+```
+
+```{r}
+plot(tree_set_of_interest, col = "red", lty = "dotted")
+```
+Notice that the output of `sim_cophylo_bdp` is a list of `cophy` objects.
+Each `cophy` object is composed of 4 elements: `host_tree`, `symb_tree`, `association_mat`, an `event_history`.
+The `host_tree` an `symb_tree` are both of the `phylo` object (from the ape package).
+The `association_mat` which is a matrix with number of rows equal to the number of extant tips in the symbiont tree, and number of columns equal to the number of extant tips in the host tree.
+The `event_history` is a data frame which shows the full history of the simulation. 
+It contains which events occur on which symbiont and/or host and at which time.
+The following event code is used: "C"- cospeciation, "HG" - host gain (a host speciation), "HL" - host less (host extinction), "SG" - symbiont gain (symbiont speciation), "SL" - symbiont loss (symbiont extinction), "AG" - association gain, and "AL" - association loss. 
+This bit is a mess at present so please let me know if you think of ways I could trim this down.
+
+We can also perform the parafit test using the results. 
+
+```{r}
+host_tree <- tree_set_of_interest$host_tree
+symb_tree <- tree_set_of_interest$symb_tree
+a <- tree_set_of_interest$association_mat
+d <- parafit_stat(host_tr = host_tree, symb_tr = symb_tree, assoc_mat = a)
+parafit_test(host_tr = host_tree,
+             symb_tr = symb_tree,
+             assoc_mat = a,
+             D = d,
+             reps = 99)
+```
+
+We can also do a full summary of the results with the following function.
+This tabulates the number of each event in the `event_history` data frame, and then performs the Parafit test of Legendre et al. 2004.
+
+```{r}
+# of course that bit is maybe a little too verbose
+# we may be interested in a lot of trees
+# we can instead use cophylo_summary_stat
+host_symb_summary_df <- cophy_summary_stat(host_symb_sets)
+host_symb_summary_df
+```
+
+## Simulating locus trees on host and symbiont trees
+
+To model gene tree-species tree discordance on these trees we use the three-tree model (Rasmussen and Kellis 2012).
+This model has three levels: species trees, locus trees, and gene trees.
+The species tree models speciation and extinction, the locus tree models gene birth, death and transfers, and the gene tree models incomplete lineage sorting.
+Transfers can occur randomly to any recipient throughout a tree or to species that are more closely related to the transfer donor species.
+
+
+We can use either symbiont or host trees to simulate locus trees. First we will use the host tree:
+
+
+
+
+```{r}
+host_tree_locus_trees <- sim_locustree_bdp(host_tree,
+                                           gbr = 0.4,
+                                           gdr = 0.2,
+                                           lgtr = 0.0,
+                                           num_loci = 10)
+host_tree_locus_trees
+```
+
+
+
+```{r}
+plot(host_tree_locus_trees)
+```
+
+Now we will use the symbiont tree:
+
+```{r}
+symb_tree_locus_trees <- sim_locustree_bdp(symb_tree,
+                                           gbr = 0.2,
+                                           gdr = 0.1,
+                                           lgtr = 0.1,
+                                           num_loci = 10)
+str(symb_tree_locus_trees[[1]])
+```
+
+Using these locus trees we can simulate under the multi-locus coalescent process (see Rasmussen and Kellis 2012). We can specify
+an effective population size and a generation time measured in generations per unit time. For now we will assume that the time of 
+our trees is in units of millions of years. The default for generation time is then 1 time per year (1e-6). And we will randomly
+draw an effective population size from a Lognormal with mean 14 and standard deviation 0.4. Note that the only reason these values
+chosen is to mirror the validation test of Mallo et al. (2015) for the SimPhy program.
+
+```{r}
+host_locus_tree <- host_tree_locus_trees[[3]]
+# randomly choose an effective popsize 
+popsize <- 1e6
+host_loci_gene_trees <- sim_multilocus_coal(host_locus_tree,
+                                            effective_pop_size = popsize,
+                                            num_reps = 100)
+```
+
+
+And we can calculate some tree summary statistics on all of genes that were simulated on one of the locus trees (in this case the first one). 
+
+
+## Load in other datasets
+
+You can also combine a host tree, symbiont tree, and association matrix into a `cophy` object that can be input into functions in `treeducken`. The example below reads in the classic gopher and lice dataset from Hafner et al. 1994.
+The more common association table format with two columns with hosts in the first and symbionts (or parasites) in the second column is converted into an association matrix. 
+These are all then converted into `treeducken`'s `cophy` class. 
+You can then print out a summary of these and then calculate summary statistics on these. 
+Currently, this only calculates the parafit statistic and conducts the permutation test for that statistic if the `event_history` element of `cophy` is not set. 
+If that is set it will count the numbers of each event.
+
+```{r}
+gopher_lice_map <- read.table(system.file("extdata",
+                                          "gopher_lice_mapping.txt",
+                                          package = "treeducken"),
+                              stringsAsFactors = FALSE, header = TRUE)
+
+gopher_lice_assoc_matrix <- convert_assoc_table_to_matrix(gopher_lice_map)
+gopher_tree <- ape::read.nexus(system.file("extdata",
+                                           "gophers_bd.tre",
+                                           package = "treeducken"))
+lice_tree <- ape::read.nexus(system.file("extdata",
+                                         "lice_bd.tre",
+                                         package = "treeducken"))
+gopher_lice_cophylo <- convert_to_cophy(hostTree = gopher_tree,
+                                          symbTree = lice_tree,
+                                          assocMat = gopher_lice_assoc_matrix)
+print(gopher_lice_cophylo)
+cophy_summary_stat(gopher_lice_cophylo)
+
+plot(gopher_lice_cophylo,
+     fsize = 0.5,
+     show_tip_label = FALSE,
+     gap = 1,
+     col = "purple",
+     lty = "dashed")
+```
+
+
+

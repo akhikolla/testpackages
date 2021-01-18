@@ -1,0 +1,147 @@
+%\VignetteIndexEntry{Tips}
+
+\documentclass[a4paper,10pt]{article}
+
+%-------------------------
+% preamble for nice lsitings and notes
+\include{rtkpp-preamble}
+
+\geometry{top=3cm, bottom=3cm, left=2cm, right=2cm}
+
+%% need no \usepackage{Sweave.sty}
+<<prelim,echo=FALSE,print=FALSE>>=
+library(rtkore)
+rtkore.version <- packageDescription("rtkore")$Version
+rtkore.date <- packageDescription("rtkore")$Date
+@
+% Title Page
+\title{Tips !}
+\author{Serge Iovleff}
+\date{}
+
+% start documentation
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+\maketitle
+
+\section{Tips: Centering an array}
+
+It' very easy to center a data set using high level templated expressions
+and statistical functors.
+
+\begin{minipage}[t]{0.66\textwidth}
+\lstinputlisting[style=customcpp,caption=Example]{programs/tutoCenteringAnArray.cpp}
+\end{minipage}
+\hspace{0.2cm}
+\begin{minipage}[t]{0.33\textwidth}
+\addtocounter{lstlisting}{-1}
+\lstinputlisting[style=customcpp,caption=Output]{programs/tutoCenteringAnArray.out}
+\end{minipage}
+
+
+the expression
+\begin{lstlisting}[style=customcpp]
+Const::Vector<Real>(100)mean(A)
+\end{lstlisting}
+represents the matrix multiplication of a column vector of 1 with 100 rows
+and of row vector with the mean of each column of A.
+
+\begin{note}
+For each column of the array \code{A} we can get the maximal value in
+absolute value using \code{max(A.abs())}. It is possible to use
+functors mixed with unary or binary operators.
+\end{note}
+
+\section{Tips: Compute the mean for each column of an array}
+
+You can easily get the mean of a whole vector or a matrix containing
+missing values using the expression
+\begin{lstlisting}[style=customcpp]
+  CArray<Real> A(100, 20);
+  Law::Normal law(1,2);
+  A.rand(law);
+  Real m = A.meanSafe();
+\end{lstlisting}
+
+In some cases you may want to get the mean for each column of an array
+with missing values. You can get it in a @c PointX vector using
+either the code
+\begin{lstlisting}[style=customcpp]
+  PointX m;
+  m = meanByCol(A.safe()); // mean(A.safe()); is shorter
+\end{lstlisting}
+or the code
+\begin{lstlisting}[style=customcpp]
+  Array2DPoint<Real> m;
+  m.move(Stat::mean(A.safe()));
+\end{lstlisting}
+
+The method \code{A.safe()} will replace any missing (or \ttcode{NaN}) values by
+zero. In some cases it's not sufficient, Suppose you know your data are all
+positive and you want to compute the log-mean of your data. In this case,
+you will rather use
+\begin{lstlisting}[style=customcpp]
+  m = Stat::mean(A.safe(1.).log());
+\end{lstlisting}
+and all missing (or \ttcode{NaN}) values will be replaced by one.
+
+\begin{note}
+You can also compute the variance. If you want to compute the mean of
+each row, you will have to use the functor \code{Stat::meanByRow}. In this
+latter case, you get a \code{VectorX} as result.
+\end{note}
+
+\section{Tips: Compute the mean and the variance of multidimensionnal data}
+
+You can easily compute the mean and the variance matrix of multidimensional
+data. Assume we are handling this kind of data
+\begin{lstlisting}[style=customcpp]
+  // values (b,g,r,ir)
+  typedef CArrayVector<double, 4> Spectrum;
+\end{lstlisting}
+repeated in space and time. The data are stored in an array
+\begin{lstlisting}[style=customcpp]
+  // array of values
+  typedef CArray<Spectrum> ArraySpectrum;
+  ArraySpectrum datait;
+\end{lstlisting}
+and we want to compute at each time the (multidimensional) mean of this
+data set. This can be used using the following code :
+\begin{lstlisting}[style=customcpp]
+  // array of mean values
+  typedef CArrayPoint<Spectrum> PointSpectrum;
+  PointSpectrum mut(datait.cols());
+  for (int t= datait.beginCols(); t< datait.endCols(); ++t)
+  {
+    mut[t] = 0.;
+    for (int i=datait_.beginRows(); i< datait_.endRows(); ++i)
+    { mut[t] += datait_(i,t);}
+    mut[t]/= data.sizeRows();
+  }
+\end{lstlisting}
+The variance matrix (using numerical correction) can be computed using the
+following code :
+\begin{lstlisting}[style=customcpp]
+  // covariances values (b,g,r,ir)
+  typedef CArraySquare<double, 4> CovSpectrum;
+  // array of mean values
+  typedef CArrayPoint<CovSpectrum> PointCov;
+  PointSpectrum sigmat(datait.cols());
+  for (int t= datait.beginCols(); t< datait.endCols(); ++t)
+  {
+    CovSpectrum var; var=0.0;
+    Spectrum sum = 0.0;
+    for (int i=datait_.beginRows(); i< datait_.endRows(); ++i)
+    {
+      Spectrum dev;
+      sum += (dev = datait(i,t) - mut[t]);
+      var += devdev.transpose();
+    }
+    sigmat[t] = (var - ((sumsum.transpose())/datait.sizeCols()) )/datait.sizeCols();
+  }
+\end{lstlisting}
+\stkpp{} handles transparently the multidimensional nature of the data.
+
+\end{document}
+

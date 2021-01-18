@@ -1,0 +1,207 @@
+---
+title: "beanz: Bayesian Analysis of Heterogeneous Treatment Effect"
+author: "Chenguang Wang and Ravi Varadhan"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{beanz: Bayesian Analysis of Heterogeneous Treatment Effect}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, eval=T, echo=FALSE}
+require(beanz);
+```
+
+# Introduction
+
+In patient-centered outcomes research, it is vital to assess the heterogeneity
+of treatment effects (HTE) when making health care decisions for an individual
+patient or a group of patients. Nevertheless, it remains challenging to evaluate
+HTE based on information collected from clinical studies that are often designed
+and conducted to evaluate the efficacy of a treatment for the overall
+population. The Bayesian framework offers a principled and flexible approach to
+estimate and compare treatment effects across subgroups of patients defined by
+their characteristics.
+
+*R* package **beanz** provides functions to facilitate the conduct of Bayesian
+analysis of HTE and a web-based graphical user interface for users to conduct
+such Bayesian analysis in an interactive and user-friendly manner.
+
+# Data accepted by **beanz**
+
+There are two types of data structures that **beanz** recognizes:
+
+- Summary treatment effect data: Each row should represent a subgroup with
+covariates that define the subgroup, estimated treatment effect in the subgroup
+and variance for the estimation.
+
+- Patient level raw data: Each row should represent a patient with covariates
+that define the subgroup in which the patient belongs to, treatment indicator
+and outcome. The outcome can be binary, continuous, or time to event.
+
+The **beanz** package provides dataset *solvd.sub* from the *SOLVD* trial as an
+example *Patient level raw data* dataset.
+
+# Estimate subgroup effect
+
+If *Patient level raw data* is provided, the package provides function
+*bzGetSubgrpRaw* for estimating subgroup effect for each subgroup. The return
+value from *bzGetSubgrpRaw* is a data frame with the format of *Summary
+treatment effect data*.
+
+The example is as follows:
+
+```{r, eval=T, echo=TRUE}
+
+var.cov    <- c("lvef", "sodium", "any.vasodilator.use");
+var.resp   <- "y";
+var.trt    <- "trt";
+var.censor <- "censor";
+resptype   <- "survival";
+
+subgrp.effect <- bzGetSubgrpRaw(solvd.sub,
+                                  var.resp   = var.resp,
+                                  var.trt    = var.trt,
+                                  var.cov    = var.cov,
+                                  var.censor = var.censor,
+                                  resptype   = resptype);
+print(subgrp.effect);
+
+```
+
+# Bayesian HTE models
+
+The function *bzCallStan* calls *rstan::sampling* to draw samples for different
+Bayesian models. The following models are available in the current version of
+**beanz**:
+
+- *nse*: No subgroup effect model
+- *fs*: Full stratification model
+- *sr*: Simple regression model
+- *bs*: Basic shrinkage model
+- *srs*: Simple regression with shrinkage model
+- *ds*: Dixon-Simon model
+- *eds*: Extended Dixon-Simon model.
+
+The following examples show how *No subgroup effect model* (*nse),
+*Simple regression model* (*sr*) and *Basic shrinkage model* (*bs*) are called:
+
+```{r, eval=T, echo=TRUE}
+
+var.estvar <- c("Estimate", "Variance");
+
+rst.nse <- bzCallStan("nse", dat.sub=subgrp.effect,
+                     var.estvar = var.estvar, var.cov = var.cov,
+                     par.pri = c(B=1000),
+                     chains=4, iter=4000,
+                     warmup=2000, seed=1000, cores=1);
+
+rst.sr  <- bzCallStan("sr", dat.sub=subgrp.effect,
+                     var.estvar = var.estvar, var.cov = var.cov,
+                     par.pri = c(B=1000, C=1000),
+                     chains=4, iter=4000,
+                     warmup=2000,  seed=1000, cores=1);
+
+rst.bs  <- bzCallStan("bs", dat.sub=subgrp.effect,
+                     var.estvar = var.estvar, var.cov = var.cov,
+                     par.pri = c(B=1000, D=1),
+                     chains=4, iter=4000, warmup=2000,  seed=1000, cores=1);
+
+```
+
+# Results presentation
+
+## Posterior subgroup treatment effect summary
+
+Posterior subgroup treatment effect can be summarized and presented by functions
+*bzSummary*, *bzPlot* and *bzForest*. These functions allows to
+include a subgroup from another model (i.e. No subgroup effect model) as a
+reference in the results.
+
+### Simple regression model
+```{r, eval=T, echo=TRUE, fig.width=6, fig.height=5}
+sel.grps <- c(1,4,5);
+tbl.sub <- bzSummary(rst.sr, ref.stan.rst=rst.nse, ref.sel.grps=1);
+print(tbl.sub);
+bzPlot(rst.sr, sel.grps = sel.grps, ref.stan.rst=rst.nse, ref.sel.grps=1);
+bzForest(rst.sr, sel.grps = sel.grps, ref.stan.rst=rst.nse, ref.sel.grps=1);
+```
+
+### Basic shrinkage model
+```{r, eval=T, echo=TRUE, fig.width=6, fig.height=5}
+tbl.sub <- bzSummary(rst.bs, ref.stan.rst=rst.nse, ref.sel.grps=1);
+print(tbl.sub);
+bzPlot(rst.bs, sel.grps = sel.grps, ref.stan.rst=rst.nse, ref.sel.grps=1);
+bzForest(rst.bs, sel.grps = sel.grps, ref.stan.rst=rst.nse, ref.sel.grps=1);
+```
+
+## Posterior subgroup treatment effect comparison
+
+Posterior subgroup treatment effect can be compared between subgroups by functions
+*bzSummaryComp*, *bzPlotComp* and *bzForestComp*.
+
+### Simple regression model
+```{r, eval=T, echo=TRUE, fig.width=6, fig.height=5}
+tbl.sub <- bzSummaryComp(rst.sr, sel.grps=sel.grps);
+print(tbl.sub);
+bzPlot(rst.sr, sel.grps = sel.grps);
+bzForest(rst.sr, sel.grps = sel.grps);
+```
+
+### Basic shrinkage model
+```{r, eval=T, echo=TRUE, fig.width=6, fig.height=5}
+tbl.sub <- bzSummaryComp(rst.bs, sel.grps=sel.grps);
+print(tbl.sub);
+bzPlotComp(rst.bs, sel.grps = sel.grps);
+bzForestComp(rst.bs, sel.grps = sel.grps);
+```
+
+## Overall summary
+**beanz** provides function *bzRptTbl* to generate the summary posterior
+subgroup treatment effect table from the model selected by DIC (i.e. the model
+with the smallest DIC):
+
+```{r, echo=TRUE}
+lst.rst     <- list(nse=rst.nse, sr=rst.sr, bs=rst.bs);
+tbl.summary <- bzRptTbl(lst.rst, dat.sub = subgrp.effect, var.cov = var.cov);
+print(tbl.summary);
+```
+
+# Predictive distribution
+
+Function *bzPredSubgrp* generates the predictive distribution of the
+subgrooup treatment effects.
+
+```{r, eval=T, echo=TRUE}
+pred.dist <- bzPredSubgrp(rst.sr,
+                                  dat.sub=subgrp.effect,
+                                  var.estvar = var.estvar);
+head(pred.dist);
+```
+
+
+# Graphical User Interface
+
+With package *shiny* installed, *beaz* provides a web-based graphical user
+interface (GUI) for conducting the HTE analysis in an user-friendly interactive
+manner. The GUI can be started by
+
+```{r, eval=F}
+bzShiny();
+```
+
+# Toolbox
+
+Package **beanz** provides function *bzGailSimon* that implements the Gail-Simon
+test for qualitative interactions:
+
+```{r, echo=T}
+gs.pval <- bzGailSimon(subgrp.effect$Estimate,
+                       sqrt(subgrp.effect$Variance));
+print(gs.pval);
+```
+
+The result show that there is no significant qualitative interactions according
+to the Gail-Simon test.
+

@@ -1,0 +1,421 @@
+---
+title: "Introduction to the *smurf* package"
+author: |
+ | Tom Reynkens, Sander Devriendt and Katrien Antonio
+ | LRisk, Faculty of Economics and Business, KU Leuven
+date: '`r Sys.Date()`'
+bibliography: smurf.bib
+nocite: |
+ @SMuRF, @fista, @bookhastie
+output: bookdown::html_document2
+vignette: >
+  %\VignetteIndexEntry{Introduction to the smurf package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+```{r setup, include = FALSE}
+library("smurf")
+```
+
+
+# Introduction
+
+The **smurf** package contains the implementation of the Sparse Multi-Type Regularized Feature modeling (SMuRF) algorithm for Generalized Linear Models (GLMs): a proximal gradient algorithm to fit GLMs with multiple types of predictors via regularized maximum likelihood.
+This vignette describes how to use the most important functions of the package.
+
+* The [second](#fitting-a-model) section describes the model [fitting function](#fitting-function) and gives an overview of the different [penalty types](#penalty-types).
+
+* The [next](#output) section describes the output from the fitting function which is an S3 object of class *glmsmurf*.  Several S3 methods to visualize results or extract components are available for this class.
+
+* The [fourth](#selection-of-lambda) section contains details on the selection of the tuning parameter $\lambda$ using in-sample or out-of-sample criteria, or using cross-validation.
+
+*  More details on the use of Graph-Guided Fused Lasso penalties are available in the [fifth](#graph-guided-fused-lasso) section.
+
+
+## Data
+
+All functions will be illustrated using the rent data from the **catdata** package which contains the rent prices for Munich residences in 2003. The goal is to predict the monthly rent per square meter, based on a set of predictors. Since this data was studied previously by @gertheiss2010, the predictors are pretreated in the same way. 
+
+```{r}
+data("rent", package = "catdata")
+
+# Urban district in Munich
+rent$area <- as.factor(rent$area)
+
+# Decade of construction
+rent$year <- as.factor(floor(rent$year / 10) * 10)
+
+# Number of rooms
+rent$rooms <- as.factor(rent$rooms)
+
+# Quality of the house with levels "fair", "good" and "excellent"
+rent$quality <- as.factor(rent$good + 2 * rent$best)
+levels(rent$quality) <- c("fair", "good", "excellent")
+
+# Floor space divided in categories (0, 30), [30, 40), ...,  [130, 140)
+sizeClasses <- c(0, seq(30, 140, 10))
+rent$size <- as.factor(sizeClasses[findInterval(rent$size, sizeClasses)])
+
+# Is warm water present?
+rent$warm <- factor(rent$warm, labels = c("yes", "no"))
+
+# Is central heating present?
+rent$central <- factor(rent$central, labels = c("yes", "no"))
+
+# Does the bathroom have tiles?
+rent$tiles <- factor(rent$tiles, labels = c("yes", "no"))
+
+# Is there special furniture in the bathroom?
+rent$bathextra <- factor(rent$bathextra, labels = c("no", "yes"))
+
+# Is the kitchen well-equipped?
+rent$kitchen <- factor(rent$kitchen, labels = c("no", "yes"))
+```
+
+
+
+# Fitting a model
+
+Consider a response variable $\mathbf y$ and the model matrix $\boldsymbol X$. The objective function for a regularized generalized linear model with a multi-type penalty is
+\begin{equation}
+\mathcal{O}(\boldsymbol\beta; \boldsymbol X, \mathbf y) = f(\boldsymbol\beta; \boldsymbol X,\mathbf y) + \lambda \cdot \sum_{j=0}^J g_j(\boldsymbol\beta_j), (#eq:penmultireg)
+\end{equation}
+where $f(\cdot)$ is minus the log-likelihood function divided by the sample size, $g_j(\cdot)$ a convex function for all $j \in \{0,\ldots, J\}$ and $\boldsymbol\beta_j$ represents a subset of the full parameter vector $\boldsymbol\beta$ such that $(\beta_0, \boldsymbol\beta_1,\ldots, \boldsymbol\beta_J) = \boldsymbol\beta$, with $\beta_0$ the intercept. As the intercept is usually not regularized, we set $g_0(\cdot) = 0$. The penalty functions $g_j(\cdot)$ serve as a measure to avoid overfitting the data, while the tuning parameter $\lambda$ controls the strength of the penalty. A high value of $\lambda$ increases its importance in the objective function $\mathcal{O}(\cdot)$ and will increase the sparsity of the estimated model. More details can be found in @SMuRF.
+
+
+## Formula
+
+Using a formula object, the user supplies the partition of $\boldsymbol\beta$ in subvectors $\boldsymbol\beta_j$ and the choice of $g_j(\cdot)$ such that for each $j$ the penalty $g_j(\cdot)$ takes the underlying structure of the coefficients in $\boldsymbol\beta_j$ into account. In principle, each $\boldsymbol\beta_j$ corresponds to a single predictor or an interaction effect. Only for the Group Lasso penalty, multiple predictors can be combined into one $\boldsymbol\beta_j$, see [Group Lasso](#group-Lasso).
+
+The response variable is added to the formula with its name followed by a tilde as in the formula for the standard GLM function in R. Predictors are added with their name using the `p` function. This function contains a `pen` argument which indicates the penalty type: 
+
+* `"none"`: no penalty, 
+* `"lasso"`: Lasso, 
+* `"grouplasso"`: Group Lasso,
+* `"flasso"`: Fused Lasso, 
+* `"gflasso"`: Generalized Fused Lasso, 
+* `"2dflasso"`: 2D Fused Lasso, 
+* `"ggflasso"`: Graph-Guided Fused Lasso,
+
+where `"lasso"` is the default. If a predictor is added to the formula without the `p` function, this predictor is not regularized, i.e. this is equivalent to using `p` with argument `pen = "none"`, see `bathextra` in the example below.
+
+
+* Predictors with no penalty, a Lasso penalty or a Group Lasso penalty should be numeric or a factor which can be non-numeric. 
+* Predictors with a Fused Lasso, Generalized Fused Lasso, 2D Fused Lasso or Graph-Guided Fused Lasso penalty should be given as a factor which can also be non-numeric. 
+
+When a predictor is given as a factor, there cannot be any unused levels. For a factor, the first level is taken as the reference category in case one is required (see Fused Lasso and Generalized Fused Lasso). Using the `refcat` argument in `p`, the user can specify a different level to be used as the reference category. In the example below, the reference category for `year` is changed from the first level (1910) to 2000.
+
+Note that all predictors need to be contained in a data frame that is specified in the fitting function `glmsmurf`.
+
+As an example we create a formula with 
+
+* `rentm` as response variable,
+* `area` with a Generalized Fused Lasso penalty,
+* `year`, `rooms`, `quality` and `size` with Fused Lasso penalties,
+ where the reference category for `year` is changed to 2000,
+* `warm` and `central` are in one group for the Group Lasso penalty,
+* `tiles` and `bathextra` are not regularized,
+* `kitchen` has a Lasso penalty.
+
+```{r, eval = FALSE}
+rentm ~ p(area, pen = "gflasso") + 
+        p(year, pen = "flasso", refcat = 2000) + p(rooms, pen = "flasso") + 
+        p(quality, pen = "flasso") + p(size, pen = "flasso") +
+        p(warm, pen = "grouplasso", group = 1) + p(central, pen = "grouplasso", group = 1) + 
+        p(tiles, pen = "none") + bathextra + 
+        p(kitchen, pen = "lasso")
+```
+
+## Penalty types
+
+In this subsection we explain the different subpenalty types of the multi-type Lasso penalty.
+
+
+### Lasso
+The Lasso penalty is particularly useful for categorical or continuous predictors, e.g. the `kitchen` predictor in the `rent` data, and is given by
+  \begin{equation}
+g_{\text{Lasso}}(\boldsymbol\beta_j) = \sum_{i=1}^{p_j} w_{j,i}|\beta_{j,i}| = ||\mathbf w_j * \boldsymbol\beta_j||_1,
+(#eq:lasso)
+\end{equation}
+where $p_j$ is the number of individual coefficients $\beta_{j,i}$ within the vector $\boldsymbol\beta_j$, $\mathbf w_j$ is a vector of penalty weights and `$*$' denotes the componentwise multiplication.
+Depending on the tuning parameter $\lambda$ and the weight vector $\mathbf w_j$, this penalty will encourage some coefficients to become zero, effectively removing them from the model. The other coefficients will have estimates closer to 0 than in an unregularized setting, reducing estimation variance but increasing bias. 
+For continuous predictors represented by one coefficient, the Lasso penalty serves as a feature selection tool where the most important predictors receive non-zero coefficients. With categorical predictors, Lasso selects the relevant coefficients (or: levels) within each predictor. 
+
+No reference category should be chosen, as this would change the interpretation of the coefficients and subsequently of the Lasso penalty.
+
+### Group Lasso
+The Group Lasso penalty uses an $L_2$-norm to encourage the coefficients in $\boldsymbol\beta_j$ to be removed from the model:
+\begin{equation*}
+g_{\text{grpLasso}}(\boldsymbol\beta_j) = w_j \sqrt{\sum_{i=1}^{p_j} \beta_{j,i}^2}= ||w_{j}\boldsymbol\beta_{j}||_2,
+\end{equation*}
+where $w_{j}$ is the penalty weight for predictor $j$. In contrast to the $L_1$-norm, the $L_2$-norm is not separable for each coefficient in $\boldsymbol\beta_j$ and is only non-differentiable when all $\beta_{j,i}$ are 0. When $\boldsymbol\beta_j$ consists of only one coefficient, the $L_2$-norm reduces to the $L_1$-norm and the standard Lasso penalty is retrieved. The Group Lasso penalty is appropriate to test if $\boldsymbol\beta_j$ has adequate predictive power as a whole, because the estimates for $\beta_{j,i}$ will be either all zero or all non-zero. This is particularly useful for selecting categorical factors. 
+
+When applied to a categorical predictor, the Group Lasso requires no reference category, similar to the case of the standard Lasso penalty.
+
+By default, the Group Lasso penalty is applied to all coefficients of a single predictor. However, using
+the `group` argument in the `p` function, one can also set a Group Lasso penalty to the coefficients of multiple predictors. In the example above, the Group Lasso penalty is applied to the coefficients of both the predictors `warm` and `central` (which form group 1). This means that the $\boldsymbol\beta_j$ is then the vector containing the coefficients of `warm` and `central`. Note that `group = 0` means that this predictor does not belong to a group, i.e. $\boldsymbol\beta_j$ contains the coefficients of only this predictor. 
+ 
+### Fused Lasso
+To group, or bin, consecutive levels within a predictor, the Fused Lasso penalty puts an $L_1$-penalty on the differences between subsequent coefficients:
+\begin{equation*}
+g_{\text{fLasso}}(\boldsymbol\beta_j) = \sum_{i=2}^{p_j} w_{j,i-1}|\beta_{j,i} - \beta_{j,i-1}| = ||D(\mathbf w_j) \boldsymbol\beta_j||_1, (#eq:flasso)
+\end{equation*}
+with $D(\mathbf w_j)$ the first order difference matrix where the rows are weighted by the elements in $\mathbf w_j$:
+\begin{equation}
+D(\mathbf w_j) = \begin{bmatrix}
+-w_{j,1} & w_{j,1} & 0 & &  0 & 0\\
+0& -w_{j,2} & w_{j,2}  & \cdots & 0& 0\\
+0&  0   & -w_{j,3}   & & 0  &0\\
+&  \vdots & & \ddots   &  w_{j,p_j-2} & 0\\
+0& 0&0&& -w_{j,p_j-1} & w_{j,p_j-1}
+\end{bmatrix}.
+(#eq:Dmat)
+\end{equation}
+This penalty is suitable for ordinal predictors and continuous predictors coded as ordinal predictors to capture non-linear effects. Because \@ref(eq:flasso) only regularizes differences, a reference level needs to be chosen to get a unique minimizer $\boldsymbol\beta$ when used in optimization problem \@ref(eq:penmultireg). The coefficient of $\boldsymbol\beta_j$ corresponding to this reference level is then set to 0 or, equivalently, omitted from the vector $\boldsymbol\beta_j$ as well as the relevant column in \@ref(eq:Dmat). For high values of $\lambda$ in \@ref(eq:penmultireg), all coefficients in $\boldsymbol\beta_j$ will become 0, such that they are fused with the reference category, and the corresponding predictor is then effectively removed from the model.
+
+When using a Fused Lasso penalty, the levels should be ordered from smallest to largest. 
+By default, the first level will be the reference level, but this can be changed using the `refcat` argument (see above).
+
+### Generalized Fused Lasso
+The Generalized Fused Lasso penalty allows the user to set a graph $\mathcal{G}$ to determine which coefficient differences should be regularized:
+\begin{align}
+g_{\text{gfLasso}}(\boldsymbol\beta_j) &= \sum_{(i,l)\in \mathcal{G}} w_{j,il}|\beta_{j,i} - \beta_{j,l}| = ||G(\mathbf w_j)\boldsymbol\beta_j||_1,(#eq:gflasso)
+\end{align}
+where $G(\mathbf w_j)$ is the matrix of the linear map projecting $\boldsymbol\beta_j$ onto all differences of coefficients connected by edges in the graph $\mathcal{G}$, with the rows weighted by the elements in $\mathbf w_j$. The matrix $G(\mathbf w_j)$ thus generalizes $D(\mathbf w_j)$ in \@ref(eq:Dmat). Similar to the Fused Lasso, a reference category is needed to obtain a unique minimizer $\boldsymbol\beta$ of \@ref(eq:penmultireg).
+This penalty is useful to bin predictors whenever a straightforward graph is available. 
+
+* For unordered categorical factors, without any underlying structure, such as the \texttt{model} predictor in the \texttt{MTPL} example, the graph leading to a regularization of all possible coefficient differences is used.
+This corresponds to `pen = "gflasso"` in the `p` function.
+* For spatial predictors, the obvious penalty is to regularize the coefficient differences for areas sharing a physical border. This penalty is also know as the Graph-Guided Fused Lasso and corresponds to `pen = "ggflasso"` in the `p` function. More details can be found in the [fifth](#spatial-penalty) section.
+* Another special case of the Generalized Fused Lasso is the 2D Fused Lasso which can be used to model     interaction effects. This penalty corresponds to `pen = "2dflasso"` in the `p` function. Note that the interaction between 2 predictors should be added to the formula as
+  ```{r, eval = FALSE}
+  p(pred1, pred2, pen = "2dflasso")
+  ```
+  where `pred1` and `pred2` are the names of the two predictors. When adding an interaction effect, the 1D main effects   should also be present in the model. We also allow the use of binned factors as interaction predictors if the original predictors are included in the model as a main effect. They should have the original predictor name + '.binned' as predictor names. For example: the original predictor 'age' and 'power' are included in the model and   the interaction of 'age.binned' and 'power.binned' can also be present in the model formula. This way, the user can keep control of the number of parameters used in the estimation of the interaction effect by reducing the number of levels in the binned version compared to the original predictor.
+
+### Combined penalty
+We allow for combinations of the Lasso and the Group Lasso with the (Generalized) Fused Lasso penalty such that a joint penalty for $\boldsymbol\beta_j$ results:
+\begin{equation}
+g_{\text{s.grp.gfLasso}}(\boldsymbol\beta_j) = \lambda_1 g_{\text{Lasso}}(\boldsymbol\beta_j) + \lambda_2 g_{\text{grpLasso}}(\boldsymbol\beta_j) + g_{\text{gfLasso}}(\boldsymbol\beta_j). 
+(#eq:sgrpgfl)
+\end{equation}
+We refer to this penalty as the Sparse Group Generalized Fused Lasso for which tuning parameters $\lambda_1$ and $\lambda_2$ determine the relative strength of each term in the joint penalty. Adding the Lasso penalty to the (Generalized) Fused Lasso allows for simultaneous selection and binning of the individual coefficients. The Group Lasso encourages selection of the vector $\boldsymbol\beta_j$ on top of the binning effect of (Generalized) Fused Lasso. Due to the addition of the Lasso or Group Lasso penalty, the parametrization in \@ref(eq:sgrpgfl) is uniquely determined when $\lambda_1$ or $\lambda_2$ is non-zero and no reference category is needed.
+
+`lambda1` and `lambda2` are input arguments for the fitting function `glmsmurf`. They are by default equal to zero meaning that the ordinary (Generalized) Fused Lasso penalty is used.
+
+
+## Fitting function
+
+The `glmsmurf` function fits a multi-type regularized GLM using the SMuRF algorithm. Following arguments need to be provided:
+
+* `formula`: a formula object describing the model to be fitted, see the previous subsection.
+* `family`: A family object specifying the error distribution and link function for the model. This is the same as in the standard `glm` function.
+* `data`: A data frame containing the model response and predictors for the observations.
+* `lambda`: Either the penalty parameter $\lambda$, a positive number; or a string describing the method (in-sample, out-of-sample or cross-validation) and measure used to select the penalty parameter. See [Selection of lambda](#selection-of-lambda) for more details.
+* `pen.weights`: Either a string describing the method to compute the penalty weights $w_{j,i}$: 
+
+    - `"eq"`: equal penalty weights $w_{j,i}=1$ (default). 
+    - `"stand"`: standardization penalty weights. 
+    - `"glm"`: adaptive penalty weights based on an initial GLM fit. 
+    - `"glm.stand"`: standardization adaptive penalty weights based on an initial GLM fit. 
+    - `"gam"`: adaptive penalty weights based on an initial Generalized Additive Model (GAM) fit. 
+    - `"gam.stand"`: standardization adaptive penalty weights based on an initial GAM fit;
+    
+  or a list with the penalty weight vector per predictor. We refer to @SMuRF for more details on standardization and adaptive penalty weights per penalty type.
+
+For the Munich rent example, we fit a GLM similar to @gertheiss2010. First, we create a formula with `rentm` as response variable, `area` with a Generalized Fused Lasso penalty to regularize all possible differences between the coefficients of the areas, `year`, `rooms`, `quality` and `size` with Fused Lasso penalties to regularize the difference between subsequent coefficients, and the other (binary) predictors are regularized using Lasso.
+ 
+```{r}
+formu <- rentm ~ p(area, pen = "gflasso") + 
+                 p(year, pen = "flasso") + p(rooms, pen = "flasso") + 
+                 p(quality, pen = "flasso") + p(size, pen = "flasso") +
+                 p(warm, pen = "lasso") + p(central, pen = "lasso") + 
+                 p(tiles, pen = "lasso") + p(bathextra, pen = "lasso") + 
+                 p(kitchen, pen = "lasso") 
+```
+
+Next, we fit a multi-type regularized GLM, where we use standardization adaptive penalty weights based on an initial GLM fit.
+We predetermined the value for lambda using cross-validation (with the deviance as loss measure and the one standard error rule), see [Selection of lambda](#selection-of-lambda).
+```{r, warning = FALSE}
+munich.fit <- glmsmurf(formula = formu, family = gaussian(), data = rent, 
+                       pen.weights = "glm.stand", lambda = 0.008914)
+```
+
+# Output
+The `glmsmurf` function returns an object of the S3 class `glmsmurf` which partially inherits from the `glm` and `lm` classes. It contains, among others, the coefficients of the fitted model, and the deviance and information criteria of the fitted model. An overview of all components of a `glmsmurf`-object can be found on its help page.
+
+There are several S3 methods available for objects of this class. Below we illustrate a few of these methods, but a full overview can be found on the help page of `glmsmurf`-objects.
+
+As with most regularization methods, the coefficient estimates and predictions of our fitted model will be biased. To reduce this bias, we propose to re-estimate the model without penalties, but with a reduced model matrix $\boldsymbol X'$, based on the parameter estimates. This can be done by removing the columns of $\boldsymbol X$ for which the coefficients are estimated to be 0 (*feature selection*), and by collapsing the columns for which the coefficient estimates are fused (*clustering*). The re-estimation is then performed by optimizing the objective function without the penalties, but on the reduced model matrix $\boldsymbol X'$. The re-estimated coefficients will thus have the same non-zero and fused coefficients as the regularized coefficients, but will not be biased. 
+
+We first plot the coefficients of the estimated model (first plot), and the coefficients of the re-estimated model (second plot). The grey squares indicate zero coefficients. Per predictor, groups of equal coefficients are indicated
+in the same color (up to 8 colors).
+```{r, warning = FALSE}
+plot(munich.fit)
+plot_reest(munich.fit)
+```
+
+Next, it is also useful to look at the `summary` function. It prints the coefficients of the estimated and re-estimated models, next to information on the goodness-of-fit and some details on the SMuRF algorithm (including the number of iterations).
+```{r}
+summary(munich.fit)
+```
+We see e.g. that buildings from the 1930s and 1940s form a cluster, and similar for buildings of the 1990s and the 2000s. The coefficient for 'two rooms' is 0 which means that the effect for a one-room (reference category) and a two-room appartment is the same. As expected, the re-estimated coefficients are very similar to the results from @gertheiss2010.
+
+# Selection of lambda
+
+The penalty parameter $\lambda$ can be given as input by the user, or determined using an in-sample or out-of-sample criterion or using (stratified) $k$-fold cross-validation.
+This is specified through the input argument `lambda`.
+
+When no numeric value of $\lambda$ is given, the algorithm considers a vector $\boldsymbol{\lambda}$ of length $n_\lambda$, given by `lambda.length`, with exponentially decreasing values between `lambda.max` and `lambda.min`:
+\[\lambda_i = \lambda_{\text{max}}e^{\frac{i-1}{n_\lambda-1}\log\left(\frac{\lambda_{\text{min}}}{\lambda_{\text{max}}}\right)} \qquad \text{for }i \in \{1,\ldots,n_\lambda \}.\]
+`lambda.min`, `lambda.max` and `lambda.length` can be given as input by the user using the `control` argument of `glmsmurf`. The default value for `lambda.length` is 50. `lambda.max` is by default determined internally such that the intercept is the only non-zero coefficient in the model corresponding to this value of $\lambda$. `lambda.min` is by default equal to $10^{-4}$ times `lambda.max`. We make use of warm starts: the obtained coefficients for the value $\lambda_i$ are used as starting value when fitting the model using the current value $\lambda_{i+1}$.  Note that we start with the largest value of $\lambda$ since this results in an intercept-only model (when `lambda.max` is determined internally)
+which is fast to fit. Additionally, the user can supply his own vector $\boldsymbol{\lambda}$ through the `control` argument `lambda.vector`. This sequence of $\lambda$-values is preferably decreasing to make efficient use of the warm starts.
+
+## In-sample selection
+When selecting $\lambda$ in-sample, we fit the model for each considered value of $\boldsymbol\lambda$ to the whole sample.
+Then, we compute for each fitted model the selected error measure: 
+
+* Akaike Information Criterion (AIC): `lambda = "is.aic"`
+  \[\text{AIC} = -2\log \mathcal{L} + 2d\]
+  with $\mathcal{L}$ the log-likelihood of the model and $d$ the number of unique non-zero coefficients (degrees of freedom),
+* Bayesian Information Criterion (BIC): `lambda = "is.bic"`
+  \[\text{BIC} = -2\log \mathcal{L} + \log(n)d\]
+ with $n$ the number of observations in the data set,
+* Generalized Cross-Validation (GCV) score: `lambda = "is.gcv"`
+  \[\text{GCV} = \frac{-2\log \mathcal{L}}{n \left(1 - \frac{d}{n}\right)^2}.\]
+  
+The optimal value for $\lambda$ is the one for which the selected error measure is minimal.
+
+## Out-of-sample selection
+When selecting $\lambda$ out-of-sample, we fit the model for each considered value of $\lambda$ to the training sample.
+Then, we compute for each fitted model the selected error measure using the validation sample: 
+
+* Deviance: `lambda = "oos.dev"` 
+  \[\text{deviance} = -2\log \mathcal{L}.\]
+* Mean Squared Error (MSE): `lambda = "oos.mse"`
+  \[\text{MSE} = \frac{1}{n} \sum_{i=1}^n (y_i - \hat{y}_i)^2\]
+  with $\hat{y}_i$ the fitted value for $y_i$. Note that this measure is only suitable for continuous distributions.
+* Dawid-Sebastiani Score (DSS, @dss): `lambda = "oos.dss"`
+  \[\text{DSS} = \frac{1}{n} \sum_{i=1}^n \left(\frac{y_i - \hat{y}_i}{\sigma_P}\right)^2 +2\log\sigma_P\]
+  with $\sigma_P$ the square root of the variance of the family (`variance` of the `family` element) evaluated in the fitted values on the link-scale ($\boldsymbol \eta_i$). This measure is especially suitable for count data.
+
+The optimal value for $\lambda$ is again the one for which the selected error measure is minimal.
+The data is split into a training sample and validation sample using the arguments `validation.index` or `oos.prop` of `glmsmurf.control`. The default is to use 80\% of the data as training sample and 20\% as validation sample.
+Note that the validation data are only used to compute the error measures for the selection of lambda.
+
+## Stratified $k$-fold cross-validation
+With stratified $k$-fold cross-validation, the data set is partitioned into $k$ disjoint sets (or: folds) such that each level of the response is equally represented in each set. We fit the model with a certain value of $\boldsymbol \lambda$ to the training sample consisting of $k-1$ subsamples, and then compute an error measure using the remaining subsample (which is the validation sample). This can be repeated $k$ times such that each subsample is used exactly once as the validation sample. The average of these $k$ error measures is used as the error measure for this value of $\lambda$.
+The optimal value for $\lambda$ is then the one for which the average error measure is minimal. By default we use $k=5$, i.e. five-fold cross-validation. Possible error measures are 
+
+* Deviance: `lambda = "cv.dev"`, 
+* MSE: `lambda = "cv.mse"`,
+* DSS: `lambda = "cv.dss"`.
+
+Alternatively, cross-validation can also be performed using the one standard error rule. Here, the value of $\lambda_0$ for which the average error measure is minimal is determined first as explained above. Then, we take the largest value $\lambda_{\text{opt}}$ of $\boldsymbol\lambda$ such that its average error measure $ae_{\lambda_{\text{opt}}}$ is within one standard error of the average error measure of $\lambda_0$:
+
+\[\lambda_{\text{opt}} = \max\{\lambda_i | ae_{\lambda_i} \leq ae_{\lambda_0} + see_{\lambda_0}\}\]
+with $ae_{\lambda}$ and $see_{\lambda}$ the average and standard error (respectively) of the error measure when using $\lambda$ as tuning parameter. Using the same error measures as before, $\lambda$ can thus also be determined using the one standard error rule for cross-validation:
+
+* Deviance: `lambda = "cv1se.dev"`, 
+* MSE: `lambda = "cv1se.mse"`,
+* DSS: `lambda = "cv1se.dss"`.
+
+## Deterministic selection of lambda
+
+The cross-validation folds are not deterministic. The validation sample for selecting lambda out-of-sample is determined at random when no indices are provided 
+in `validation.index` in the control object argument. In these cases, the selected value of lambda is hence not deterministic. 
+When selecting lambda in-sample, or out-of-sample when indices are provided in `validation.index` in the control object argument, the selected value of lambda is deterministic.
+
+## Munich rent example
+To select the optimal value for $\lambda$ in the example, we use stratified five-fold cross-validation 
+with the deviance as loss measure and the one standard error rule. The number of values of $\lambda$ to consider is set to 25 using the `control` argument.
+```{r, eval = FALSE}
+munich.fit.cv <- glmsmurf(formula = formu, family = gaussian(), data = rent, 
+                          pen.weights = "glm.stand", lambda = "cv1se.dev",
+                          control = list(lambda.length = 25L))
+```
+The optimal value of $\lambda$ can then be obtained with
+```{r, eval = FALSE}
+munich.fit.cv$lambda
+```
+
+`plot_lambda` can be used to plot the used error measure, the deviance in our example, as a function of the logarithm of $\boldsymbol\lambda$. Note that when the argument `log.lambda` is set to `FALSE`, the actual values of $\lambda$ are used on the x-axis.
+
+```{r, eval = FALSE}
+plot_lambda(munich.fit.cv)
+```
+```{r fig1, echo = FALSE, out.width = "545px"}
+knitr::include_graphics("Plot_lambda1.png")
+```
+
+The dotted vertical line corresponds to the logarithm of $\lambda_0$: the value of lambda for which the cross-validation deviance is minimal. The vertical segments indicate the standard errors of the cross-validation deviance for a certain value of lambda. The average deviance plus one standard error for $\lambda_0$ is indicated by the dotted horizontal line. As we use the one standard error rule, the optimal value for $\lambda$ is the largest such that the deviance corresponding to this value is smaller than the dotted horizontal line.
+The logarithm of this value is indicated by the dashed vertical line.
+You can also add standard plotting arguments to the `plot_lambda` function to adjust your plot. For example, you can use the `xlim` and `ylim` arguments to zoom in on a specific part of the plot.
+
+```{r, eval = FALSE}
+# Zoomed plot
+plot_lambda(munich.fit.cv, xlim = c(-8, -4), ylim = c(1550, 1750))
+```
+```{r fig2, echo = FALSE, out.width = "545px"}
+knitr::include_graphics("Plot_lambda2.png")
+```
+
+# Graph-Guided Fused Lasso
+
+Before, we used a Generalized Fused Lasso penalty for the predictor `area` in order to regularize all possible coefficient differences.
+Another possibility would be to use the Graph-Guided Fused Lasso penalty to only regularize the differences of coefficients of neighboring areas. When using a Graph-Guided Fused Lasso penalty, the adjacency matrix corresponding to the graph needs to be provided. The elements of this matrix are zero when two levels are not connected (areas that do not share a border in our example), and one when they are adjacent (i.e. connected). For large spatial predictors such as postal code, the adjacency matrix can be obtained using shapefiles of the region under consideration. For the Munich areas, the adjacency matrix can be inputted manually with (see e.g. @OelkerTutz for a map of the areas in Munich):
+
+```{r, eval = FALSE}
+munich_adj <- matrix(0, 25, 25)
+colnames(munich_adj) <- rownames(munich_adj) <- 1:25
+munich_adj[1,  c(2, 3, 5, 12, 13)] <- 1
+munich_adj[2,  c(1, 3, 5, 6, 8, 18)] <- 1
+munich_adj[3,  c(1, 2, 4, 8, 9, 12)] <- 1
+munich_adj[4,  c(3, 9, 11, 12)] <- 1
+munich_adj[5,  c(1, 2, 13, 14, 16, 17, 18)] <- 1
+munich_adj[6,  c(2, 7, 8, 18, 19)] <- 1
+munich_adj[7,  c(6, 8, 19, 20, 25)] <- 1
+munich_adj[8,  c(2, 3, 6, 7, 9, 25)] <- 1
+munich_adj[9,  c(3, 4, 8, 10, 11, 21, 25)] <- 1
+munich_adj[10, c(9, 11, 21, 23, 24)] <- 1
+munich_adj[11, c(4, 9, 10, 12, 24)] <- 1
+munich_adj[12, c(1, 3, 4, 11, 13)] <- 1
+munich_adj[13, c(1, 5, 12, 14, 15)] <- 1
+munich_adj[14, c(5, 13, 15, 16)] <- 1
+munich_adj[15, c(13, 14, 16)] <- 1
+munich_adj[16, c(5, 14, 15, 17)] <- 1
+munich_adj[17, c(5, 16, 18)] <- 1
+munich_adj[18, c(2, 5, 6, 17, 19)] <- 1
+munich_adj[19, c(6, 7, 18, 20)] <- 1
+munich_adj[20, c(7, 19, 21, 25)] <- 1
+munich_adj[21, c(9, 10, 20, 22, 23, 25)] <- 1
+munich_adj[22, c(21, 23)] <- 1
+munich_adj[23, c(10, 21, 22, 24)] <- 1
+munich_adj[24, c(10, 11, 23)] <- 1
+munich_adj[25, c(7, 8, 9, 20, 21)] <- 1
+```
+Note that this matrix has to be symmetric and that the names of the areas are given as row and column names.
+
+We can then fit the model with a Graph-Guided Fused Lasso penalty for the predictor `area`.
+The penalty parameter $\lambda$ is again selected using stratified five-fold cross-validation
+with the one standard error rule and the deviance as measure. The adjacency matrix is given as input using the `adj.matrix` argument.
+It should be given as a named list (using the predictor name(s)), or if only one predictor has a Graph-Guided Fused Lasso penalty, 
+it is also possible to only give the adjacency matrix itself (not in a list).
+
+```{r, eval = FALSE}
+formu2 <- rentm ~ p(area, pen = "ggflasso") + 
+                  p(year, pen = "flasso") + p(size, pen = "flasso") + 
+                  p(rooms, pen = "flasso") + p(quality, pen = "flasso") +
+                  p(warm, pen = "lasso") + p(central, pen = "lasso") + 
+                  p(tiles, pen = "lasso") + p(bathextra, pen = "lasso") +
+                  p(kitchen, pen = "lasso") 
+
+munich.fit2 <- glmsmurf(formula = formu2, family = gaussian(), data = rent, 
+                        pen.weights = "glm.stand", lambda = 0.041787, 
+                        adj.matrix = list(area = munich_adj))
+```
+Using a neighbor based Graph-Guided Fused Lasso penalty has the downside that only an uninterrupted cluster of levels (areas here) can be fused together. This is not always the desired behavior as e.g. suburban areas with a similar rent profile might not lie close to each other and might therefore not be fused. However, the user is free to base the Graph-Guided Fused Lasso penalty on other similarities than spatial neighbors. For example, regions with similar socio-economic status or education levels can be defined as neighbors.
+
+# References

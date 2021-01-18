@@ -1,0 +1,82 @@
+---
+title: 'The BClustLonG Package: A Dirichlet Process Mixture Model for Clustering Longitudinal Gene Expression Data'
+author: |
+  | Jiehuan Sun$^1$, Jose D. Herazo-Maya$^2$, Naftali Kaminski$^2$, Hongyu Zhao$^1$, and Joshua L. Warren$^1$
+  | $^1$Department of Biostatistics, Yale School of Public Health
+  | $^2$Pulmonary, Critical Care and Sleep Medicine, Yale School of Medicine
+output: pdf_document
+bibliography: BClustLonG.bib
+vignette: >
+  %\VignetteIndexEntry{BClustLonG}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\usepackage[utf8]{inputenc}
+---
+
+# Overview
+
+Many clustering methods have been proposed, but most of them cannot work for longitudinal gene expression data. Our newly developed method, BClustLonG, can be used to perform clustering analysis for longitudinal gene expression data. It adopts a linear-mixed effects framework to model the trajectory of genes over time, while clustering is jointly conducted based on the regression coefficients obtained from all genes. To account for the correlations among genes and alleviate the  high dimensionality challenges, factor analysis models are adopted for the regression coefficients. The Dirichlet process prior distribution  is utilized for the means of the regression coefficients to induce clustering (See @sun2017dirichlet for details). 
+
+This document provides a tutorial for using the **BClustLonG** package. The tutorial includes information on (1) the format of the input data and (2) how to obtain clustering results and visually show the clustering structure. As with any R package, detailed information on functions, along with their arguments and values, can be obtained in the help files. 
+
+# Input data format
+The analyses performed in this tutorial are based on a simulated dataset, which comes with the package. Basically, the data are generated from a mixture of two multivariate normal distributions, for which the covariance matrix satisfies the factor analysis model assumption (See simulation studies in @sun2017dirichlet for details). 
+
+The input data for **BClustLonG** has to be a list with three elements: Y (gene expression data), ID, and years (The names of the elements have to be matached exactly). Each column of Y represents one gene. The $j_{th}$ row of "Y" represents the gene expression value for subject *ID[j]* at time *years[j]*. So, the length of the "ID", the length of the "years", and the number of rows of "Y" are the same. No missing values are allowed in the data and the variable "years" is preferably on the scale of one (e.g. if the visiting time is on the scale of years, then the unit should be in year such as 2 years instead of 730 days or 24 months), which is related to the default values for the hyperparameters.
+```{r}
+library(BClustLonG,quietly=TRUE)
+data(data)
+str(data)
+head(data.frame(ID=data$ID,years=data$years,data$Y),n=10)
+```
+
+
+# Run BClustLonG
+## Basic usage of BClustLonG
+After the input data (*data*) is prepared in the right format, it is ready to run *BClustLonG* function for clustering. As *BClustLonG* is a Bayesian approach and relies on MCMC for inference, the number of iterations and the number of samples kept for posterior inference need to be specified. For the sake of time, the MCMC is run for 500 iterations  (thinning by 2, so 1000 iterations in total) and the first 100 samples are discarded as burn-ins in the code below. In practice, the number of iterations and the number of samples kept for posterior inference should be set to ensure the convergence of the algorithm. Note that *BClustLonG* does not need the pre-specified number of clusters and can infer the number of clusters from the data.  
+
+In the code below, *BClustLonG* returns the membership indicators of all subjects from all iterations and *calSim* is used to calculate the posterior similarity matrix among the subjects. Based on the posterior similarity matrix, *maxpear* is used to obtain the clustering results. In this simple simulated dataset, the true cluster structure is recovered.
+
+```{r, results='hide'}
+## run BClustLonG and get the clustering results ##
+res = BClustLonG(data, iter=500, thin=2,savePara=FALSE, infoVar="both",factor=TRUE)
+mat = calSim(t(res$e.mat[,101:500])) ## calculate the posterior similarity matrix
+clust = maxpear(mat)$cl ## see maxpear for more details.
+```
+```{r}
+clust
+```
+
+## Obtain clustering results with desired number of clusters
+Although *BClustLonG* can automatically determine the number of clusters and corresponding cluster structure, it is possible to utilize the outputs of *BClustLonG* to produce clustering structure for a given number of clusters (this feature could be useful in practice, since researchers might have some ideas on the number of clusters that are clinically meaningful). Specifically, provided the posterior similarity matrix, Hierarchical Clustering method (*hclust*) can be used to produce clustering structure for a given number of clusters. The following code shows how to achieve this, where the desired number of clusters is 4.
+
+```{r}
+## using Hierarchical Clustering method to obtain the clustering results ##
+CL = cutree(hclust(as.dist(1-mat)),k=4)
+CL
+```
+
+## Visualization of the similarity matrix
+The posterior similarity matrix can also be visually shown so that users can have a rough idea of how many clusters there are. As shown in the figure, it is clear that there are two major clusters.
+
+```{r}
+## plot similarity matrix ##
+require(lattice,quietly=TRUE)
+n = length(unique(data$ID))
+x = rep(1:n,times=n)
+y = rep(1:n,each=n)
+z = as.vector(mat)
+levelplot(z~x*y,col.regions=rev(gray.colors(n^2)), xlab = "Subject ID",ylab = "Subject ID")
+```
+
+## Other options
+BClustLonG adopts a linear-mixed effects with random intercepts and slopes to model the trajectory of genes over time. Hence, each subject has a subject-specific intercept and slope for each gene. It is possible that only the intercepts (i.e. baseline gene expression profiles) are informative of the clustering structure, in which case we may want to cluster only on the intercepts. This can be done by setting the parameter *infoVar="int"*. Sometimes, a diagonal covariance matrix instead of the factor analysis model is preferred for the intercepts and slopes and this can be done by setting the parameter *factor=TRUE* (this can speed up the algorithm and may only be used to get an initial sense of the possible clustering structure in the data).
+
+```{r,  eval=FALSE}
+## Clustering based only on intercepts ##
+res = BClustLonG(data, iter=500, thin=2,savePara=FALSE, infoVar="int",factor=TRUE)
+## clustering based on intercepts and slopes ##
+## assume diagonal covariance matrix for the intecepts and slopes ##
+res = BClustLonG(data, iter=500, thin=2,savePara=FALSE, infoVar="both",factor=FALSE)
+```
+
+# References

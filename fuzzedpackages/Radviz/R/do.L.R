@@ -1,0 +1,52 @@
+#' Perform L-Normalization on a Vector
+#' 
+#' Standardizes all values in a vector to the unit vector ([0,1]) using local min and max
+#' 
+#' @param v a vector of values
+#' @param fun a function that will return the minimum and maximum values to use to scale v;
+#'          defaults to \code{\link[base]{range}}
+#' @param na.rm Logical: should NA be removed? defaults to \code{TRUE}
+#' 
+#' @details This is an alternative to performing a L normalization over the full matrix. 
+#'   if the minimum and the maximum values returned after applying \code{fun} are the same, \code{do.L} 
+#'   will return 0.
+#' @return A vector of values of the same length as x, scaled to the unit vector.
+#' 
+#' @examples
+#' data(iris)
+#' mat <- iris[,c('Sepal.Length','Sepal.Width','Petal.Length','Petal.Width')]
+#' scaled <- apply(mat,2,do.L)
+#' summary(scaled) # all values are between [0,1]
+#' 
+#' scaled2 <- apply(mat,2,do.L,fun=function(x) quantile(x,c(0.025,0.975)))
+#' summary(scaled2) # all values are between [0,1]
+#' 
+#' plot(scaled,scaled2,
+#'      col=rep(seq(1,ncol(scaled)),each=nrow(scaled)),
+#'      pch=16)
+#' legend('topleft',legend=dimnames(scaled)[[2]],col=seq(1,ncol(scaled)),pch=16,bty='n')
+#' 
+#' @author Yann Abraham
+#' @export
+do.L <- function(v,fun=range,na.rm=T) {
+	# if requested remove the na values
+  if(na.rm) {
+		clean_v <- v[!is.na(v)]
+	} else {
+	  clean_v <- v
+	}
+  # find the min and the max
+  range_v <- match.fun(fun)(clean_v)
+	min_v <- min(range_v)
+	max_v <- max(range_v)
+	if(min_v==max_v) {
+	  scaled_v <- rep(0,length(clean_v))
+	} else {
+	  # scale v
+	  scaled_v <- (v-min_v)/(max_v-min_v)
+	  # remove values above and below 1 and 0
+	  scaled_v[scaled_v<0] <- 0
+	  scaled_v[scaled_v>1] <- 1
+	}
+	return(scaled_v)
+}

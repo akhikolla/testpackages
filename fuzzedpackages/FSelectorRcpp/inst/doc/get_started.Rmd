@@ -1,0 +1,122 @@
+---
+title: "Motivation, Installation and Quick Workflow"
+subtitle: "<small> [Marcin Kosinski](http://r-addict.com/About.html) &nbsp;&nbsp;<a href='https://stackoverflow.com/users/3857701'><i class='fa fa-stack-overflow'></i></a>&nbsp;&nbsp;<a href='http://r-addict.com'><i class='fa fa-comment'></i></a>&nbsp;&nbsp;<a href='https://github.com/MarcinKosinski'><i class='fa fa-github'></i></a>&nbsp;&nbsp;<a href='mailto:m.p.kosinski@gmail.com'><i class='fa fa-envelope-o'></i></a> <br> [Zygmunt Zawadzki](https://www.zstat.pl/) &nbsp;&nbsp;<a href='https://www.zstat.pl/'><i class='fa fa-comment'></i></a>&nbsp;&nbsp;<a href='https://github.com/zzawadz'><i class='fa fa-github'></i></a>&nbsp;&nbsp;<a href='mailto:zygmunt@zstat.pl'><i class='fa fa-envelope-o'></i></a></small><br>"
+output:
+  rmarkdown::html_vignette:
+    mathjax:  default
+    fig_caption:  true
+    toc: true
+    section_numbering: true
+    css: ggsci.css
+bibliography: RJreferences.bib
+vignette: >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteIndexEntry{Get started: Motivation, Installation and Quick Workflow}
+---
+
+```{r setup, include = FALSE}
+library(knitr)
+opts_chunk$set(
+    comment = "",
+    fig.width = 12,
+    message = FALSE,
+    warning = FALSE,
+    tidy.opts = list(
+        keep.blank.line = TRUE,
+        width.cutoff = 150
+        ),
+    options(width = 150),
+    eval = TRUE
+)
+```
+
+[FSelectorRcpp](https://mi2-warsaw.github.io/FSelectorRcpp/) is an [Rcpp](https://CRAN.R-project.org/package=Rcpp) (free of Java/Weka) implementation of [FSelector](https://CRAN.R-project.org/package=FSelector) entropy-based feature selection algorithms with a sparse matrix support. It is also equipped with a parallel backend.
+
+## Installation
+
+```{r, eval=FALSE}
+install.packages('FSelectorRcpp') # stable release version on CRAN
+devtools::install_github('mi2-warsaw/FSelectorRcpp') # dev version
+# windows users should have Rtools for devtools installation
+# https://cran.r-project.org/bin/windows/Rtools/
+```
+
+## Motivation
+
+In the modern statistical learning the biggest bottlenecks are computation times of model training procedures and the overfitting. Both are caused by the same issue - the high dimension of explanatory variables space. Researchers have encountered problems with too big sets of features used in machine learning algorithms also in terms of model interpretaion. This motivates applying feature selection algorithms before performing statisical modeling, so that on smaller set of attributes the training time will be shorter, the interpretation might be clearer and the noise from non important features can be avoided. More motivation can be found in [@John94irrelevantfeatures].
+
+Many methods were developed to reduce the curse of dimensionality like **Principal Component Analysis** [@PCA:14786440109462720] or **Singular Value Decomposition** [@eckart1936approximation] which approximates the variables by smaller number of combinations of original variables, but this approach is hard to interpret in the final model. 
+
+Sophisticated methods of attribute selection as **Boruta** algoritm [@Boruta], genetic algorithms [@geneticAlgo, @FedCSIS2013l106] or simulated annealing techniques [@Khachaturyan:a19748] are known and broadly used but in some cases for those algorithms computations can take even days, not to mention that datasets are growing every hour.
+
+Few classification and regression models can reduce redundand variables during the training phase of statistical learning process, e.g. **Decision Trees** [@Rokach:2008:DMD:1796114, @cart84], **LASSO Regularized Generalized Linear Models** (with cross-validation) [@glmnet] or **Regularized Support Vector Machine** [@Xu:2009:RRS:1577069.1755834], but still computations starting with full set of explanatory variables are time consuming and the understaning of the feature selection procedure in this case is not simple and those methods are sometimes used without the understanding.
+
+In business applications there appear a need to provide a fast feature selection that is extremely easy to understand. For such demands easy methods are prefered. This motivates using simple techniques like **Entropy Based Feature Selection** [@Largeron:2011:EBF:1982185.1982389], where every feature can be checked independently so that computations can be performed in a parallel to shorter the procedure's time. For this approach we provide an R interface to **Rcpp** reimplementation [@Rcpp] of methods included in **FSelector** package which we also extended with parallel background and sparse matrix support. This has significant impact on computations time and can be used on greater datasets, comparing to **FSelector**. Additionally we avoided the Weka [@Hall:2009:WDM:1656274.1656278] dependency and we provided faster discretization implementations than those from **entropy** package, used originally in **FSelector**.
+
+## Quick Workflow
+
+```{r}
+library(magrittr)
+library(FSelectorRcpp)
+```
+
+A simple entropy based feature selection workflow. **Information gain** is an easy, linear algorithm that computes the entropy of a dependent and explanatory variables, and the conditional entropy of a dependent variable with a respect to each explanatory variable separately. This simple statistic enables to calculate the belief of the distribution of a dependent variable when we only know the distribution of a explanatory variable.
+
+```{r}
+information_gain(               # Calculate the score for each attribute
+    formula = Species ~ .,      # that is on the right side of the formula.
+    data = iris,                # Attributes must exist in the passed data.
+    type  = "infogain"          # Choose the type of a score to be calculated.
+  ) %>%                          
+  cut_attrs(                    # Then take attributes with the highest rank.
+    k = 2                       # For example: 2 attrs with the higehst rank.
+  ) %>%                         
+  to_formula(                   # Create a new formula object with 
+    attrs = .,                  # the most influencial attrs.
+    class = "Species"           
+  ) %>%
+  glm(
+    formula = .,                # Use that formula in any classification algorithm.
+    data = iris,                
+    family = "binomial"         
+  )
+  
+```
+
+Apply a complicated feature selection search engine, that checks combinations of subsets of the specified attributes' set, to score the currently considered subset, depending on the criterion passed with the `fun` parameter.
+
+```{r}
+evaluator_R2_lm <-    # Create a scorer function.
+  function(
+    attributes,       # That takes the currently considered subset of attributes
+    data,             # from a specified dataset.
+    dependent = 
+      names(data)[1]  # To find features that best describe the dependent variable.
+  ) {
+    summary(          # In this situation we take the r.squared statistic
+      lm(             # from the summary of a linear model object.
+        to_formula(   # This is the score to use to choose between considered 
+          attributes, # subsets of attributes.
+          dependent
+        ),
+        data = data)
+    )$r.squared
+  }
+
+feature_search(          # feature_search work in 2 modes - 'exhaustive' and 'greedy'
+  attributes = 
+    names(iris)[-1],     # It takes attribues and creates combinations of it's subsets.
+  fun = evaluator_R2_lm, # And it calculates the score of a subset that depends on the 
+  data = iris,           # evaluator function passed in the `fun` parameter.
+  mode = "exhaustive",   # exhaustive - means to check all possible 
+  sizes =                # attributes' subset combinations 
+    1:length(attributes) # of sizes passed in sizes.
+)$all
+```
+
+## Use cases
+
+- [Entropy Based Image Binarization with imager and FSelectorRcpp](http://r-addict.com/2017/01/08/Entropy-Based-Image-Binarization.html)
+- [Venn Diagram Comparison of Boruta, FSelectorRcpp and GLMnet Algorithms](https://www.r-bloggers.com/2016/06/venn-diagram-comparison-of-boruta-fselectorrcpp-and-glmnet-algorithms/)
+
+# References

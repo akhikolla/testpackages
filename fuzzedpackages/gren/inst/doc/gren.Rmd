@@ -1,0 +1,422 @@
+---
+title: "gren: Adaptive Group-Regularized Logistic Elastic Net Regression"
+author: 
+  name: "Magnus Münch"
+  affiliation: 
+    1. Department of Epidemiology & Biostatistics, VU University Medical Center, Amsterdam, The Netherlands
+    2. Mathematical Institute, Leiden University, Leiden, The Netherlands
+  email: m.munch@vumc.nl
+date: "`r Sys.Date()`"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{gren: Adaptive Group-Regularized Logistic Elastic Net Regression}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+bibliography: [refs.bib]
+biblio-style: apalike
+link-citations: yes
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+# Overview
+
+This document contains the vignette for the R package <code>gren</code>. The document demonstrates the functionality and usage of the package with two example data sets. Also included are some questions regarding the functionality, which require the user to put some more thought into the data analysis. The vignette can also be used when ignoring the questions. All code to answer the questions is included, but for the the sake of computational time, the code is not run and the output is not shown. The package is based on the publication @munch_adaptive_2018.
+
+The package enables the user to enhance classification performance and variable selection of the logistic elastic net through the inclusion of external information. The information comes in the form of a partitioning of the features into non-overlapping group. Example of such co-data are:
+
+1. Response-independent summaries in the primary data (e.g. standard deviation).
+2. Feature groupings from prior knowledge (e.g. pathways from public data bases). 
+3. Feature-specific summaries from an independent study (e.g. p-values). 
+
+## Elements of the package
+
+Key elements of the <code>gren</code> package are:
+
+1. <code>gren</code>: main function of the package that estimated the model.
+2. <code>cv.gren</code>: convience function that gives cross-validated predictions
+3. <code>coef.gren</code>, <code>predict.gren</code>: extract coefficients and create predictions from an estimated model.
+4. <code>denet</code>, <code>renet</code>: density and random number generator for the elastic net prior distribution.
+
+## Getting started
+
+The <code>gren</code> package is available online. Installation from CRAN is as follows:
+
+```{r, eval=FALSE}
+install.packages("gren")
+```
+
+Now we may load the package
+
+```{r, eval=FALSE}
+library(gren)
+```
+
+The <code>gren</code> package imports the following R packages: <code>glmnet</code>, <code>Rcpp</code>, <code>Iso</code>, and <code>pROC</code>. 
+
+It might be useful to clear the global environment before starting
+
+```{r, eval=FALSE}
+rm(list = ls())
+```
+
+# Example 1: microRNAs in colon cancer
+## Data
+
+In this part, we will be working with an unpublished (anonymised) dataset containing deep sequenced microRNAs for a cohort of treated colorectal cancer patients. The data is read into the global environment with the following piece of code:
+
+```{r, eval=FALSE}
+## load the data
+data(dataColon)
+```
+
+MicroRNAs are small non-coding strands of RNA that are believed to be important in epigenetic functioning. The microRNAs are contained in the <code>mirCol</code> object in the form of a <code>matrix</code>. The rows of the <code>matrix</code> contain the samples, while the columns contain the microRNAs. Run 
+
+```{r, eval=FALSE}
+dim(mirCol)
+``` 
+
+to find the dimensions of the object containing the microRNAs. Note that <code>gren</code> requires an $n \times p$ input matrix, with $n$ and $p$ the number of samples and features, respectively.
+
+__*QUESTION*__
+*How many microRNAs do we have? And what is the number of subjects?*
+
+The aim of the analysis is to classify treatment response, coded as either non-progressive/remission or progressive. The responses are given in the <code>respCol</code> object in the form of a <code>factor</code>.
+
+```{r, eval=FALSE}
+head(respCol)
+table(respCol)
+```
+
+__*QUESTION*__
+*What is the number of non-progressive/remission patients? And the number of progressive patients?*
+
+In addition there are four clinical covariates that we may include in the analysis. They are contained in the <code>data.frame</code> named <code>unpenCol</code>. the first covariate denotes prior use of adjuvent therapy, a binary variable named <code>adjth</code>. The second is the type of systemic treatment in the form of a ternary variable called <code>thscheme</code>. The third is the <code>numeric</code> vector <code>age</code> and the fourth is the binary variable that codes for primary tumour differentiation called <code>pcrcdiff</code>.
+
+```{r, eval=FALSE}
+head(unpenCol)
+
+## we check distribution of the clinical variables
+apply(unpenCol[, c(1, 2, 4)], 2, table)
+hist(unpenCol$age, main="Distribution of ages", xlab="Age")
+```
+
+__*QUESTION*__
+*How many clinical covariates are there?*
+
+__*QUESTION*__
+*Do we want to penalise these clinical covariates? Why/why not?*
+
+Lastly, there is a <code>factor</code> named <code>mirExpr</code>, which contains the group-memberships of the microRNAs. There are three groups: non differentially expressed microRNAs named <code>nonExpr</code>, medium differentially expressed microRNAS (0.001 $<$ FDR $\leq$ 0.05) named <code>medExpr</code>, and highly differentially expressed microRNAs (FDR $<$ 0.001) called <code>highExpr</code>.These groups are based on a preliminary experiment in a different group of patients, where metastatic colorectal tumour tissue and primary colorectal tissue were compared to normal non-colorectal tissue and primary colorectal tissue, respectively [@neerincx_mir_2015]. Run the following code to inspect the partitioning:
+
+```{r, eval=FALSE}
+head(mirExpr)
+table(mirExpr)
+```
+
+__*QUESTION*__
+*What are the sizes of the different groups of microRNAs?*
+
+We expect that incorporation of this partitioning enhances therapy response classification, because tumor-specific miRNAs might be more relevant than non-specific ones.
+
+__*QUESTION*__
+*What group do you expect to receive the largest/smallest penalty?*
+
+## Estimation
+After inspection we standardise the microRNA expression levels. Note that the microRNA expression levels have already been pre-processed somewhat, so they are not counts anymore. But since we standardize them anyway, it doesn't really matter. 
+
+```{r, eval=FALSE}
+mirColScaled <- scale(mirCol)
+```
+
+Now that we have looked at the data and standardised the expression levels, we can estimate a group-regularized elastic net model using the <code>gren</code> function. <code>gren</code> takes several arguments, the most important ones are <code>x</code>, <code>y</code>, <code>m</code>, <code>unpenalized</code>, and <code>partitions</code>. These arguments constitute the data used for the estimation. For an explanation of these arguments and others use <code>?gren</code>.
+
+By default, <code>gren</code> estimates a binary logistic regression model. If the outcome data is not binary, but a sum of binary experiments, we may create a <code>numeric</code> vector <code>m</code> that contains the number of Bernoulli trials for each observation. Since our outcome here is binary, we do not specify it here.
+
+In order to estimate the model, we have to specify a penalty mixing parameter <code>alpha</code>. This parameter determines the proportion of $L_1$ and $L_2$-norm penalty. <code>alpha=0</code> is a ridge model, while <code>alpha=1</code> is the lasso model. We will start with the default value <code>alpha=0.5</code>. If <code>lambda=NULL</code> (default) it is estimated by cross-validation of the regular elastic net model. Furthermore we will include an unpenalized intercept by setting <code>intercept=TRUE</code> (default). 
+
+__*QUESTION*__
+*Can you think of any reason why we don't wish to penalise the intercept?*
+
+The following code fits a group-regularized elastic net model (we set a seed, to make the results reproducible). Note that it may take a few minutes, depending on your computer.
+
+```{r, eval=FALSE}
+set.seed(1)
+## estimate the group-regularized elastic net model
+fitGrenCol <- gren(x=mirColScaled, y=respCol, unpenalized=unpenCol, 
+                   partitions=list(expression=mirExpr), alpha=0.5)
+```
+
+## Interpreting results
+Next we look at the results. The estimated penalty multipliers may be retrieved from the object and plotted. We add a dotted line at one, to indicate the not group-regularized setting:
+
+```{r, eval=FALSE}
+barplot(fitGrenCol$lambdag$expression, main="Estimated penalty multipliers",
+        ylab=expression(paste(lambda[g], "'")),
+        names.arg=c("Not expressed", "Medium differentially \n expressed",
+                    "Highly differentially \n expressed"))
+abline(h=1, lty=2)
+```
+
+__*QUESTION*__
+*Why does the dotted line correspond to a regular (not group-regularized) model?*
+
+__*QUESTION*__
+*Do the estimated penalty multipliers follow the expected pattern?*
+
+It might also be interesting to compare the model parameter estimates by the group-regularized regression with the regular elastic net estimates:
+
+```{r, eval=FALSE}
+## extract the estimates from te fitted object
+estRegular <- coef(fitGrenCol$freq.model$regular, s=fitGrenCol$lambda)[, 1]
+estGroupreg <- coef(fitGrenCol$freq.model$groupreg, s=fitGrenCol$lambda)[, 1]
+
+## plot the estimates in a scatterplot
+plot(estRegular, estGroupreg, col=mirExpr, xlab=expression(hat(beta)[regular]),
+     ylab=expression(hat(beta)[group]), 
+     main="Regular vs group-regularized estimates")
+legend("topleft", pch=1, col=c(1:3),
+       legend=c("Not expressed", "Medium differentially expressed",
+                "Highly differentially expressed"))
+
+names(which(estRegular!=0))
+names(which(estGroupreg!=0))
+
+intersect(names(estRegular)[which(estRegular!=0)[-c(1:6)]],
+          names(estGroupreg)[which(estGroupreg!=0)[-c(1:6)]])
+```
+
+__*QUESTION*__
+*Which model selects more microRNAs, the group-regularized model or the regular model? What is the overlap between the two?*
+
+To reduce the costs of clinical predictions, it is often desirable to obtain a sparse final model. In addition, under equal model sizes, the comparison of two models is easier to interpret. Feature selection is possible by setting <code>psel</code> to the desired number of features and is done by adjusting the global lambda after the penalty multipliers have been estimated. Here, we select 50 features. Again, this will likely take two or three minutes.
+
+```{r, eval=FALSE}
+set.seed(2)
+fitGrenColSel <- gren(x=mirColScaled, y=respCol, unpenalized=unpenCol,
+                      partitions=list(expression=mirExpr), alpha=0.5, psel=50)
+
+## extract the estimates from the model object
+estRegularSel <- coef(fitGrenColSel$freq.model$regular, 
+                      s=fitGrenColSel$lambda)[, 1]
+estGroupregSel <- coef(fitGrenColSel$freq.model$groupreg, 
+                       s=fitGrenColSel$lambda)[, 1]
+## plot the estimates in a scatterplot
+plot(estRegularSel, estGroupregSel, col=mirExpr, 
+     xlab=expression(hat(beta)[regular]), ylab=expression(hat(beta)[group]), 
+     main="Regular vs group-regularized estimates, with model size 50")
+legend("topleft", pch=1, col=c(1:3),
+       legend=c("Not expressed", "Medium differentially expressed",
+                "Highly differentially expressed"))
+
+names(which(estRegularSel!=0))
+names(which(estGroupregSel!=0))
+
+intersect(names(estRegularSel)[which(estRegularSel!=0)[-c(1:6)]],
+          names(estGroupregSel)[which(estGroupregSel!=0)[-c(1:6)]])
+```
+
+__*QUESTION*__
+*How did the results change compared to before? Is there more or less overlap between the selected microRNAs?*
+
+## Predictive performance
+
+Since logistic regression is a classification method, we may compare classification performance of the regular and group-regularized elastic net. To avoid overestimation of performance we would like to use an indepenent data set to calculate the performance measures on. The simplest way of accomplishing this is by randomly splitting the data set in two parts, one for estimation and one for classification performance evaluation. But since we have a limited number of patients, splitting them in half would leave us with a very small dataset for estimation. With such a small data set we run the risk of bad estimators for the model. To avoid this we use cross-validation to estimate performance. Using cross-validation, we will still slightly overestimate performance, but since we are comparing two methods, we expect that this cancels out in the comparison.
+
+The <code>gren</code> package contains a convenience function for performance cross-validation: <code>cv.gren</code>. This function is generally faster than naive cross-validation. An important extra argument is <code>fix.lambda</code>. If it is set to <code>TRUE</code>, the global lambda is fixed throughout the cross-validation iterations, which saves time, but slightly increases overestimation of performance. We compare with the regular elastic net by setting <code>compare=TRUE</code>. To make the comparison fair, we select the same number of features using <code>psel=50</code>.
+
+Otherwise the following code estimates the performance by cross-validation (may take a few minutes to run):
+
+```{r, eval=FALSE}
+set.seed(3)
+fitCvgrenCol <- cv.gren(x=mirColScaled, y=respCol, alpha=0.5, 
+                        partitions=list(expression=mirExpr),
+                        unpenalized=unpenCol, psel=50, nfolds.out=10)
+```
+
+Due to time constraints, we used 10-fold cross-validation to estimate performance by setting <code>nfolds.out=10</code>. It is of course possible to use more folds by changing this value.
+
+To assess predictive performance we compare the ROCs of the group-regularized elastic net with the regular elastic net.
+
+```{r, eval=FALSE}
+## comparing ROCs for group-regularized and regular elastic net
+par(pty="s")
+plot(pROC::roc(respCol, as.numeric(fitCvgrenCol$groupreg$pred)), print.auc=TRUE, 
+     print.auc.x=0.3, print.auc.y=0.2)
+plot(pROC::roc(respCol, as.numeric(fitCvgrenCol$regular$pred)), add=TRUE, col=2, 
+     print.auc=TRUE, print.auc.x=0.3, print.auc.y=0.1)
+legend("topleft", legend=c("Group-regularized", "Regular"), col=c(1:2), lty=1)
+par(pty="m")
+```
+
+__*QUESTION*__
+*Do you think that the inclusion of the co-data helped with predictive performance here?*
+
+It might also be informative to plot the (cross-validated) predicted probabilites of the two models:
+
+```{r, eval=FALSE}
+plot(as.numeric(fitCvgrenCol$regular$pred), 
+     as.numeric(fitCvgrenCol$groupreg$pred), col=respCol, 
+     main="Predicted probabilities for Colon cancer data",
+     xlab="Predictions regular model", 
+     ylab="Predictions group-regularized model")
+legend("topleft", legend=c("progressive", "non-progressive/remission"), 
+       col=c(1:2), pch=1)
+
+par(mfrow=c(1, 2))
+hist(as.numeric(fitCvgrenCol$groupreg$pred), main="Group-regularized",
+     xlab="Predicted probabilities")
+hist(as.numeric(fitCvgrenCol$regular$pred), main="Not group-regularized",
+     xlab="Predicted probabilities")
+par(mfrow=c(1, 1))
+```
+
+__*QUESTION*__
+*In what way does the inclusion of the co-data change the predicted probabilities?*
+
+# Example 2: microRNAs in cervical cancer
+
+## Data
+
+In this study, microRNAs from women were collected through self-samples. These women were either cervical cancer disease free or with high grade cervical lesions (CIN2/3). These lesions have a high risk for progression to cancer and hence need accurate detection [@novianti_better_2017]. The data consists of (transformed) sequenced microRNAs. We first load the data:
+
+```{r, eval=FALSE}
+## load the data and inspect the different data object
+data(dataCervical)
+```
+
+The mircoRNAs are given as a <code>matrix</code> object named <code>mirCerv</code>. The dependent variable is in the form of a <code>factor</code> called <code>respCerv</code>. In addition, there is the <code>mirCons</code> object, which contains the conservation status of the microRNAs [@agarwal_predicting_nodate]. The conservation status comes in three levels: not conserved, conserved across most mammals, and broadly conserved across most vertebrates. We may include conservation status as co-data, since we expect that conserved microRNAs are more important for body functioning and consequently might be important in CIN2/3 development. 
+
+## Two partitions
+
+We may create additional co-data by examining the microRNAs themselves. Here we create a co-data set based on the sample standard deviations of the microRNAs: 
+
+```{r, eval=FALSE}
+## create 5 equally sized groups based on the standard deviations
+std <- apply(mirCerv, 2, sd)
+mirStd <- cut(std, breaks=quantile(std, seq(0, 1, 0.2)), include.lowest=TRUE)
+```
+
+__*QUESTION*__
+*What do you think the relation between the standard deviation and penalty parameter of the microRNAs should be?*
+
+We may include this co-data in the estimation by extending the <code>partitions</code> argument:
+
+```{r, eval=FALSE}
+## create a partitions objected that contains the different co-data sets
+partitions <- list(conservation=mirCons, std=mirStd)
+```
+
+We may also specify an extra argument <code>monotone</code>, a <code>list</code> containing two <code>logical</code> vectors. The first indicates the whether the corresponding partitions penalty multipliers are monotone, while the second indicates whether the corresponding parititions penalty multipliers are monotonically decreasing with group number or not
+
+__*QUESTION*__
+*Would you impose a monotonicity constraint on the standard deviations partition? And if so, in what direction would the monotonicity be?*
+
+To include a monotonicity constraint create the following object:
+
+```{r, eval=FALSE}
+## create a partitions objected that contains the different co-data sets
+monotone <- list(c(FALSE, TRUE), c(TRUE, TRUE))
+```
+
+To estimate the model with the monotonicity constraint, <code>alpha=0.5</code>, and with the selection of 50 features, run the following chunk of code (this may take a few minutes):
+
+```{r, eval=FALSE}
+## prepare the data and estimate a model
+mirCervScaled <- scale(mirCerv)
+
+set.seed(4)
+fitGrenCervSel <- gren(x=mirCervScaled, y=respCerv, partitions=partitions, 
+                       alpha=0.5, monotone=monotone, psel=50)
+```
+
+Again, we may inspect the penalty multipliers. This time we have two sets, so we create two barplots:
+
+```{r, eval=FALSE}
+par(mfrow=c(1, 2))
+barplot(fitGrenCervSel$lambdag$conservation, 
+        main="Penalty multipliers conservation", 
+        ylab=expression(paste(lambda[g], "'")),
+        names.arg=c("Not conserved", "Conserved in mammals",
+                    "Broadly conserved \n across vertebrates"))
+barplot(fitGrenCervSel$lambdag$std, 
+        main="Penalty multipliers standard deviation", 
+        ylab=expression(paste(lambda[g], "'")),
+        names.arg=levels(mirStd))
+par(mfrow=c(1, 1))
+```
+
+__*QUESTION*__
+*Are the penalty multipliers of the conservation status according to expectation? And what about the standard deviation penalty multipliers?*
+
+Since we now have two partitions, it is not straightforward to see what the total penalty multiplication for each feature is. We calculate and inspect the total penalty multiplication per feature by:
+
+```{r, eval=FALSE}
+## create a vector with the penalty multipliers per feature in it
+multvec <- fitGrenCervSel$lambdag$conservation[
+  match(mirCons, names(fitGrenCervSel$lambdag$conservation))]*
+  fitGrenCervSel$lambdag$std[match(mirStd, names(fitGrenCervSel$lambdag$std))]
+
+## and create a histogram of the multipliers
+hist(multvec, main="Total penalty multiplier per feature", xlab="Penalty multiplier")
+```
+
+__*QUESTION*__
+*Can you discern the different groups from the two partitions from the histogram? Why/why not?*
+
+Again, we may use cross validation to estimate predictive performance of the model. The following code estimates the performance by cross-validation (may take a few minutes to estimate):
+
+```{r, eval=FALSE}
+set.seed(5)
+fitCvgrenCerv <- cv.gren(x=mirCervScaled, y=respCerv, alpha=0.5, 
+                         partitions=partitions, monotone=monotone, psel=50, 
+                         nfolds.out=10)
+```
+
+Again, we look at ROC plots to compare the performance of the group-regularized elastic net with the non group-regularized elastic net:
+
+```{r, eval=FALSE}
+## comparing ROCs for group-regularized and regular elastic net
+par(pty="s")
+plot(pROC::roc(respCerv, as.numeric(fitCvgrenCerv$groupreg$pred)), 
+     print.auc=TRUE, print.auc.x=0.3, print.auc.y=0.2)
+plot(pROC::roc(respCerv, as.numeric(fitCvgrenCerv$regular$pred)), add=TRUE, 
+     col=2, print.auc=TRUE, print.auc.x=0.3, print.auc.y=0.1)
+legend("topleft", legend=c("Group-regularized", "Regular"), col=c(1:2), lty=1)
+par(pty="m")
+```
+
+__*QUESTION*__
+*Do you think that the inclusion of the co-data helped with predictive performance here?*
+
+It might also be informative to plot the (cross-validated) predicted probabilites of the two models:
+
+```{r, eval=FALSE}
+plot(as.numeric(fitCvgrenCerv$regular$pred), 
+     as.numeric(fitCvgrenCerv$groupreg$pred), col=respCerv, 
+     main="Predicted probabilities for Cervical cancer data",
+     xlab="Predictions regular model", 
+     ylab="Predictions group-regularized model")
+legend("topleft", legend=c("CIN3", "normal"), 
+       col=c(1:2), pch=1)
+
+par(mfrow=c(1, 2))
+hist(as.numeric(fitCvgrenCerv$groupreg$pred), main="Group-regularized",
+     xlab="Predicted probabilities")
+hist(as.numeric(fitCvgrenCerv$regular$pred), main="Not group-regularized",
+     xlab="Predicted probabilities")
+par(mfrow=c(1, 1))
+```
+
+__*QUESTION*__
+*In what way does the inclusion of the co-data change the predicted probabilities?*
+
+# References

@@ -1,0 +1,221 @@
+---
+title: "Intro to fishflux"
+author: "Nina M. D. Schiettekatte"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    fig_caption: yes
+bibliography: bibliography.bib
+vignette: >
+  %\VignetteIndexEntry{Intro to fishflux}   
+  %\VignetteEncoding{UTF-8} 
+  %\VignetteEngine{knitr::rmarkdown}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width=8, fig.height=6
+)
+```
+## Introduction
+  
+The `fishflux` package provides a tool to model fluxes of C (carbon), N (nitrogen) and P (phosphorus) in fishes. It combines basic principles from elemental stoichiometry and metabolic theory. The package offers a user-friendly interface to apply the model. `fishflux` is ideal for fish ecologists wishing to predict ingestion, egestion and excretion to study fluxes of nutrients and energy. 
+
+Main assets:
+  
+* Provides function to model fluxes of Carbon, Nitrogen and Phosphorus for fishes
+* Allows for the estimation of uncertainty, dpending on the uncertainy of the input parameters
+* Provides some functions to help find parameters as inputs for the model
+* Provides functions to extract and illustrate results
+
+## Installing and loading fishflux
+
+`fishflux` uses Markov Chain Monte Carlo simulations provided by
+[stan](https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started).
+Therefore, the first step is to install
+[rstan](https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started). It's important to closely follow all the steps described on the page depending on your operating system. 
+
+### GitHub
+
+The best way to install the latest development version of `fishflux` is to install it from GitHub. 
+
+``` r
+install.packages("devtools")
+devtools::install_github("nschiett/fishflux", dependencies = TRUE) # if errors are returned, try adding `args = "--preclean"` to `install_github`
+library(fishflux)
+```
+### CRAN
+
+`fishflux` will be available on CRAN in the future:
+  
+``` r
+install.packages("fishflux")
+library(fishflux)
+```
+
+### Downloaded package file
+
+Another option is to download the source file available on GitHub [here](https://github.com/nschiett/fishflux).
+
+``` r
+install.packages(path_to_fishflux_file, repos = NULL, type = "source")
+library(fishflux)
+```
+
+## How to use fishflux?
+
+`fishflux` is designed to follow three simple steps:
+
+* Find the right input parameters
+* Run the model simulation with those input parameters
+* Plot the model results and check sensitivity
+
+### Input parameters
+
+Before running the model, the parameters have to be specified. Below, there is a table showing all parameters needed to run the model simulation. `fishflux` provides several functions to find some of these parameters, but note that others have to be provided by the user at this stage. Ideally, all parameters should also have a standard deviation, so that their uncertainty can be reflected in the model predictions
+\newline
+
+```{r, echo = FALSE, results = "asis", message = FALSE}
+library(knitr)
+
+tex2markdown <- function(texstring) {
+  writeLines(text = texstring,
+             con = myfile <- tempfile(fileext = ".tex"))
+  texfile <- pandoc(input = myfile, format = "html")
+  cat(readLines(texfile), sep = "\n")
+  unlink(c(myfile, texfile))
+}
+
+textable <- "
+\\begin{table}[h!]
+\\centering
+\\caption{. Overview of inputs, including input parameters, to be specified by the user of the model. k indicates c, n or p. VBGC = von Bertalanffy growth curve.}
+\\begin{tabular}{l l l}
+\\hline
+Symbol & Description & Unit\\\\
+\\hline
+$a_\\textrm{k}$  & Element-specific assimilation efficiency & \\_ \\\\
+$l_\\textrm{t}$  & Total length of individual & cm \\\\
+$linf$  & Asymptotic adult length (VBGC) & cm \\\\
+$\\kappa$  & Growth rate parameter (VBGC) & $\\textrm{yr}^{-1}$ \\\\
+$t_0$  & Age at settlement (VBGC) & $\\textrm{yr}$ \\\\
+$lw_a$  & Parameter length-weight relationship & $\\textrm{g cm}^{-1}$ \\\\
+$lw_b$  & Parameter length-weight relationship & \\_\\\\
+$Q_\\textrm{k}$  & Element-specific body content percentage & \\% \\\\
+$f_\\textrm{0}$  & Metabolic normalisation constant independent of body mass & $\\textrm{g C} \\textrm{g}^{-\\alpha} \\textrm{d}^{-1}$ \\\\
+$alpha$  & Mass-scaling exponent &  \\_\\\\
+$theta$  & Activity scope & \\_ \\\\
+$v$  & Environmental temperature & \\textdegree C \\\\
+$h$  & trophic level & \\_ \\\\
+$r$  & Aspect ratio of caudal fin & \\_ \\\\
+$F0nz$  & Mass-specific turnover rate of N & $\\textrm{g N} \\textrm{g}^{-1} \\textrm{d}^{-1}$ \\\\
+$F0pz$  & Mass-specific turnover rate of P & $\\textrm{g P} \\textrm{g}^{-1} \\textrm{d}^{-1}$ \\\\
+$mdw$ & Ratio of dry mass and wet mass of fish & \\_ \\\\
+$D_\\textrm{k}$  & Elemental stoichiometry of diet & \\% \\\\
+\\hline
+\\end{tabular}
+\\end{table}
+"
+
+tex2markdown(textable)
+```
+
+\newline
+
+A good place to start is checking if you are using the correct scientific name of your species of interest. The function `name_errors` will tell you if the species name is correct. This function can be useful, especially when working with larger databases.
+
+\newline
+```{r, message=TRUE, echo=TRUE}
+# example
+fishflux::name_errors("Zebrazoma scopas")
+```
+\newline
+Once the species names are verified and/or corrected we can continue with specifying some parameters. 
+
+The `find_lw` function searches [FishBase](https://www.fishbase.de/) to find length-weight relationship parameters `lw_a` and `lw_b` extracted from @Froese2018.
+
+\newline
+```{r,message=TRUE,echo=TRUE}
+# example
+fishflux::find_lw("Zebrasoma scopas", mirror = "se")
+```
+\newline
+The model uses parameters von Bertalanffy's growth model (VBGM) to estimate growth rates. A quick way to get available information from FishBase is the function `growth_params()`. This can be a good indication, but users should interpret these estimates with a critical eye, as they come from disparate sources of varying accuracy. Alternatively, it is advised to use growth curves derived from otolith readings. In the absence of otolith data, one might consider extracting standardised estimations from @morais2018.
+
+\newline
+```{r,message=FALSE,echo=TRUE}
+# example
+# The option otolith=TRUE filters out sources that used otoliths for the estimation of growth parameters
+fishflux::growth_params("Sargocentron microstoma", otolith = FALSE)
+```
+
+\newline
+Further, there are a couple more basic functions to get an indication of parameters that are available on FishBase such as `trophic_level()` and `aspect_ratio()`.
+\newline
+Note that it is always better to get the approximations through analysis, measurements and otolith analysis over parameters extracted from functions, such as `growth_params()`, `trophic_level()` and `aspect_ratio()`. 
+\newline
+To get an overview of all parameters available, `fishflux` provides a wrapper function `model_parameters()`.
+\newline
+```{r,cache=TRUE,results='hide',message=FALSE}
+# example
+zebsco <- fishflux::model_parameters("Zebrasoma scopas", family = "Acanthuridae", temp = 27, mirror = "se")
+## Here we set the temperature at 27 degrees as an example, this the average sea temperature in Moorea, French Polynesia
+```
+```{r}
+print(zebsco)
+```
+\newline
+All other parameters have to be provided by the user. For more information on how to acquire these parameters, take a look at ("this paper" add reference to methods paper).
+
+
+### Run model
+
+Once all the parameters are collected, we can run the model through `cnp_model_mcmc()`. Note that this model can be run with or without specifying the standard deviation (sd) of each parameter. If the sd of a certain parameter is not provided, it will be automatically set to a very low value (1^-10^). As mentioned before, it is advisable to include uncertainty of parameters. `fishflux` is designed to use the MCMC sampler in order to include uncertainty of predictions. 
+
+\newline
+```{r, message=FALSE}
+## load the example parameters for Zebrasoma scopas, a list
+param_zebsco <- fishflux::param_zebsco
+## Run the model, specifying the target length(s) and the parameter list
+model <- fishflux::cnp_model_mcmc(TL = 5:20, param = param_zebsco)
+```
+\newline
+The object `model` now contains all the samples generated from the MCMC simulation and a summary of all parameters generated. To extract certain variables of interest, use the `extract()` function. Predictions for fluxes of C, N and P are all in g / day.
+\newline
+```{r}
+fishflux::extract(model, c("Fn","Fp"))
+```
+
+\newline
+
+### Plot results 
+To visualize main outputs of the model, `fishflux` contains a plotting function. The function `limitation()` returns the proportion of iterations of the model simulation that had limitation of C, N and P respectively. The function `plot_cnp()` plots the predicted output of the model. 
+\newline
+```{r, message=FALSE, warning=FALSE}
+## limitation
+fishflux::limitation(model)
+## Plot one variable:
+fishflux::plot_cnp(model,  y = "Fp", x = "tl", probs = c(0.5, 0.8, 0.95))
+## Plot multiple variables:
+fishflux::plot_cnp(model,  y = c("Fp", "Gp", "Ip", "Wp"), x = "tl", probs = 0.5)
+```
+
+### Sensitivity
+  
+The function `sensitivity()` looks at how the distribution of the input variables affects the uncertainty of the model predictions. 
+Basically, the model is run for each input parameter, while keeping all the others fixed. The output of the function gives a matrix of the width of the 95% CI for all model predictions (columns), depending on the input variables (rows). 
+The input parameters and output variables of interest can be specified by arguments "par" and "out" respectively.
+\newline 
+```{r, message=FALSE}
+## General overview:
+fishflux::sensitivity(TL = 10, param = param_zebsco, par = c("Dn_sd", "Dp_sd", "Qn_sd", "Qp_sd", "k_sd"), out = c("Fn", "Fp", "Ic"))
+```
+\newline
+## More information
+
+For more information on the theoretical framework of the model, see @Schiettekatte2020 ( [paper](https://doi.org/10.1111/1365-2435.13618) ).
+Every function of `fishflux` has a help page with more documentation.
+In the case of errors, bugs or discomfort, you are invited to raise an [issue](https://github.com/nschiett/fishflux/issues) on GitHub.
+`fishflux` is always in development and we are happy to take your comments or suggestions into consideration.

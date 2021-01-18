@@ -1,0 +1,193 @@
+#include "SingleRegime.h"
+#include "Normal.h"
+#include "Ged.h"
+#include "Student.h"
+#include "eGARCH.h"
+#include "Symmetric.h"
+#include "Skewed.h"
+#include <RcppArmadillo.h>
+using namespace Rcpp;
+//============================================================================//
+//============================================================================//
+//================================== eGARCH ==================================//
+//============================================================================//
+//============================================================================//
+
+typedef SingleRegime<eGARCH<Symmetric<Normal> > > eGARCH_norm;
+typedef SingleRegime<eGARCH<Skewed<Normal> > > eGARCH_snorm;
+typedef SingleRegime<eGARCH<Symmetric<Student> > > eGARCH_std;
+typedef SingleRegime<eGARCH<Skewed<Student> > > eGARCH_sstd;
+typedef SingleRegime<eGARCH<Symmetric<Ged> > > eGARCH_ged;
+typedef SingleRegime<eGARCH<Skewed<Ged> > > eGARCH_sged;
+
+RCPP_MODULE(eGARCH) {
+  // eGARCH-norm-symmetric
+  class_<eGARCH_norm>("eGARCH_norm")
+      .constructor()
+      .field("name", &eGARCH_norm::name)
+      .field("theta0", &eGARCH_norm::theta0)
+      .field("Sigma0", &eGARCH_norm::Sigma0)
+      .field("label", &eGARCH_norm::label)
+      .field("lower", &eGARCH_norm::lower)
+      .field("upper", &eGARCH_norm::upper)
+      .field("ineq_lb", &eGARCH_norm::ineq_lb)
+      .field("ineq_ub", &eGARCH_norm::ineq_ub)
+      .field("NbParams", &eGARCH_norm::NbParams)
+      .field("NbParamsModel", &eGARCH_norm::NbParamsModel)
+      .method("f_sim", &eGARCH_norm::f_sim)
+      .method("f_pdf", &eGARCH_norm::f_pdf)
+      .method("f_pdf_its", &eGARCH_norm::f_pdf_its)
+      .method("f_cdf", &eGARCH_norm::f_cdf)
+      .method("f_cdf_its", &eGARCH_norm::f_cdf_its)
+      .method("f_simAhead", &eGARCH_norm::f_simAhead)
+      .method("f_get_sd", &eGARCH_norm::get_sd)
+      .method("f_set_sd", &eGARCH_norm::set_sd)
+      .method("f_get_mean", &eGARCH_norm::get_mean)
+      .method("f_set_mean", &eGARCH_norm::set_mean)
+      .method("f_rnd", &eGARCH_norm::f_rnd)
+      .method("calc_ht", &eGARCH_norm::calc_ht)
+      .method("eval_model", &eGARCH_norm::eval_model)
+      .method("ineq_func", &eGARCH_norm::ineq_func)
+      .method("f_unc_vol", &eGARCH_norm::f_unc_vol);
+  // eGARCH-std-symmetric
+  class_<eGARCH_std>("eGARCH_std")
+      .constructor()
+      .field("name", &eGARCH_std::name)
+      .field("theta0", &eGARCH_std::theta0)
+      .field("Sigma0", &eGARCH_std::Sigma0)
+      .field("label", &eGARCH_std::label)
+      .field("lower", &eGARCH_std::lower)
+      .field("upper", &eGARCH_std::upper)
+      .field("ineq_lb", &eGARCH_std::ineq_lb)
+      .field("ineq_ub", &eGARCH_std::ineq_ub)
+      .field("NbParams", &eGARCH_std::NbParams)
+      .field("NbParamsModel", &eGARCH_std::NbParamsModel)
+      .method("f_sim", &eGARCH_std::f_sim)
+      .method("f_pdf", &eGARCH_std::f_pdf)
+      .method("f_pdf_its", &eGARCH_std::f_pdf_its)
+      .method("f_cdf", &eGARCH_std::f_cdf)
+      .method("f_cdf_its", &eGARCH_std::f_cdf_its)
+      .method("f_simAhead", &eGARCH_std::f_simAhead)
+      .method("f_get_sd", &eGARCH_std::get_sd)
+      .method("f_set_sd", &eGARCH_std::set_sd)
+      .method("f_get_mean", &eGARCH_std::get_mean)
+      .method("f_set_mean", &eGARCH_std::set_mean)
+      .method("f_rnd", &eGARCH_std::f_rnd)
+      .method("calc_ht", &eGARCH_std::calc_ht)
+      .method("eval_model", &eGARCH_std::eval_model)
+      .method("ineq_func", &eGARCH_std::ineq_func)
+      .method("f_unc_vol", &eGARCH_std::f_unc_vol);
+  // eGARCH-ged-symmetric
+  class_<eGARCH_ged>("eGARCH_ged")
+      .constructor()
+      .field("name", &eGARCH_ged::name)
+      .field("theta0", &eGARCH_ged::theta0)
+      .field("Sigma0", &eGARCH_ged::Sigma0)
+      .field("label", &eGARCH_ged::label)
+      .field("lower", &eGARCH_ged::lower)
+      .field("upper", &eGARCH_ged::upper)
+      .field("ineq_lb", &eGARCH_ged::ineq_lb)
+      .field("ineq_ub", &eGARCH_ged::ineq_ub)
+      .field("NbParams", &eGARCH_ged::NbParams)
+      .field("NbParamsModel", &eGARCH_ged::NbParamsModel)
+      .method("f_sim", &eGARCH_ged::f_sim)
+      .method("f_pdf", &eGARCH_ged::f_pdf)
+      .method("f_pdf_its", &eGARCH_ged::f_pdf_its)
+      .method("f_cdf", &eGARCH_ged::f_cdf)
+      .method("f_cdf_its", &eGARCH_ged::f_cdf_its)
+      .method("f_simAhead", &eGARCH_ged::f_simAhead)
+      .method("f_get_sd", &eGARCH_ged::get_sd)
+      .method("f_set_sd", &eGARCH_ged::set_sd)
+      .method("f_get_mean", &eGARCH_ged::get_mean)
+      .method("f_set_mean", &eGARCH_ged::set_mean)
+      .method("f_rnd", &eGARCH_ged::f_rnd)
+      .method("calc_ht", &eGARCH_ged::calc_ht)
+      .method("eval_model", &eGARCH_ged::eval_model)
+      .method("ineq_func", &eGARCH_ged::ineq_func)
+      .method("f_unc_vol", &eGARCH_ged::f_unc_vol);
+
+  // eGARCH-norm-skew
+  class_<eGARCH_snorm>("eGARCH_snorm")
+      .constructor()
+      .field("name", &eGARCH_snorm::name)
+      .field("theta0", &eGARCH_snorm::theta0)
+      .field("Sigma0", &eGARCH_snorm::Sigma0)
+      .field("label", &eGARCH_snorm::label)
+      .field("lower", &eGARCH_snorm::lower)
+      .field("upper", &eGARCH_snorm::upper)
+      .field("ineq_lb", &eGARCH_snorm::ineq_lb)
+      .field("ineq_ub", &eGARCH_snorm::ineq_ub)
+      .field("NbParams", &eGARCH_snorm::NbParams)
+      .field("NbParamsModel", &eGARCH_snorm::NbParamsModel)
+      .method("f_sim", &eGARCH_snorm::f_sim)
+      .method("f_pdf", &eGARCH_snorm::f_pdf)
+      .method("f_pdf_its", &eGARCH_snorm::f_pdf_its)
+      .method("f_cdf", &eGARCH_snorm::f_cdf)
+      .method("f_cdf_its", &eGARCH_snorm::f_cdf_its)
+      .method("f_simAhead", &eGARCH_snorm::f_simAhead)
+      .method("f_get_sd", &eGARCH_snorm::get_sd)
+      .method("f_set_sd", &eGARCH_snorm::set_sd)
+      .method("f_get_mean", &eGARCH_snorm::get_mean)
+      .method("f_set_mean", &eGARCH_snorm::set_mean)
+      .method("f_rnd", &eGARCH_snorm::f_rnd)
+      .method("calc_ht", &eGARCH_snorm::calc_ht)
+      .method("eval_model", &eGARCH_snorm::eval_model)
+      .method("ineq_func", &eGARCH_snorm::ineq_func)
+      .method("f_unc_vol", &eGARCH_snorm::f_unc_vol);
+  // eGARCH-std-skew
+  class_<eGARCH_sstd>("eGARCH_sstd")
+      .constructor()
+      .field("name", &eGARCH_sstd::name)
+      .field("theta0", &eGARCH_sstd::theta0)
+      .field("Sigma0", &eGARCH_sstd::Sigma0)
+      .field("label", &eGARCH_sstd::label)
+      .field("lower", &eGARCH_sstd::lower)
+      .field("upper", &eGARCH_sstd::upper)
+      .field("ineq_lb", &eGARCH_sstd::ineq_lb)
+      .field("ineq_ub", &eGARCH_sstd::ineq_ub)
+      .field("NbParams", &eGARCH_sstd::NbParams)
+      .field("NbParamsModel", &eGARCH_sstd::NbParamsModel)
+      .method("f_sim", &eGARCH_sstd::f_sim)
+      .method("f_pdf", &eGARCH_sstd::f_pdf)
+      .method("f_pdf_its", &eGARCH_sstd::f_pdf_its)
+      .method("f_cdf", &eGARCH_sstd::f_cdf)
+      .method("f_cdf_its", &eGARCH_sstd::f_cdf_its)
+      .method("f_simAhead", &eGARCH_sstd::f_simAhead)
+      .method("f_get_sd", &eGARCH_sstd::get_sd)
+      .method("f_set_sd", &eGARCH_sstd::set_sd)
+      .method("f_get_mean", &eGARCH_sstd::get_mean)
+      .method("f_set_mean", &eGARCH_sstd::set_mean)
+      .method("f_rnd", &eGARCH_sstd::f_rnd)
+      .method("calc_ht", &eGARCH_sstd::calc_ht)
+      .method("eval_model", &eGARCH_sstd::eval_model)
+      .method("ineq_func", &eGARCH_sstd::ineq_func)
+      .method("f_unc_vol", &eGARCH_sstd::f_unc_vol);
+  // eGARCH-ged-skew
+  class_<eGARCH_sged>("eGARCH_sged")
+      .constructor()
+      .field("name", &eGARCH_sged::name)
+      .field("theta0", &eGARCH_sged::theta0)
+      .field("Sigma0", &eGARCH_sged::Sigma0)
+      .field("label", &eGARCH_sged::label)
+      .field("lower", &eGARCH_sged::lower)
+      .field("upper", &eGARCH_sged::upper)
+      .field("ineq_lb", &eGARCH_sged::ineq_lb)
+      .field("ineq_ub", &eGARCH_sged::ineq_ub)
+      .field("NbParams", &eGARCH_sged::NbParams)
+      .field("NbParamsModel", &eGARCH_sged::NbParamsModel)
+      .method("f_sim", &eGARCH_sged::f_sim)
+      .method("f_pdf", &eGARCH_sged::f_pdf)
+      .method("f_pdf_its", &eGARCH_sged::f_pdf_its)
+      .method("f_cdf", &eGARCH_sged::f_cdf)
+      .method("f_cdf_its", &eGARCH_sged::f_cdf_its)
+      .method("f_simAhead", &eGARCH_sged::f_simAhead)
+      .method("f_get_sd", &eGARCH_sged::get_sd)
+      .method("f_set_sd", &eGARCH_sged::set_sd)
+      .method("f_get_mean", &eGARCH_sged::get_mean)
+      .method("f_set_mean", &eGARCH_sged::set_mean)
+      .method("f_rnd", &eGARCH_sged::f_rnd)
+      .method("calc_ht", &eGARCH_sged::calc_ht)
+      .method("eval_model", &eGARCH_sged::eval_model)
+      .method("ineq_func", &eGARCH_sged::ineq_func)
+      .method("f_unc_vol", &eGARCH_sged::f_unc_vol);
+}

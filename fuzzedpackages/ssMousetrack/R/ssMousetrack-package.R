@@ -1,0 +1,107 @@
+#' Bayesian State-Space Modeling of Mouse-Tracking Experiments Via Stan
+#' 
+#' @description The \pkg{ssMousetrack} package allows analysing mouse-tracking experiments via Bayesian state-space modeling. 
+#' The package estimates the model using Markov Chain Monte Carlo, variational approximations to the posterior distribution, or optimization, 
+#' as implemented in the \pkg{rstan} package. The user can use the customary R modeling syntax to define equations of the model and Stan syntax to
+#' specify priors over the model parameters. 
+#' 
+#' The sections below provide an overview of the state-space model implemented by the \pkg{ssMousetrack} package.
+#' 
+#' @section Details:
+#' 
+#' \emph{(i) Mouse-tracking data}
+#' 
+#' The raw data of a mouse-tracking experiment for \emph{I} individuals and \emph{J} stimuli consist of a collection of arrays 
+#' \eqn{(x,y)_{ij} = (x_0,...,x_{N_{ij}}; y_0,...,y_{N_{ij}})} which contain ordered \eqn{N_{ij}} x 1 sequences of x-y Cartesian coordinates as mapped to the 
+#' computer-mouse pointer. The x-y coordinates are pre-processed according to the following steps:
+#' \enumerate{
+#' \item \emph{Realigning}: the arrays \eqn{(x,y)_{ij}} are re-aligned on a common sampling scale, so that \emph{N} indicates the cumulative amount of progressive time from 0\% to N = 100\%, with \emph{N} being the same over \eqn{i=1,...,I} and \eqn{j=1,...,J}
+#' \item \emph{Normalization}: the aligned arrays \eqn{(x,y)_{ij}} are normalized so that \eqn{(x_0,y_0)_{ij}=(0,0)} and \eqn{(x_N,y_N)_{ij}=(1,1)} for each \eqn{i=1,...,I} and \eqn{j=1,...,J}
+#' \item \emph{Translation}: the normalized arrays \eqn{(x,y)_{ij}} are translated into the quadrant \eqn{[-1,1]}x\eqn{[0,1]}
+#' \item \emph{atan2 projection}: the final arrays \eqn{(x,y)_{ij}} are projected onto a lower-subspace via the \emph{atan2} function by getting the ordered collection 
+#' of radians \eqn{(y)_{ij} = (y_0,...,y_N)} in the subset of reals \eqn{(0,\pi]^N}, for each \eqn{i=1,...,I} and \eqn{j=1,...,J}.
+#' }
+#' 
+#' The final I x J x N array of data \strong{Y} contains the mouse-tracking trajectories expressed in terms of angles. These trajectories lie on the arc defined by
+#' the union of two disjoint sets, namely the sets \eqn{\{y_0,...,y_N: y_n \geq \pi/2 \}} (target's hemispace) and \eqn{\{y_0,...,y_N: y_n < (3\pi)/4 \}} (distractor's hemispace), with \eqn{\pi/2} and \eqn{(3\pi)/4} being the location points for target and distractor, respectively.
+#' 
+#' Note that, the current version of \pkg{ssMousetrack} package requires the number of stimuli J to be the same over the subjects \eqn{i=1,...,I}. 
+#' 
+#' The pre-processed mouse-tracking trajectories are analysed using the state-space modeling described below.
+#' 
+#' 
+#' \emph{(ii) Model representation}
+#' 
+#' The array \strong{Y} contains the \emph{observed data} expressed in angles. The \emph{measurement equation} of the model is:
+#' \deqn{ y_{ij}^{(n)} \sim vonMises\big(\mu_{ij}^{(n)},\kappa_{ij}^{(n)}\big) }
+#' where \eqn{\mu_{ij}^{(n)}} and \eqn{\kappa_{ij}^{(n)}} are the location and the concentration parameters for the vonMises probability law. 
+#' The moving mean on the arc \eqn{\mu_{ij}^{(n)}} is defined as:
+#' \deqn{ \mu_{ij}^{(n)} := G(\beta,x_{i}^{(n)})}
+#' with \eqn{\beta} being a J x 1 array of real parameters representing the contribution of the \emph{j}-th stimulus on the observed trajectory \eqn{y_{ij} = (y^{(0)},...,y^{(N)})} 
+#' whereas \eqn{G} is a non-linear function mapping reals to the subset \eqn{(0,\pi]} of the form: (i) \eqn{\big[ (1 + \exp(\beta - x_{i}^{(n)})) \big]\pi^{-1} } (logistic), (ii) \eqn{\big[ \exp(-\beta \exp(-x_{i}^{(n)})) \big]\pi} (gompertz). 
+#' In the \eqn{G} equation, \eqn{x_i^{(n)}} is a real random quantity obeying to the law:
+#' \deqn{ x_i^{(n)} \sim Normal\big( x_i^{(n-1)},\sigma^2_i \big) }
+#' which represents a random walk process with time-fixed variance \eqn{\sigma^2_i}. The terms \eqn{x_{i} = (x_{i}^{(0)},...,x_{i}^{(N)})} are the individual latent dynamics
+#' unaffected by the stimuli (i.e., how individual differ in executing the task) whereas \eqn{\beta} contains the experimental effects regardless to the individual dynamic (i.e., how experimental variables act on the individual dynamics to produce the observed responses).
+#' 
+#' The terms \eqn{\beta = (\beta_1,...,\beta_J)} are defined according to the following linear combination:
+#' \deqn{ \beta_j :=  \sum_{k=1}^K z_{jk}\gamma_k}
+#' where \eqn{z_{jk}} is an element of the J x K \emph{dummy matrix} \strong{Z} representing main and high-order effects of the experimental design.
+#' 
+#' The terms \eqn{\kappa_{ij} = (\kappa_{ij}^{(0)},...,\kappa_{ij}^{(N)})} are computed as follows:
+#' \deqn{ \kappa_{ij}^{(n)} := \exp^{o}\big(\delta_{ij}^{(n)}\big) }
+#' where \eqn{\delta^{(n)}_{ij} = |y_{ij}^{(n)}-(3\pi)/4|} (if \eqn{y_{ij}^{(n)} < \pi/2}) or \eqn{\delta^{(n)}_{ij} = |y_{ij}^{(n)}-\pi/4|} (if \eqn{y_{ij}^{(n)} \geq \pi/2}). The function \eqn{\exp^o} is the exponential function scaled in the natural range of the parameters \eqn{\kappa_{ij}} (positive real numbers). 
+#' 
+#' \emph{(iii) Bayesian formulation}
+#' 
+#' The state-space model in the \pkg{ssMousetrack} package requires estimating the array of latent trajectories \strong{X} and the K x 1 parameters \eqn{\gamma}. 
+#' Let \eqn{\Theta} representing both the unknown quantities, the posterior density after factorization is:
+#' \deqn{ f(\Theta|Y) \propto f(\gamma) \prod_{i=1}^I \prod_{j=1}^J f(\gamma|y_{ij}) \prod_{i=1}^I \prod_{j=1}^J f(x_i|y_{ij}) }
+#' Sampling from \eqn{f(\Theta|Y)} is solved via \emph{marginal MCMC} where the term \eqn{f(x_i|y_{ij})} is approximated by means of Kalman filtering/smoothing. The marginal Likelihood of the model used for the rejection criterion of the MCMC sampler is approximated with the Normal distribution using the Kalman filter theory.
+#' 
+#' 
+#' 
+#' 
+#' 
+#' @docType package
+#' @name ssMousetrack-package
+#' @aliases ssMousetrack
+#' @useDynLib ssMousetrack, .registration = TRUE
+#' @import methods
+#' @import Rcpp
+#' @import rstantools
+#' @import CircStats
+#' @import ggplot2
+#' @importFrom cowplot plot_grid
+#' @importFrom rstan sampling
+#' @importFrom stats formula rnorm
+#' @importFrom dtw dtw
+#' @importFrom rstan sampling
+#' 
+#' @references 
+#' Calcagnì, A., Coco, M., Pastore, M., & Duran N. (2019). State space modeling for incidental memory in naturalistic scenes. \emph{Manuscript in preparation}
+#' 
+#' Calcagnì, A., Lombardi, L., & D'Alessandro, M. (2018). A state space approach to dynamic modeling of mouse-tracking data. \emph{Under review}
+#' 
+#' Calcagnì, A., Lombardi, L., & D'Alessandro (2018, August). Probabilistic modeling of mouse-tracking data: A statespace approach. Paper presented at the \emph{2018 European Mathematical Psychology Group Meeting} (EMPG 2018), Genova, Italy
+#' 
+#' Calcagnì, A., Lombardi, L., D'Alessandro, M., & Sulpizio S. (2018, March). A subject oriented state-space approach to model mouse-tracking data. Paper presented at the \emph{60th Conference of Experimental Psychologists} (TeaP 2018), Marburg, Germany
+#' 
+#' Freeman, J. B. (2018). Doing psychological science by hand. \emph{Current Directions in Psychological Science}, In press, 1-9
+#' 
+#' Särkkä, S. (2013). Bayesian Filtering and Smoothing. \emph{Cambridge University Press}
+#' 
+#' Durbin, J., & Koopman, S. J. (2012). Time series analysis by state space methods (Vol. 38). \emph{Oxford University Press}
+#' 
+#' Andrieu, C., Doucet, A., & Holenstein, R. (2010). Particle markov chain monte carlo methods. \emph{Journal of the Royal Statistical Society: Series B (Statistical Methodology)}, 72(3), 269s-342
+#' 
+#' Gelman, A., Carlin, J. B., Stern, H. S., & Rubin, D. B. (2004). Bayesian Data Analysis (Second edition). Chapman & Hall/CRC.
+#' 
+#' 
+#' @seealso 
+#' \url{http://mc-stan.org/} for more information on the Stan C++ language used by \pkg{ssMousetrack} package
+#' 
+#' Jokkala, J. (2016). Github repository: \emph{kalman-stan-randomwalk}, \url{https://github.com/juhokokkala/kalman-stan-randomwalk}
+#' 
+#' 
+NULL

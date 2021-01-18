@@ -1,0 +1,184 @@
+## ----setup, include = FALSE----------------------------------------------
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.dim = c(7,5)
+)
+
+library(cusum)
+library(ggplot2)
+
+
+## ------------------------------------------------------------------------
+head(gscusum_example_data)
+
+
+
+
+## ------------------------------------------------------------------------
+head(ragscusum_example_data)
+
+
+## ------------------------------------------------------------------------
+failure_probability <- mean(gscusum_example_data$y[gscusum_example_data$year == 2016])
+
+n_patients <- nrow(gscusum_example_data[gscusum_example_data$year == 2016,])
+
+## ------------------------------------------------------------------------
+
+cusum_limit <- cusum_limit_sim(failure_probability,
+                            n_patients,
+                            odds_multiplier = 2,
+                            n_simulation = 1000,
+                            alpha = 0.05,
+                            seed = 2046)
+
+
+print(cusum_limit)
+
+## ------------------------------------------------------------------------
+
+gscusum_data <- gscusum_example_data[gscusum_example_data$year == 2017,]
+
+input_outcomes <- matrix(c(gscusum_data$y, gscusum_data$block_identifier), ncol = 2)
+
+
+gcs <- gscusum(input_outcomes = input_outcomes,
+              failure_probability = failure_probability,
+              odds_multiplier = 2,
+              limit = cusum_limit,
+              max_num_shuffles = 1000,
+              quantiles = c(0.,0.05,0.25,0.5,0.75,.95,1))
+
+## ------------------------------------------------------------------------
+gcs <- as.data.frame(gcs)
+names(gcs) <- c("sig_prob", "avg", "min", "q05", "q25", "median","q75","q95","max")
+head(gcs)
+
+## ------------------------------------------------------------------------
+gcs$block_identifier <- input_outcomes[,2]
+gcs$t <- seq(1,nrow(gcs))
+
+col1 <- "#f7ba02"
+col2 <- "#4063bc"
+palette <- rep(c(col1, col2), 300)
+
+ggplot() +
+  geom_line(data = gcs, aes(x = t, y = sig_prob)) +
+  geom_point(data = gcs, aes(x = t, y = sig_prob, col = as.factor(block_identifier) )) +
+  scale_color_manual(guide=FALSE, values = palette) +
+  scale_y_continuous(name = "Signal Probability", limits = c(0,1))+
+  theme_bw()
+
+## ------------------------------------------------------------------------
+nblock <- max(gcs$block_identifier)
+
+p <- ggplot(gcs)
+
+for ( i in 1: nblock){
+  dblock <- gcs[gcs$block_identifier == i,]
+  col <- ifelse(i %% 2 == 0,col2,col1)
+  dblock_before <- dblock[1,]
+  dblock_before$t <- dblock_before$t - .5
+  dblock_after <- dblock[nrow(dblock),]
+  dblock_after$t <- dblock_after$t + .5
+  dblock_n <- rbind(dblock, dblock_before, dblock_after)
+
+  p <- p +
+    geom_ribbon(data = dblock_n, aes(x = t, ymin = min, ymax = max), fill = col, alpha = 0.2) +
+    geom_ribbon(data = dblock_n, aes(x = t, ymin = q05, ymax = q95), fill = col, alpha = 0.2) +
+    geom_ribbon(data = dblock_n, aes(x = t, ymin = q25, ymax = q75), fill = col, alpha = 0.2)
+
+}
+
+p <- p +
+  geom_line(data = gcs, aes(x = t, y = median)) +
+  geom_point(data = gcs, aes( x = t, y = median, fill = as.factor(block_identifier)), size=2, pch = 21)+
+  geom_hline(aes(yintercept = cusum_limit), linetype = 2) +
+  theme_bw() +
+  scale_y_continuous(name = "CUSUM Distribution") +
+  scale_x_continuous(name = "Sequence of Observations") +
+  scale_fill_manual(values = palette, guide = FALSE) +
+  labs(subtitle = "GSCUSUM")
+p
+
+## ------------------------------------------------------------------------
+n_patients <- nrow(ragscusum_example_data[ragscusum_example_data$year == 2016,])
+
+## ------------------------------------------------------------------------
+
+racusum_limit <- racusum_limit_sim(patient_risks = ragscusum_example_data$score[ragscusum_example_data$year == 2016],
+                            odds_multiplier = 2,
+                            n_simulation = 1000,
+                            alpha = 0.05,
+                            seed = 2046)
+
+
+print(racusum_limit)
+
+## ------------------------------------------------------------------------
+
+ragscusum_data <- ragscusum_example_data[ragscusum_example_data$year == 2017,]
+
+input_outcomes <- matrix(c(gscusum_data$y, gscusum_data$block_identifier), ncol = 2)
+
+
+gcs <- gscusum(input_outcomes = input_outcomes,
+              failure_probability = failure_probability,
+              odds_multiplier = 2,
+              limit = cusum_limit,
+              max_num_shuffles = 1000,
+              quantiles = c(0.,0.05,0.25,0.5,0.75,.95,1))
+
+## ------------------------------------------------------------------------
+gcs <- as.data.frame(gcs)
+names(gcs) <- c("sig_prob", "avg", "min", "q05", "q25", "median","q75","q95","max")
+head(gcs)
+
+## ------------------------------------------------------------------------
+gcs$block_identifier <- input_outcomes[,2]
+gcs$t <- seq(1,nrow(gcs))
+
+col1 <- "#f7ba02"
+col2 <- "#4063bc"
+palette <- rep(c(col1, col2), 300)
+
+ggplot() +
+  geom_line(data = gcs, aes(x = t, y = sig_prob)) +
+  geom_point(data = gcs, aes(x = t, y = sig_prob, col = as.factor(block_identifier) )) +
+  scale_color_manual(guide=FALSE, values = palette) +
+  scale_y_continuous(name = "Signal Probability", limit = c(0,1))+
+  theme_bw()
+
+## ------------------------------------------------------------------------
+nblock <- max(gcs$block_identifier)
+
+p <- ggplot(gcs)
+
+for ( i in 1: nblock){
+  dblock <- gcs[gcs$block_identifier == i,]
+  col <- ifelse(i %% 2 == 0,col2,col1)
+  dblock_before <- dblock[1,]
+  dblock_before$t <- dblock_before$t - .5
+  dblock_after <- dblock[nrow(dblock),]
+  dblock_after$t <- dblock_after$t + .5
+  dblock_n <- rbind(dblock, dblock_before, dblock_after)
+
+  p <- p +
+    geom_ribbon(data = dblock_n, aes(x = t, ymin = min, ymax = max), fill = col, alpha = 0.2) +
+    geom_ribbon(data = dblock_n, aes(x = t, ymin = q05, ymax = q95), fill = col, alpha = 0.2) +
+    geom_ribbon(data = dblock_n, aes(x = t, ymin = q25, ymax = q75), fill = col, alpha = 0.2)
+
+}
+
+p <- p +
+  geom_line(data = gcs, aes(x = t, y = median)) +
+  geom_point(data = gcs, aes( x = t, y = median, fill = as.factor(block_identifier)), size=2, pch = 21)+
+  geom_hline(aes(yintercept = cusum_limit), linetype = 2) +
+  theme_bw() +
+  scale_y_continuous(name = "RACUSUM Distribution") +
+  scale_x_continuous(name = "Sequence of Observations") +
+  scale_fill_manual(values = palette, guide = FALSE) +
+  labs(subtitle = "RA-GSCUSUM")
+p
+

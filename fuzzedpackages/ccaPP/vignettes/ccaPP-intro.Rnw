@@ -1,0 +1,554 @@
+\documentclass[article,nojss]{jss}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% declarations for jss.cls %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% almost as usual
+\author{Andreas Alfons\\ Erasmus Universiteit Rotterdam \And 
+        Christophe Croux\\ KU Leuven \And
+        Peter Filzmoser\\ Vienna University of Technology}
+\title{Robust Maximum Association Between Data Sets: The \proglang{R} Package \pkg{ccaPP}}
+
+%% for pretty printing and a nice hypersummary also set:
+\Plainauthor{Andreas Alfons, Christophe Croux, Peter Filzmoser} %% comma-separated
+\Plaintitle{Robust Maximum Association Between Data Sets: The R Package ccaPP} %% without formatting
+\Shorttitle{\pkg{ccaPP}: Robust Maximum Association} %% a short title (if necessary)
+
+%% an abstract and keywords
+\Abstract{
+This package vignette is an up-to-date version of \citet{alfons16b}, published 
+in the \emph{Austrian Journal of Statistics}.
+
+An intuitive measure of association between two multivariate data sets can be 
+defined as the maximal value that a bivariate association measure between 
+any one-dimensional projections of each data set can attain.  Rank correlation 
+measures thereby have the advantage that they combine good robustness 
+properties with good efficiency. The software package \pkg{ccaPP} provides 
+fast implementations of such maximum association measures for the statistical 
+computing environment \proglang{R}.  We demonstrate how to use \pkg{ccaPP} to 
+compute the maximum association measures, as well as how to assess their 
+significance via permutation tests.
+}
+\Keywords{multivariate analysis, outliers, projection pursuit, rank correlation, \proglang{R}}
+\Plainkeywords{multivariate analysis, outliers, projection pursuit, rank correlation, R} %% without formatting
+%% at least one keyword must be supplied
+
+%% publication information
+%% NOTE: Typically, this can be left commented and will be filled out by the technical editor
+% \Volume{45}
+% \Issue{1}
+% \Month{March}
+% \Year{2016}
+% \Submitdate{2014-11-05}
+% \Acceptdate{2015-12-11}
+% \setcounter{page}{71}
+% \Pages{71--79}
+
+%% The address of (at least) one author should be given
+%% in the following format:
+\Address{
+  Andreas Alfons\\
+  Erasmus Universiteit Rotterdam\\
+  PO Box 1738, 3000DR Rotterdam\\
+  E-mail: \email{alfons@ese.eur.nl}\\
+  URL: \url{http://people.few.eur.nl/alfons/}
+}
+%% It is also possible to add a telephone and fax number
+%% before the e-mail in the following format:
+%% Telephone: +43/512/507-7103
+%% Fax: +43/512/507-2851
+
+%% for those who use Sweave please include the following line (with % symbols):
+%% need no \usepackage{Sweave.sty}
+
+%%\VignetteIndexEntry{Robust Maximum Association Between Data Sets: The R Package ccaPP}
+%%\VignetteDepends{ccaPP}
+%%\VignetteKeywords{multivariate analysis, outliers, projection pursuit, rank correlation, R}
+%%\VignettePackage{ccaPP}
+%%\VignetteEngine{knitr::knitr}
+
+%% end of declarations %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%% additional packages
+\usepackage{algorithm}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{enumerate}
+
+%% additional commands
+
+\newcommand{\vect}[1]{\boldsymbol{#1}}
+\newcommand{\mat}[1]{\boldsymbol{#1}}
+\newcommand{\obs}[1]{\bold{#1}}
+
+\newcommand{\Corr}{\text{Corr}}
+\newcommand{\Cov}{\text{Cov}}
+\newcommand{\Var}{\text{Var}}
+\newcommand{\R}{\mathbb{R}}
+
+\newcommand{\argmax}{\mathop{\text{argmax}}}
+\newcommand{\eps}{\varepsilon}
+\newcommand{\rank}{\text{rank}}
+\newcommand{\sgn}{\text{sign}}
+\newcommand{\trans}[1]{{#1}^{t}}
+
+
+\begin{document}
+
+%% include your article here, just as usual
+
+<<include=FALSE>>=
+knitr::opts_chunk$set(highlight=FALSE)  # remove candy shop colors
+# options(prompt="R> ", continue="+  ", width=75, useFancyQuotes=FALSE)
+# opts_chunk$set(fig.path="figures/figure-", fig.align="center")
+# render_sweave()           # use Sweave environments
+# set_header(highlight="")  # do not use the Sweave.sty package
+@
+
+
+% ------------
+% Introduction
+% ------------
+
+\section{Introduction} \label{sec:intro}
+
+Projection pursuit allows to introduce intuitive and therefore appealing 
+association measures between two multivariate data sets.  Suppose that the data 
+sets $\mat{X}$ and $\mat{Y}$ consist of $p$ and $q$ variables, respectively.  
+A measure of multivariate association between $\mat{X}$ and $\mat{Y}$ can be 
+defined by looking for linear combinations $\mat{X} \vect{\alpha}$ and $\mat{Y} 
+\vect{\beta}$ having maximal association.  Expressed in mathematical terms, we 
+define an estimator
+\begin{equation} \label{eq:rho}
+\hat{\rho}_{R}(\mat{X}, \mat{Y}) = \max_{\|\vect{\alpha} \| = 1, 
+\|\vect{\beta}\| = 1} \hat{R}(\mat{X} \vect{\alpha}, \mat{Y} \vect{\beta}),
+\end{equation}
+where $\hat{R}$ is an estimator of a bivariate association measure $R$ such as 
+the Pearson correlation, or the Spearman or Kendall rank correlation.  Using 
+the projection pursuit terminology, $\hat{R}$ is the \emph{projection index} to 
+maximize.  The projection directions corresponding to the maximum association 
+are called \emph{weighting vectors} and are estimated by
+\begin{equation} \label{eq:vectors}
+(\hat{\vect{\alpha}}_{R}(\mat{X}, \mat{Y}), \hat{\vect{\beta}}_{R}(\mat{X}, 
+\mat{Y})) = \argmax_{\|\vect{\alpha} \| = 1, \|\vect{\beta}\| = 1} 
+\hat{R}(\mat{X} \vect{\alpha}, \mat{Y} \vect{\beta}).
+\end{equation}
+\citet{AlfCXX} developed the \emph{alternate grid algorithm} for the 
+computation of such maximum association estimators and studied their 
+theoretical properties for various association measures.  It turns out that the 
+Spearman and Kendall rank correlation yield maximum association estimators with 
+good robustness properties and good efficiency.  This paper is a companion 
+paper to \citet{AlfCXX} that demonstrates how to apply the maximum association 
+estimators in the statistical environment \proglang{R} \citep{RDev} using the 
+add-on package \pkg{ccaPP} \citep{ccaPP}.  The package is freely available on 
+CRAN (Comprehensive \proglang{R} Archive Network, 
+\url{http://CRAN.R-project.org}).
+
+Note that using the Pearson correlation as the projection index of the maximum 
+association estimator corresponds to the first step of canonical correlation 
+analysis \citep[CCA; see, e.g.,][]{JohW02}, hence the package name \pkg{ccaPP}.  
+Since CCA is a widely applied statistical technique, various algorithms and 
+extensions are implemented in \proglang{R} packages on CRAN.  Two important 
+examples are briefly discussed in the following.  The package \pkg{CCA} 
+\citep{GonD08, CCA} extends the built-in \proglang{R} function \code{cancor()} 
+with additional numerical and graphical output.  Moreover, it provides a 
+regularized version of CCA for data sets containing a large number of 
+variables.  Bayesian models and inference methods for CCA are implemented in 
+the package \pkg{CCAGFA} \citep{KlaV13, CCAGFA}.
+
+The remainder of the paper is organized as follows.  In 
+Section~\ref{sec:design}, the design and implementation of the package are 
+briefly discussed.  Section~\ref{sec:measures} demonstrates how to compute the 
+maximum association estimators, and Section~\ref{sec:tests} illustrates how to 
+test for their significance.  A comparison of computation times is given in 
+Section~\ref{sec:CPU}. The final Section~\ref{sec:conclusions} concludes the 
+paper.
+
+
+% -------------------------
+% Design and implementation
+% -------------------------
+
+\section{Design and implementation} \label{sec:design}
+
+Various bivariate association measures and the alternate grid algorithm for the 
+maximum association estimators are implemented in \proglang{C++}, and 
+integrated into \proglang{R} via the package \mbox{\pkg{RcppArmadillo}} 
+\citep{EddS14, RcppArmadillo}.  
+% Therefore they are very fast to compute.
+
+The following bivariate association measures are available in the package 
+\pkg{ccaPP}:
+\begin{description}
+  \item[\code{corPearson()}:] Pearson correlation
+  \item[\code{corSpearman()}:] Spearman rank correlation
+  \item[\code{corKendall()}:] Kendall rank correlation, also known as Kendall's 
+  $\tau$
+  \item[\code{corQuadrant()}:] Quadrant correlation \citep{Blo50}
+  \item[\code{corM()}:] Association based on a bivariate M-estimator of 
+  location and scatter with a Huber loss function \citep{HubR09}
+\end{description}
+It should be noted that these are barebones implementations without proper 
+handling of missing values.  Hence the first three functions come with a 
+substantial speed gain compared to \proglang{R}'s built-in function 
+\code{cor()}.  Moreover, the fast $O(n \log(n))$ algorithm for the Kendall 
+correlation \citep{Kni66} is implemented in \code{corKendall()}, whereas 
+\code{cor()} uses the naive $O(n^2)$ algorithm.
+
+The alternate grid algorithm for the maximum association estimators is 
+implemented in the function \code{maxCorGrid()}.  Any of the bivariate 
+association measures above can be used as projection index, with the Spearman 
+rank correlation being the default.  We do not recommend to use the quadrant 
+correlation since its influence function is not smooth, which may result in 
+unstable estimates of the weighting vectors.  For more details on the 
+theoretical properties of the maximum association estimators, the reader is 
+referred to \citet{AlfCXX}.
+
+To assess the significance of a maximum association estimate, a permutation 
+test %for independence of two multivariate random variables 
+is provided via the function \code{permTest()}.  Parallel computing to increase 
+computational performance is implemented via the package \pkg{parallel}, which 
+is part of \proglang{R} since version 2.14.0.
+
+
+% -------------------
+% Maximum association
+% -------------------
+
+\section{Maximum association measures} \label{sec:measures}
+
+In this section, we show how to apply the function \code{maxCorGrid()} from the 
+package \pkg{ccaPP} to compute the maximum association estimators.  We thereby 
+use the classic \code{diabetes} data \citep[page 215]{AndH85}, which are 
+included as example data in the package.
+
+First we load the package and the data.  All measurements are taken for a group 
+of $n = 76$ persons.
+<<message=FALSE>>=
+library("ccaPP")
+data("diabetes")
+x <- diabetes$x
+y <- diabetes$y
+@
+Component \code{x} consists of $p = 2$ variables measuring \emph{relative 
+weight} and \emph{fasting plasma glucose}, while component \code{y} consists of 
+$q = 3$ variables measuring \emph{glucose intolerance}, \emph{insulin response 
+to oral glucose} and \emph{insulin resistance}.  It is of medical interest to 
+establish a relation between the two data sets.
+
+The function \code{maxCorGrid()} by default uses the Spearman rank correlation 
+as \mbox{projection index}.
+\vspace{-2.5ex}
+<<>>=
+spearman <- maxCorGrid(x, y)
+spearman
+@
+
+The estimated weighting vectors can be accessed through components \code{a} and 
+\code{b} of the returned object, respectively.
+<<>>=
+spearman$a
+spearman$b
+@
+
+With the argument \code{method}, another bivariate association measure can be 
+set as projection index, e.g., the Kendall rank correlation, the M-association 
+or the Pearson correlation.
+<<>>=
+maxCorGrid(x, y, method = "kendall")
+maxCorGrid(x, y, method = "M")
+maxCorGrid(x, y, method = "pearson")
+@
+
+Note that the Spearman and Kendall rank correlation estimate different 
+population quantities than the Pearson correlation.  Thus the above values of 
+the different maximum association measures are not directly comparable.  The 
+argument \code{consistent} can be used for the former two methods to get 
+consistent estimates of the maximum correlation under normal distributions.
+<<>>=
+maxCorGrid(x, y, consistent = TRUE)
+maxCorGrid(x, y, method = "kendall", consistent = TRUE)
+@
+
+The M-association measure is consistent at the normal model and estimates the 
+same population quantity as the Pearson correlation.
+
+
+% -----------------
+% Permutation tests
+% -----------------
+
+\section{Permutation tests} \label{sec:tests}
+
+To assess the significance of maximum association estimates, permutation tests 
+can be performed with the function \code{permTest()}.  The number of random 
+permutations to be used can be set with the argument \code{R}, which defaults 
+to 1000.  On machines with multiple processor cores, only the argument 
+\code{nCores} needs to be set to take advantage of parallel computing in order 
+to reduce computation time.  If \code{nCores} is set to \code{NA}, all 
+available processor cores are used.
+
+In the examples in this section, we use 2 processor cores.  To keep computation 
+time minimal, we set the number of random permutations to 100.  Furthermore, we 
+set the seed of the random number generator via the argument \code{seed} for 
+reproducibility of the results.  Since we employ parallel computing, 
+\pkg{ccaPP} uses random number streams \citep{EcuS02} from the package 
+\pkg{parallel} rather than the default \proglang{R} random number generator.
+<<>>=
+permTest(x, y, R = 100, nCores = 2, seed = 2016)
+@
+
+Again, the Spearman rank correlation is used as projection index by default.  
+A different bivariate association measure can be specified via the argument 
+\code{method}, which is passed down to the function \code{maxCorGrid()}.
+<<>>=
+permTest(x, y, R = 100, method = "kendall", nCores = 2, seed = 2016)
+permTest(x, y, R = 100, method = "M", nCores = 2, seed = 2016)
+permTest(x, y, R = 100, method = "pearson", nCores = 2, seed = 2016)
+@
+
+Clearly, all four tests strongly reject the null hypothesis of 
+% independence of 
+no association between the two data sets.
+
+% Since the focus of package \pkg{ccaPP} is on robust maximum association 
+% measures, we follow the procedure of \citet{TasK03} to introduce an outlier 
+% into the data.  
+Since the focus of \pkg{ccaPP} is on robustness, we introduce an outlier into 
+the \code{diabetes} data as in \citet{TasK03}.  More precisely, we replace the 
+value 0.81 of the first observation of variable \emph{glucose intolerance} 
+by~8.1, i.e., by a simple shift of the comma.
+\vspace{-0.75ex}
+<<>>=
+y[1, "GlucoseIntolerance"] <- 8.1
+@
+\vspace{-0.5ex}
+Now we repeat the four permutation tests with the contaminated data.
+\vspace{-0.75ex}
+<<>>=
+permTest(x, y, R = 100, nCores = 2, seed = 2016)
+permTest(x, y, R = 100, method = "kendall", nCores = 2, seed = 2016)
+permTest(x, y, R = 100, method = "M", nCores = 2, seed = 2016)
+permTest(x, y, R = 100, method = "pearson", nCores = 2, seed = 2016)
+@
+\vspace{-0.5ex}
+The test based on the maximum Pearson correlation is highly influenced by the 
+outlier and no longer rejects the null hypothesis.  The tests based on the 
+maximum Spearman and Kendall rank correlation, as well as the test based on 
+maximum M-association, remain stable.
+
+
+% -----------------
+% Computation times
+% -----------------
+
+\section{Computation times} \label{sec:CPU}
+
+This section analyzes the computation times of the methods implemented in 
+\pkg{ccaPP}.  All computations are performed in \proglang{R} version~3.2.2 on a 
+machine with an Intel Xeon X5670 CPU.  The computation times are recorded with 
+the \proglang{R} package \pkg{microbenchmark} \citep{microbenchmark}.
+
+First, we compare the barebones implementations of the Pearson, Spearman and 
+Kendall correlations (functions \code{corPearson()}, \code{corSpearman()} and 
+\code{corKendall()} in \pkg{ccaPP}) with their counterparts from the base 
+\proglang{R} function \code{cor()}.  We also include the M-association measure 
+from the function \code{corM()} in the comparison.  The bivariate association 
+measures are computed for 10 random draws from a bivariate normal distribution 
+with true correlation $\rho = 0.5$ and sample size $n = 100, 1\,000, 10\,000, 
+100\,000$.  For each random sample, computation times from 10 independent runs 
+are recorded.
+
+\begin{table}[t]
+\begin{center}
+\caption{Average computation time (in milliseconds) of the bivariate 
+association measures in base \proglang{R} and the package \pkg{ccaPP}.}
+\label{tab:CPU-cor}
+\smallskip
+% \setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{rcrrrcrrrr}
+\hline\noalign{\smallskip}
+ & & \multicolumn{3}{c}{Base \proglang{R}} & &
+ \multicolumn{4}{c}{Package \pkg{ccaPP}} \\
+\multicolumn{1}{c}{$n$} & & Spearman & \multicolumn{1}{c}{Kendall} & Pearson & & 
+Spearman & Kendall & Pearson & \multicolumn{1}{c}{M} \\
+\noalign{\smallskip}\hline\noalign{\smallskip}
+100 &  & 0.20 & 0.40 & 0.08 &  & 0.03 & 0.03 & 0.01 & 0.11 \\ 
+1\,000 &  & 0.41 & 18.73 & 0.08 &  & 0.18 & 0.16 & 0.01 & 0.32 \\ 
+10\,000 &  & 3.38 & 1761.71 & 0.19 &  & 2.06 & 1.84 & 0.05 & 2.42 \\ 
+100\,000 &  & 54.88 & 176431.15 & 1.34 &  & 25.21 & 22.46 & 0.41 & 27.42 \\ 
+\noalign{\smallskip}\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+Table~\ref{tab:CPU-cor} contains the average computation times of the 
+bivariate association measures.  Clearly, the fast $O(n \log(n))$ algorithm 
+for the Kendall correlation \citep{Kni66} in \pkg{ccaPP} is a huge improvement 
+over the naive $O(n^2)$ algorithm in base \proglang{R}.  Time savings for the Spearman and Pearson correlation are also substantial, considering that they 
+are only due to a lack of missing data handling.  For the M-association, the 
+computation time is somewhat higher than that of the Spearman and Kendall 
+correlation.
+
+Since the projection pursuit algorithm for the maximum association measures 
+involves computing a large number of bivariate associations 
+\citep[see][]{AlfCXX}, the faster barebones implementations are crucial to 
+keep the computation of the maximum association feasible.  
+
+We employ the same procedure as above to record the computation time of the 
+maximum association measures, except that each of the random samples is drawn 
+from a multivariate normal distribution such that the true maximum correlation 
+is $\rho = 0.5$ and the corresponding weighting vectors are $\alpha = (1, 0, 
+\ldots, 0)'$ and $\beta = (1, 0, \ldots, 0)'$.  The sample size is set to
+$n = 100, 1\,000, 10\,000$, the dimension of $\mat{X}$ is $p = 5, 10, 50$, and 
+the dimension of $\mat{Y}$ is $q = 1, 5, 10, 50$.
+
+Inspired by canonical correlation analysis (CCA), we also compute other 
+association measures for comparison.  In CCA, the first canonical correlation 
+is given by the square root of the largest eigenvalue of the matrix
+\begin{equation}\label{eq:prodmat}
+\mat{\Sigma}_{XX}^{-1} \mat{\Sigma}_{XY} \mat{\Sigma}_{YY}^{-1} 
+\mat{\Sigma}_{YX},
+\end{equation}
+where $\mat{\Sigma}_{XX} = \Cov(\vect{X}), \mat{\Sigma}_{YY} = \Cov(\vect{Y})$, 
+$\mat{\Sigma}_{XY} = \Cov(\vect{X},\vect{Y})$ and $\mat{\Sigma}_{YX} = 
+\mat{\Sigma}_{XY}'$ \citep[see, e.g.,][]{JohW02}.  This is of course identical 
+to the maximum association measure with the Pearson correlation as projection 
+index.  Other association measures are obtained by plugging different scatter 
+matrices into \eqref{eq:prodmat}.  However, such a measure is in general 
+different from the maximum association measure based on the corresponding 
+bivariate association, with the maximum association being much easier to 
+interpret.  Here we plug in scatter matrices corresponding to the Pearson, 
+Spearman and Kendall correlation.  For the Pearson correlation, the 
+corresponding scatter matrix is the sample covariance matrix.  For the Spearman 
+and Kendall correlation, the scatter matrices are given by the respective 
+pairwise associations multiplied with scale estimates of the corresponding 
+variables.  Furthermore, since a multivariate M-estimator of the covariance 
+matrix is not robust, we instead use the minimum covariance determinant 
+estimator \citep[MCD; see][]{RouD99}.
+
+\begin{table}[t!]
+\begin{center}
+\caption{Average computation time (in seconds) of the maximum association 
+measures in package \pkg{ccaPP}, as well as association measures based on 
+corresponding full correlation matrix.}
+\label{tab:CPU-maxCor}
+\smallskip
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{rrrcrrrrcrrrr}
+\hline\noalign{\smallskip}
+ & & & & \multicolumn{4}{c}{Package \pkg{ccaPP}} & & 
+ \multicolumn{4}{c}{Full scatter matrix} \\
+\multicolumn{1}{c}{$n$} & \multicolumn{1}{c}{$p$} & \multicolumn{1}{c}{$q$} & & 
+Spearman & Kendall & Pearson & \multicolumn{1}{c}{M} & & Spearman & 
+\multicolumn{1}{c}{Kendall} & Pearson & \multicolumn{1}{c}{MCD} \\
+\noalign{\smallskip}\hline\noalign{\smallskip}
+% 100 &    5 &    1 &  & 0.014 & 0.011 & 0.001 & 0.036 &  & 0.001 & 0.005 & 0.001 & 0.020 \\ 
+% 100 &    5 &    5 &  & 0.073 & 0.049 & 0.006 & 0.242 &  & 0.002 & 0.010 & 0.001 & 0.038 \\ 
+% 100 &   10 &    1 &  & 0.029 & 0.022 & 0.003 & 0.091 &  & 0.002 & 0.012 & 0.001 & 0.044 \\ 
+% 100 &   10 &    5 &  & 0.115 & 0.083 & 0.012 & 0.396 &  & 0.002 & 0.021 & 0.001 & 0.075 \\ 
+% 100 &   10 &   10 &  & 0.172 & 0.098 & 0.021 & 0.773 &  & 0.002 & 0.036 & 0.001 & 0.129 \\ 
+% 100 &   50 &    1 &  & 0.183 & 0.130 & 0.046 & 0.665 &  & 0.007 & 0.223 & 0.003 & 0.925 \\ 
+% 100 &   50 &    5 &  & 0.653 & 0.434 & 0.340 & 6.452 &  & 0.008 & 0.259 & 0.003 & 1.095 \\ 
+% 100 &   50 &   10 &  & 0.682 & 0.460 & 0.475 & 10.596 &  & 0.008 & 0.308 & 0.003 & 1.349 \\ 
+% 100 &   50 &   50 &  & 1.274 & 0.870 & 0.972 & 33.607 &  &  &  &  &  \\ 
+100 &    5 &    1 &  & 0.014 & 0.011 & 0.001 & 0.036 &  & 0.001 & 0.005 & 0.001 & 0.020 \\ 
+100 &    5 &    5 &  & 0.073 & 0.049 & 0.006 & 0.244 &  & 0.002 & 0.010 & 0.001 & 0.038 \\ 
+100 &   10 &    1 &  & 0.030 & 0.023 & 0.003 & 0.088 &  & 0.002 & 0.012 & 0.001 & 0.044 \\ 
+100 &   10 &    5 &  & 0.114 & 0.083 & 0.012 & 0.473 &  & 0.002 & 0.021 & 0.001 & 0.075 \\ 
+100 &   10 &   10 &  & 0.180 & 0.107 & 0.021 & 0.658 &  & 0.003 & 0.037 & 0.001 & 0.130 \\ 
+100 &   50 &    1 &  & 0.174 & 0.137 & 0.047 & 0.641 &  & 0.007 & 0.224 & 0.003 & 0.926 \\ 
+100 &   50 &    5 &  & 0.588 & 0.429 & 0.365 & 5.777 &  & 0.008 & 0.259 & 0.003 & 1.096 \\ 
+100 &   50 &   10 &  & 0.692 & 0.435 & 0.426 & 8.249 &  & 0.009 & 0.307 & 0.003 & 1.348 \\ 
+100 &   50 &   50 &  & 1.257 & 0.824 & 0.993 & 33.368 &  & 0.013 & 0.839 & 0.005 &  \\ 
+\noalign{\smallskip}
+1\,000 &    5 &    1 &  & 0.189 & 0.152 & 0.005 & 0.219 &  & 0.002 & 0.324 & 0.001 & 0.075 \\ 
+1\,000 &    5 &    5 &  & 1.143 & 0.961 & 0.035 & 1.280 &  & 0.003 & 0.860 & 0.001 & 0.143 \\ 
+1\,000 &   10 &    1 &  & 0.408 & 0.342 & 0.018 & 0.532 &  & 0.004 & 1.034 & 0.001 & 0.165 \\ 
+1\,000 &   10 &    5 &  & 1.837 & 1.620 & 0.072 & 2.239 &  & 0.005 & 1.890 & 0.001 & 0.271 \\ 
+1\,000 &   10 &   10 &  & 2.567 & 2.145 & 0.110 & 3.693 &  & 0.006 & 3.320 & 0.001 & 0.459 \\ 
+1\,000 &   50 &    1 &  & 2.285 & 2.055 & 0.293 & 3.567 &  & 0.019 & 21.126 & 0.005 & 2.805 \\ 
+1\,000 &   50 &    5 &  & 8.728 & 7.611 & 1.188 & 14.019 &  & 0.020 & 24.544 & 0.006 & 3.264 \\ 
+1\,000 &   50 &   10 &  & 10.264 & 8.661 & 1.271 & 16.524 &  & 0.024 & 29.184 & 0.006 & 3.938 \\ 
+1\,000 &   50 &   50 &  & 21.192 & 16.785 & 3.448 & 39.227 &  & 0.038 & 80.656 & 0.011 & 14.740 \\ 
+\noalign{\smallskip}
+10\,000 &    5 &    1 &  & 1.933 & 1.895 & 0.043 & 1.472 &  & 0.018 & 32.153 & 0.002 & 0.115 \\ 
+10\,000 &    5 &    5 &  & 12.136 & 10.695 & 0.251 & 8.958 &  & 0.036 & 85.527 & 0.004 & 0.214 \\ 
+10\,000 &   10 &    1 &  & 4.783 & 4.113 & 0.140 & 3.223 &  & 0.032 & 102.857 & 0.003 & 0.234 \\ 
+10\,000 &   10 &    5 &  & 19.922 & 19.365 & 0.539 & 17.111 &  & 0.043 & 188.259 & 0.004 & 0.369 \\ 
+10\,000 &   10 &   10 &  & 32.188 & 24.658 & 0.856 & 22.533 &  & 0.063 & 330.891 & 0.006 & 0.618 \\ 
+10\,000 &   50 &    1 &  & 28.747 & 26.078 & 3.150 & 29.440 &  & 0.153 & 2107.029 & 0.028 & 3.374 \\ 
+10\,000 &   50 &    5 &  & 116.614 & 100.885 & 9.538 & 114.121 &  & 0.160 & 2448.142 & 0.032 & 3.917 \\ 
+10\,000 &   50 &   10 &  & 134.916 & 103.590 & 10.014 & 123.863 &  & 0.179 & 2910.402 & 0.035 & 4.706 \\ 
+10\,000 &   50 &   50 &  & 244.389 & 209.834 & 20.318 & 224.293 &  & 0.320 & 8045.749 & 0.082 & 16.556 \\ 
+\noalign{\smallskip}\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+Table~\ref{tab:CPU-maxCor} lists average computation times for various values 
+of $n$, $p$ and $q$.  The function \code{maxCorGrid()} is thereby used with the 
+default values for all control parameters of the algorithm 
+% (see the corresponding \proglang{R} help file by typing \code{?maxCorGrid} into 
+% the \proglang{R} console when \pkg{ccaPP} is loaded).  
+(see the corresponding \proglang{R} help file).  
+For the maximum association measures, the number of bivariate associations that 
+have to be computed clearly takes a toll on computation time compared to the 
+association measures based on the full scatter matrices.  Note that the Kendall 
+correlation is the exception, as the computation of the full scatter matrix 
+uses \proglang{R}'s built-in \code{cor()} function, and therefore the naive 
+$O(n^2)$ algorithm.  Also note that computing the full MCD scatter matrix 
+requires more observations than variables, i.e., $n > p+q$, hence it cannot be 
+computed for $n=100$ and $p=q=50$.
+
+For the Pearson correlation, the projection pursuit algorithm to find the 
+maximum association cannot be recommended since the first canonical correlation 
+is much faster to compute.  However, the focus of \pkg{ccaPP} is on the 
+Spearman and Kendall rank correlation, for which the maximum association 
+measures are much more intuitive than the association measures based on the 
+full scatter matrix.  In our opinion, the gain of easy interpretability 
+outweighs the increased computational cost.  In any case, the maximum 
+association measures are still reasonably fast to compute for many problem 
+sizes due to our \proglang{C++} implementation.
+
+It is also worth noting that the association measures based on a full scatter 
+matrix require the number of observations to be larger than the number of 
+variables in each of the two data sets, i.e., $n > \max(p, q)$.  The maximum 
+association measures do not have this limitation, although computation time 
+increases considerably in high dimensions.
+
+
+% -----------
+% Conclusions
+% -----------
+
+\section{Conclusions} \label{sec:conclusions}
+
+The package \pkg{ccaPP} provides functionality for the statistical computing 
+environment \proglang{R} to compute intuitive measures of association between 
+two data sets.  These maximum association measures seek the maximal value of a 
+bivariate association measure between one-dimensional projections of each data 
+set.  We recommend the maximum Spearman and Kendall rank correlation measures 
+because of their good robustness properties and efficiency.  For details on the 
+theoretical properties of the estimators, as well as the alternate grid 
+algorithm and extensive numerical results, the reader is referred to 
+\citet{AlfCXX}.
+
+Due to our \proglang{C++} implementation, the maximum association measures are 
+reasonably fast to compute.  The significance of maximum association estimates 
+can be assessed via permutation tests, which allow for parallel computing to 
+decrease computation time.  In addition, the corresponding functions in 
+\pkg{ccaPP} are easy to use.
+
+
+% ----------
+% References
+% ----------
+
+%\bibliographystyle{plainat}
+\bibliography{maxCor}
+
+
+\end{document}

@@ -1,0 +1,1 @@
+dataf.population <- function() return(getdata("population"))

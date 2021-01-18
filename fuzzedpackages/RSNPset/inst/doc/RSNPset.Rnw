@@ -1,0 +1,355 @@
+\documentclass[12pt]{article}
+\usepackage[paper=letterpaper,margin=1in]{geometry}
+\usepackage{enumerate}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+%\usepackage{hyperref}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+% \VignetteEngine{knitr::knitr}
+% \VignetteIndexEntry{rsnpset}
+
+\setlength{\parskip}{10pt}
+\setlength{\parindent}{0pt}
+
+%% R code %%
+\newcommand{\R}{\texttt{R}}
+\newcommand{\pkgname}{\texttt{RSNPset}}
+\newcommand{\fctname}[1]{\texttt{rspset(#1)}}
+\newcommand{\pfctname}[1]{\texttt{rspset.pvalue(#1)}}
+\newcommand{\snplist}{\texttt{snplist}}
+
+%% Mathematical notation %%
+\newcommand{\bH}{\mathbb H}
+\newcommand{\bI}{\mathbb I}
+\newcommand{\bR}{\mathbb R}
+\newcommand{\kn}{k}
+
+\newcommand{\Umatkn}{\bm{U}_{\kn}}
+\newcommand{\Uveckn}{\bm{U}_{\bullet \kn}}
+\newcommand{\Smatkn}{\bm{\Sigma}_{\kn}}
+\newcommand{\Smatginv}{\bm{\Sigma}^{-}}
+\newcommand{\SmatPM}{\bm{\Sigma}^{+}}
+\newcommand{\SmatPMkn}{\bm{\Sigma}^{+}_{\kn}}
+\newcommand{\trans}{T}
+
+
+% <<setup1, include=FALSE>>=
+% require(knitr)
+% opts_chunk$set(fig.path='figure/',fig.align='center',fig.show='hold',size='footnotesize')
+% @
+
+<<setup2, include=FALSE>>=
+options(width=70)  # make the printing fit on the page
+set.seed(1121)     # make the results repeatable
+stdt<-date()
+@
+
+\title{\pkgname: An Open \R{} Package for Genome-Wide SNP Set Analysis on the Basis of Efficient Scores}
+       
+\begin{document}
+\maketitle
+\begin{abstract}
+\noindent
+This package offers the capability to conduct genome-wide inference for case-control studies, including studies with censored phenotypes, using efficient score statistics. 
+This document is intended to supplement the package and function documentation, to more thoroughly address finer statistical points encountered when applying this approach.
+\end{abstract}
+
+
+\section{Introduction}
+Analysis of high-throughput genomic assay data on the basis of the score is asymptotically equivalent to Wald or likelihood ratio tests, offers higher computational efficiency, greater stability, and more readily lends itself to the use of resampling methods. 
+Though the estimation of unknown nuisance parameters may induce variability on the score, the use of the efficient score accounts for this.
+
+The \pkgname{} package provides a software implementation of efficient score statistics in genome-wide SNP set analysis of complex traits. 
+This document provides an overview of the package, its methods for statistical inference, some example usage, and an explanation of the statistical assumptions of its arguments and options. 
+By way of example, the SNP sets discussed here use genes as the loci of interest, i.e. they are sets of SNPs relevant to specific genes, but the approach is suitable for other genomic loci, including pathways and bands.
+
+\section{Score Calculations}
+We wish to test the association of a set of SNPs with a quantitative trait.
+We begin by establishing some notation. 
+Let the number of patients be denoted by $n$ (indexed by $i$), and the number of SNPs in a set be denoted $m$ (indexed by $j$). 
+The complete set of genotypes for all patients forms the matrix $G$, where the genotype for SNP $j$ in patient $i$ is denoted by $G_{ij}$. 
+The vector of outcomes for all patients is denoted $Y$, where the outcome for patient $i$ is denoted by $Y_i$. 
+(Or, for right-censored endpoints, what is observed is $(Y_i,\Delta_i)$, where $Y_i$ is the event time and $\Delta_i\in\{0,1\}$ is the event indicator). 
+The model may also include $X$, an $n\times p$ matrix of covariates, where $\vec{X}_i$ is the vector of covariate values for patient~$i$.
+
+The marginal null hypothesis for SNP $j$ (that the variant is not associated with the outcome) is denoted by $H_j$. 
+This hypothesis is tested using an efficient score statistic whose numerator is of the form $\sum_{i=1}^n U_{ij}$, where $U_{ij}$ denotes the contribution of patient $i$ to the efficient score~\cite{tsiatis} statistic. 
+Table \ref{tab:score} shows the specific equations for $U_{ij}$ for different types of outcomes.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|l|l|l|l|}\hline
+  Outcome&Score&$U_{ij}$\\\hline
+  $Y_i\in\{0,1\}$&Binomial&$(Y_i - \bar{Y})(G_{ij} - \bar{G_j})$\\
+  $Y_i\in \bR$&Gaussian&$(Y_i-\vec{X}_i \hat{\alpha})(G_{ij} - \vec{G}_j^{\trans} X (X^{\trans}X)^{-1} \vec{X}_i^{\trans})$\\
+  $Y_i\in (0,\infty),\Delta_i\in\{0,1\}$&Cox&$\Delta_i (G_{ij} - a_j(i)b(i)^{-1})$\\  \hline
+  \end{tabular}
+\caption{Summary of efficient score calculations. 
+Here $\bar{Y}=\frac{1}{n} \sum_{i=1}^n Y_i$ and $\bar{G}_j=\frac{1}{n}\sum_{i=1}^nG_{ij}$. 
+For the Gaussian case, $\vec{G}_j$ is the vector of genotypes for SNP~$j$ for all patients, and $\hat{\alpha}$ is the MLE estimator for the coefficients of the covariates, estimated from a model without the genotypic component.
+Note that in the absence of covariates, the design matrix can be considered a vector of 1's and the Gaussian equation reduces to the binomial case.
+For the Cox score, $a_j(i)=\sum_{l=1}^n \bI[Y_l \ge Y_i] G_{lj}$ and $b(i)=\sum_{l=1}^n \bI[Y_l \ge Y_i]$.}
+\label{tab:score}
+\end{table}
+
+Each of the $K$ SNP sets, $J_k$, are composed of $m_k$ SNPs, and the null hypothesis for each SNP set is denoted by $\bH_k = \cap_{j} H_j$ where $j\in J_k$. 
+To derive the efficient score for the SNP set, we construct $\Umatkn$, the $n\times m_k$ matrix whose $(i,j)$ element is $U_{ij}$. 
+Then $\Uveckn=(\sum_{i=1}^n U_{i1},\ldots,\sum_{i=1}^n U_{im_k})^T$ is the corresponding vector of the $m_k$ marginal score statistics, and $\Smatkn=\Umatkn^T\Umatkn$ is the corresponding covariance matrix. 
+The efficient score statistic for the SNP set hypothesis $\bH_k$ then is $W_k=\Uveckn^T \SmatPMkn \Uveckn$, where $\SmatPMkn$ is the Penrose-Moore inverse of $\Smatkn$. 
+
+Under suitable regularity conditions~\cite{andrews}, $W_k$ converges in distribution to a chi-squared distribution with degrees of freedom $\nu=R_k\in\{1,\ldots,m_k\}$ and centrality parameter $\delta$, denoted by $\chi^2[\nu,\delta]$. 
+As $R_k$ is an unknown parameter, under $\bH_k$ we approximate the null distribution of $W_k$ as $\chi^2[r_k,0]$, where $r_k$ is the rank of $\Smatkn$. 
+(Note that the maximum possible rank of $\Smatkn$ for any SNP set is $n-1$).
+Thus we are able to compute the efficient score and asymptotic p-value for each of the $K$ SNP sets.
+
+The package includes options for two different resampling methods. 
+The first is Monte Carlo resampling~\cite{lin}. 
+We obtain a replicate of $\{(W_1, r_1), \dots, (W_K, r_K)\}$, call it $\{(W_{b,1}, r_{b,1}), \dots, (W_{b,K}, r_{b,K})\}$, by replacing $\Uveckn = U_k^T \vec{1}_n$ above with $\Uveckn = U_k^T \vec{Z}_n$, where $\vec{Z}_n$ denotes a vector of length $n$ of standard normal random values.
+Alternatively, we can generate $\{(W_{b,1}, r_{b,1}), \dots, (W_{b,K}, r_{b,K})\}$ by permuting the outcome vector, $(Y_1, \dots, Y_n)$, while holding the genotype matrix for each SNP set unchanged. 
+In the case of right-censored endpoints, $(Y_i, \delta_i)$ pairs are permuted intact. 
+Note that the permutation method is not appropriate when the model includes covariates. 
+These resampling replicates are useful in assessing the significance of the statistical results.
+
+\subsection{Notes on \fctname{}}
+Users should be aware that this function does not run checks to confirm that the elements of a requested SNP set are present in the matrix \texttt{G} before executing. 
+No results are returned for SNP sets for which no SNPs are present or which include \textbf{any} SNPs with \textbf{missing} data values. 
+If a SNP set contains column names that are not present in the argument \texttt{G}, the function executes without objection and returns a test statistic based on the subset of columns that \emph{are} present. 
+For this reason, the \texttt{summary.RSNPset()} function provides (in addition to other execution information) counts of the number of SNP sets dropped from the analysis and the number of SNP sets defined to include SNPs that are not present in the data, if any.  
+
+Unlike the Gaussian and bionomial score statistics, the Cox score statistic (\texttt{method = "cox"}) is not a sum of independent patient level scores, so some level of pruning of SNPs is recommended. 
+The permutation resampling facilities of the package can be utilized to assess the performance of the asymptotic inference. 
+The development of robust methods for calculating the Cox score statistics and approximating the covariance matrix is under way.
+
+\subsection{Options for \fctname{}}
+The following options imply specific assumptions about the model or data. It is important to confirm that these assumptions are valid when executing the analysis.
+\begin{description} \itemsep8pt \parskip0pt \parsep0pt
+  \item[\texttt{X}] - Permutation resampling is inappropriate for models including covariates (\texttt{r.method} must be set as \texttt{"monte carlo"}). Currently, the inclusion of covariates is implemented only for the Gaussian model.
+  
+  \item[\texttt{v.permute}] - When using \texttt{r.method = "permutation"}, setting this value to \texttt{FALSE} saves processing time by not re-calculating the variance of the permutation replicates, under the assumption that $\Smatkn$ for SNP set $J_k$ is the same across permutations.
+  
+  \item[\texttt{ret.rank}] - When using \texttt{r.method = "permutation"}, setting this option to \texttt{FALSE} reduces the size of the returned object by not returning ranks for the permutation replicates, under the assumption that the rank of $\Smatkn$ for SNP set $J_k$ is invariant under permutation. Ranks are returned only for the observed data.
+  
+  \item[\texttt{pinv.check}] - The calculation of the efficient score relies on the Penrose-Moore inverse of the variance matrices. Setting this argument to \texttt{TRUE} generates a list of \texttt{B+1} data frames, each with one row per SNP set and five columns of diagnostic measures of the accuracy of this inverse. Departure of these values from zero indicates poor performance of the Penrose-Moore inverse. These diagnostics are returned as an attribute that can be accessed via the \texttt{summary()} function.
+\end{description}
+
+
+\section{Hypothesis Testing}
+At minimum, the \pfctname{} function returns asymptotic p-values and false discovery rate (FDR) adjusted q-values for each SNP set. 
+Setting the \fctname{} argument \texttt{B} $>0$ allows \pfctname{} to return resampling p-values (and FDR adjusted resampling q-values) as well. 
+By default, the \pfctname{} function uses the \texttt{qvalue} package to compute the q-values, though the \texttt{qfun} argument can be used to provide a custom definition.
+
+\subsection{Notes on \pfctname{}}
+Several considerations need to be made in testing the association of a SNP set with the outcome. 
+Firstly, meaningful unadjusted resampling p-values require \texttt{B} $> K/\alpha$ (on the order of $10^7$ replicates for a genome-wide study) in order to account for false positives due to multiple testing. 
+Note that in the event that none of the resampling replicates generates a more extreme result than the observed value, a resampling p-value of $1/$\texttt{B} is returned (instead of $0$). 
+
+Second, by default \fctname{} and \pfctname{} operate in accordance with the assumption that each $\Smatkn$ is invariant under resampling, in which case the degrees of freedom of the chi-squared distribution for the statistics, $W_k$, are the same across replications. 
+This is always true in the case of Monte Carlo resampling, but may not hold for permutation resampling.
+If the assumption is valid, then the observed and replication statistics for a SNP set are directly comparable. 
+However, if the ranks of the $\Smatkn$ differ across permutations, then the chi-squared distributions differ in degrees of freedom, so the raw statistics are not comparable. 
+In this latter case, the arguments of \fctname{} should be set to return the ranks of the permutation replicates (\texttt{ret.rank = TRUE}), and \pfctname{} should be run with the \texttt{pval.transform} argument set to \texttt{TRUE}. When \texttt{pval.transform = TRUE}, instead of comparing the observed and resampling statistics, the resampling p-values are determined by comparing observed asymptotic p-values to the asymptotic p-values of the resampling replicates. 
+
+\subsection{Options for \pfctname{}}
+\begin{description} \itemsep8pt \parskip0pt \parsep0pt
+  \item[\texttt{pval.transform}] - As mentioned above, when this option is set to \texttt{TRUE}, the function uses the ranks of the resampling replicates to get resampling replicate p-values (which are identically distributed, and thus comparable) to determine the empirical resampling p-values of the statistics.
+  
+  \item[\texttt{qfun}] - The \texttt{qvalue()} function, which is used internally in this function, may fail when used on a small number of replications or SNP sets. This argument is used to define a new q-value function, or to assign arguments for the \texttt{qvalue()} function. For example,\\ \texttt{qfun = function(x)\{qvalue(x, robust = TRUE)\$qvalue\}} can be used to avoid generating errors if the number of SNP sets is small.
+\end{description}
+
+
+\section{An Example Analysis}
+In practice, analyses might include hundreds of patients and thousands of SNP sets, spanning tens of thousands of SNPs. 
+For the purposes of this demonstration, we simulate a more manageable example. 
+Users should also note that an important precursor to genome-wide analyses is quality control of the genotypic data. 
+As our data is simulated and complete, we can omit this step and proceed with our analysis. 
+
+\subsection{Simulating the Data}
+First, we generate a cohort of \texttt{n} patients and their outcome data, i.e., the traits we wish to analyze: case-control status, LDL level, and survival time/survival status.
+<<pts>>=
+set.seed(123)
+
+n <- 100
+status <- rbinom(n, 1, 0.5) 
+table(status)
+
+LDL <- rnorm(n, mean=115, sd=35)
+quantile(LDL)
+
+time <- rexp(n, 1/10)
+event <- rbinom(n, 1, 0.9)
+quantile(time)
+table(event)
+@ 
+
+We also simulate some covariates to include in the analysis of our continuous phenotype. 
+Note that the covariates must be numeric.
+<<covars>>=
+X <- matrix(c(rnorm(n), rbinom(n, 4, .25)), nrow=n)
+summary(X[,1])
+table(X[,2])
+@
+
+Next we simulate the genomic data. Here we are using allele counts, but the methodology is also applicable to expression levels. 
+For each SNP, we let the probability of having a mutant allele be a random value selected from a uniform distribution across the interval $(0.1, 0.9)$.
+<<snps>>=
+m <- 500
+
+G <- matrix(as.double(rbinom(n*m, 2, runif(n*m,.1,.9))), n, m)
+dim(G)
+@
+
+We must label all of the SNPs so that they can be referenced by the SNP sets. 
+The rows correspond to the genotypes of each patient, and the columns are the allele counts for each SNP.
+<<ids>>=
+rsIDs <- paste0("rs100",1:m)
+colnames(G) <- rsIDs
+
+G[1:5,1:5]
+@
+
+Next we make the SNP sets. 
+For our example we compose $K = 10$ sets of between three and fifty SNPs at random, but we imagine them to represent groups of SNPs related to specific genes (or perhaps some other genomic loci, such as bands or pathways).
+<<>>=
+K <- 10
+genes <- paste0("XYZ",1:K)
+geneSets <- lapply(sample(3:50, size=K, replace=TRUE), sample, x=rsIDs)
+names(geneSets) <- genes
+
+unlist(lapply(geneSets, length))
+@ 
+For a systematic approach to generating gene-based SNP sets from real genomic data, see the \snplist{}~\cite{snplist} package.
+
+
+\subsection{Conducting the Analysis}
+After installing its dependent packages, we load \pkgname{}. The fact that \pkgname{} utilizes the \texttt{doRNG} package gives us the ability to set a seed so that our analyses are reproducible.
+<<loadpkg>>=
+library(RSNPset)
+set.seed(456)
+@ 
+
+We look first at our binary phenotype, case-control status. 
+Again, a dramatically greater number of replications is generally required in order to attain meaningful results. 
+We use just a few here for the purposes of demonstration.
+<<ccstat>>=
+ccres <- rsnpset(Y=status, G=G, snp.sets=geneSets, score="binomial", 
+                 B=10, r.method="permutation", ret.rank=TRUE, v.permute=TRUE)
+@
+
+The resulting object, \texttt{ccres}, includes a list of \texttt{B+1} data frames. 
+Each data frame has one row per (non-empty) SNP set and a column, \texttt{W}, containing the test statistics. 
+The first data frame contains the statistics for the observed data, while the remainder correspond to the permutation results. 
+Since we set \texttt{ret.rank = TRUE}, each data frame also contains a column with the rank of the covariance matrix, $\Smatkn$, i.e. the degrees of freedom for our chi-squared test. 
+The first data frame also contains a column, \texttt{m}, denoting the number of SNPs in each SNP set.
+<<ccres1>>=
+ccres[["Observed"]]
+@
+
+The \texttt{summary()} function displays the execution parameters for the returned object.
+<<ccsum>>=
+summary(ccres)
+@
+
+We use \pfctname{} to check for evidence for rejecting our null hypotheses. 
+Since we have the ranks for the permutation replicates, we set \texttt{pval.transform = TRUE} to ensure the results across permutations are comparable.
+<<ccpval>>=
+bhqfun <- function(x){qvalue::qvalue(x, fdr.level=0.05, lambda=0)$qvalue}
+rsnpset.pvalue(ccres, pval.transform=TRUE, qfun=bhqfun)
+@
+As explained above, setting \texttt{pval.transform = TRUE} means the function compares asymptotic p-values across permutations, instead of raw statistics, in computing the resampling p-values (\texttt{pB}). 
+Having computed these p-values, the function also returns family-wise error adjusted p-values (\texttt{PB}), in addition to the asymptotic (\texttt{p}) and FDR adjusted p-values (\texttt{q} and \texttt{qB}). 
+We have also used the \texttt{qfun} argument to set our own function for computing FDR adjusted p-values (in this case the Benjamini-Hochberg procedure).
+As expected, since the data are simulated, we find no significant association between any SNP sets and the outcome. 
+%(Recall that the asymptotic p-value for \textit{XYZ4} is not significant under multiple testing).
+
+We move on to the continuous phenotype, LDL level. 
+Here we revert to the default values for the arguments \texttt{ret.rank} and \texttt{v.permute}. 
+In practice, when used on a much larger set of data, these changes offer the potential for a significant reduction in both the processing time and the size of the returned object. 
+The default \texttt{r.method}, Monte Carlo resampling, allows us to include covariates in our model.
+<<ldlstat>>=
+set.seed(789)
+ldlres <- rsnpset(Y=LDL, G=G, X=X, snp.sets=geneSets, score="gaussian", B=10)
+@
+
+Since the default is \texttt{ret.rank = FALSE}, only the first data frame contains the column with the ranks of the covariance matrices.  
+<<ldlres2>>=
+ldlres[["Observed"]]
+ldlres[["Replication.1"]]
+@
+Here the statistics of the Monte Carlo replicates have the same degrees of freedom as the observed statistics.
+
+<<ldlpval>>=
+rsnpset.pvalue(ldlres, qfun=bhqfun)
+@
+Again, these resampling p-values (\texttt{pBk}) are computed using identical covariance matrices, so the observed and replication statistics are directly comparable.
+
+Lastly, we look at our right-censored (time to event) phenotype. 
+<<ttestat>>=
+set.seed(1011)
+tteres <- rsnpset(Y=time, delta=event, G=G, snp.sets=geneSets, score="cox", 
+                  B=10, r.method="permutation", pinv.check=TRUE)
+@
+
+By setting \texttt{pinv.check = TRUE}, the returned object now includes an attribute giving five diagnostic measures of the Penrose-Moore Inverse computed for each SNP set in all of the permutation replicates and the observed data. 
+These are accessed via the \texttt{summary()} function. 
+The list of $($\texttt{B}$+1)$ $K \times 5$ data frames can be captured for examination.
+<<tteres1>>=
+pinv.diag <- summary(tteres)
+pinv.diag[["Observed"]]
+
+unlist(lapply(pinv.diag, max))
+@ 
+The diagnostic measures are all close to zero, indicating the Penrose-Moore Inverses are performing well, so we proceed to examining the p-values.
+<<ttepval>>=
+ttepvals <- rsnpset.pvalue(tteres, qfun=bhqfun)
+ttepvals
+@
+
+A \texttt{summary()} method is also available for the results of \pfctname{}, by default returning the ten SNP sets with the smallest asymptotic p-values. 
+The \texttt{verbose = TRUE} option gives additional information about the calculations.
+<<ttepvalsum1>>=
+summary(ttepvals, verbose=TRUE)
+@
+
+As a typical GWAS study may span thousands of SNPs and SNP sets, \texttt{summary()} allows for the succinct listing of p-values for the most significant results. 
+The returned data frame can be saved for future reference or reporting.
+<<ttepvalsum2>>=
+ttesum <- summary(ttepvals, sort="pB", nrows=5, dropcols=c("m","q","qB"))
+ttesum
+@
+
+{\footnotesize
+\begin{thebibliography}{9}
+\bibitem{andrews}
+  Andrews D.K.W. Asymptotic Results for Generalized Wald Tests.
+  \emph{Econometric Theory}, 3:348-358, 1987.
+  
+\bibitem{lin}
+  Lin D. An Efficient Monte Carlo Approach to Assessing Statistical Significance in
+Genomic Studies. \emph{Bioinformatics}, 21(6):781-787, 2005.
+
+\bibitem{tsiatis}
+  Tsiatis A.A. \emph{Semiparametric Theory and Missing Data}.
+  Springer Science+Business Media, LLC, New York, NY, 2006.
+  
+\bibitem{snplist}
+  \snplist{} is available under the GNU General Public License from the Comprehensive R Archive Network (CRAN) web site.
+  %\url{http://cran.r-project.org/web/packages/snplist/index.html}.
+\end{thebibliography}
+}
+
+% \section*{Session Information}
+% <<sesinf, echo=FALSE, results="asis">>=
+% toLatex(sessionInfo(), locale=FALSE)
+% @ 
+% <<times, echo=FALSE>>=
+% print(paste("Start Time",stdt))
+% print(paste("End Time  ",date()))
+% @ 
+
+\end{document}
+
+

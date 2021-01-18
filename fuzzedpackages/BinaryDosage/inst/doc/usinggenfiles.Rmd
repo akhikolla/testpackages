@@ -1,0 +1,343 @@
+---
+title: "Using GEN Files"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{Using GEN Files}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+This vignette documents the functions in the BinaryDosage package that convert GEN files to binary dosage files. 
+
+**Note:** The examples below use functions to access information in binary dosage files. Information about these functions can be found in the vignette [Using Binary Dosage Files](usingbdfiles.html). Data returned by the function <span style="font-family:Courier">getbdinfo</span> contains information about a binary dosage file. Information on the data return by <span style="font-family:Courier">getbdinfo</span> can be found in the vignette [Genetic File Information](geneticfileinfo.html).
+
+```{r setup, echo=FALSE}
+library(BinaryDosage)
+```
+# Introduction
+
+GEN files are a useful way to store genetic data. They are text files and can be easily parsed. The output files returned from the imputation software [Impute2](http://mathgen.stats.ox.ac.uk/impute/impute_v2.html) are returned in this format.
+
+Uncompressed GEN files can be very large, 100s of GB. Because of this they are quite often compressed. This makes the files much smaller but greatly increases the read time. The BinaryDosage package supports reading of gzip compressed GEN files.
+
+There appears to have been changes to the GEN file over the years and it also appears people have created GEN-like file formats. The <span style="font-family:Courier">BinaryDosage</span> package can support many GEN-like file formats.
+
+The BinaryDosage package has a routine to convert GEN files into a binary format that maintains the dosage, genetic and probabilities. This results in a file about 10-15% the size of the uncompressed VCF file with much faster, 200-300x, read times. In comparison, Using gzip to compress the GEN file reduces the size of the file to about 5% its original size but makes run times slower.
+
+Routines were written to help debug the conversion routine. It was discovered these routines were quite useful for accessing data in the GEN file and are now included in the package. This document contains instructions on how to use these routines.
+
+# GEN file formats
+
+The GEN file may have a header. If it does have a header the format the first N entries must be the column names for the SNP information variables. The following values identify the subjects and can have either of the following formats ordered by subject
+
+- The family ID followed by the subject ID
+- The subject ID only
+
+If the GEN file does not have a header, the subject information must be in a sample file that can be read with <span style="font-family:Courier">read.table</span>. If there is only one column the subject ID is set to this value and the family ID is set to "". Otherwise, the family ID value is set to the value of the first column and the subject ID value is set to the second column. If the first value of the subject ID and family ID are both "0", they are deleted. If family ID and subject ID are equal for all subjects, the family ID value is set to "".
+
+**Note:** If a sample file is provided, the header is ignored.
+
+The body GEN file must have the following format. The first N columns must contain information about the SNP. These columns must contain the following values
+
+- SNP ID
+- Location
+- Alternate allele
+- Reference allele
+
+The chromosome number may also be in the first N columns.
+
+**Note:** The first three columns of the GEN file used to be snp_id, rs_id, and position. In many cases these values got change to chromosome, snp_id, and position.
+
+
+The remaining columns must contain the genotype probabilities sorted by subject. The genotype probabilities can be in any of the following formats.
+
+- The dosage value only
+- Probability subject has no alternate alleles, probability subject has one alternate allele.
+- Probability subject has no alternate alleles, probability subject has one alternate allele, probability subject has two alternate allele.
+
+**Note:** The number of genotype probabilities must agree with the number of subjects identified in the header or sample file.
+
+# Example files
+
+There are several sample files included with the BinaryDosage package. The file names will be found by using the <span style="font-family:Courier">system.file</span> command in the examples. This will be used many times in the examples.
+
+The binary dosage files created will be temporary files. They will be created using the <span style="font-family:Courier">tempfile</span> command. This will also be used many times in the examples. All output files will use the default format of 4. For information on other formats see the vignette [Binary Dosage Formats](bdformats.html).
+
+# Converting a GEN file to the Binary Dosage format
+
+The <span style="font-family:Courier">gentobd</span> routine converts GEN files to the binary dosage format. Many different formats of GEN files by the BinaryDosage package. The following sections show how to convert GEN files in various formats to the binary dosage format.
+
+The <span style="font-family:Courier">gentobd</span> takes the following parameters
+
+- <span style="font-family:Courier">genfiles</span> - Name of GEN file and the optional sample file.
+- <span style="font-family:Courier">snpcolumns</span> - Columns containing the values for chromosome, SNP ID, location, reference allele, and alternate allele.
+- <span style="font-family:Courier">startcolumn</span> - Column where genotype probabilities start.
+- <span style="font-family:Courier">impformat</span> - Number of genotype probabilities for each subject.
+- <span style="font-family:Courier">chromosome</span> - Optional chromosome, provided if chromosome is not include in GEN file
+- <span style="font-family:Courier">header</span> - Vector of one or two logical values indicating if GEN and sample files have headers respectively.
+- <span style="font-family:Courier">gz</span> - Logical value indicating if GEN file is compressed.
+- <span style="font-family:Courier">sep</span> - Separator used in GEN file.
+- <span style="font-family:Courier">bdfiles</span> - Vector of character values give the names of the binary dosage file. If the binary dosage format is 3 or less there are three files names, binary dosage file, family file, and map file names. For format 4 there is only the binary dosage file name. 
+- <span style="font-family:Courier">format</span> - Format of the binary dosage file.
+- <span style="font-family:Courier">subformat</span> - Subformat of the binary dosage file.
+- <span style="font-family:Courier">snpidformat</span> - Format to store the SNP ID in.
+- <span style="font-family:Courier">bdoptions</span> - Options for calculating additional SNP data.
+
+## Default options
+
+The default values for the <span style="font-family:Courier">gentobd</span> require a sample file meaning there is no header in the GEN file and the first five columns be chromosome, SNP ID, location, reference allele, and alternate allele, respectively. The genotype data must have the three genotype values and the file must not be compressed.
+
+The following code reads the gen file *set3b.chr.imp* using the *set3b.sample* sample file. These files are in the format mentioned above.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+gen3bchrfile <- system.file("extdata", "set3b.chr.imp", package = "BinaryDosage")
+sample3bfile <- system.file("extdata", "set3b.sample", package = "BinaryDosage")
+bdfile3b_chr <- tempfile()
+gentobd(genfiles = c(gen3bchrfile, sample3bfile), bdfiles = bdfile3b_chr)
+
+bdinfo3b_chr <- getbdinfo(bdfiles = bdfile3b_chr)
+
+```
+
+## snpcolumns
+
+The <span style="font-family:Courier">snpcolumns</span> parameter lists the column numbers for the chromosome, SNP ID, location, reference allele, and alternate allele, respectively.
+
+The following code reads in *set1b.imp*. This file has the SNP data in the following order, chromosome, location, SNP ID, reference allele, alternate allele. The file also has a header so there is no sample file.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+gen1bfile <- system.file("extdata", "set1b.imp", package = "BinaryDosage")
+bdfile1b <- tempfile()
+gentobd(genfiles = gen1bfile,
+        bdfiles = bdfile1b,
+        snpcolumns = c(1L, 3L, 2L, 4L, 5L),
+        header = TRUE)
+
+bdinfo1b <- getbdinfo(bdfiles = bdfile1b)
+
+```
+
+Quite often the chromosome is not part of the GEN file and first column has the value '\-\-'. In this case  the SNP ID is often in the format <span style="font-family:Courier">\<chromosome\>:\<additional SNP data\></span>. In this case, the chromosome column number (first value in snpcolumns) can be set to 0L and the <span style="font-family:Courier">gentobd</span> routine will extract the chromosome from the SNP ID value.
+
+The following code reads in *set3b.imp*. This is in same format as *set3b.chr.imp* except that there is no column for the chromosome value. The value of 0L will be used for the chromosome column to indicate to get the chromosome value from the SNP ID value.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+gen3bfile <- system.file("extdata", "set3b.imp", package = "BinaryDosage")
+sample3bfile <- system.file("extdata", "set3b.sample", package = "BinaryDosage")
+bdfile3b <- tempfile()
+gentobd(genfiles = c(gen3bfile, sample3bfile),
+        bdfiles = bdfile3b,
+        snpcolumns = c(0L,2L:5L))
+
+bdinfo3b <- getbdinfo(bdfiles = bdfile3b)
+
+```
+
+## startcolumn
+
+Sometimes the GEN file has more SNP information than the five values mentioned earlier. In this case the genotype probabilities start in a column number other than 6. The value of the <span style="font-family:Courier">startcolumn</span> is the column number that the genotype probabilities start
+
+The following code reads in *set4b.imp*. It has an extra column in the SNP data in column 2. The <span style="font-family:Courier">snpcolumns</span> and <span style="font-family:Courier">startcolumn</span> has been set to handle this. The value of <span style="font-family:Courier">impformat</span> has also been set since there are only 2 genotype probabilities in the file.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+gen4bfile <- system.file("extdata", "set4b.imp", package = "BinaryDosage")
+sample4bfile <- system.file("extdata", "set4b.sample", package = "BinaryDosage")
+bdfile4b <- tempfile()
+gentobd(genfiles = c(gen4bfile, sample4bfile),
+        bdfiles = bdfile4b,
+        snpcolumns = c(1L,2L,4L,5L,6L),
+        startcolumn = 7L,
+        impformat = 2L)
+
+bdinfo4b <- getbdinfo(bdfiles = bdfile4b)
+
+```
+
+## impformat
+
+The <span style="font-family:Courier">impformat</span> parameter is an integer from 1 to 3 that indicates how many genotype probabilities are in the file for each person. The value of 1 indicates that the value is the dosage value for the subject.
+
+The following codes reads in file *set2b.imp*. This file contains only the dosage values for the subjects. The SNP information is not in the default order so the values of snpcolumns has to be specified (see above).
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+gen2bfile <- system.file("extdata", "set2b.imp", package = "BinaryDosage")
+sample2bfile <- system.file("extdata", "set2b.sample", package = "BinaryDosage")
+bdfile2b <- tempfile()
+gentobd(genfiles = c(gen2bfile, sample2bfile),
+        bdfiles = bdfile2b,
+        snpcolumns = c(1L,3L,2L,4L,5L),
+        impformat = 1L)
+
+bdinfo2b <- getbdinfo(bdfiles = bdfile2b)
+
+```
+
+## chromosome
+
+The <span style="font-family:Courier">chromosome</span> parameter is a character value that used when the chromosome column value in <span style="font-family:Courier">snpcolumns</span> is set to -1L.
+
+The following code reads in *set3b.imp*, setting the chromosome value to 1.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+gen3bfile <- system.file("extdata", "set3b.imp", package = "BinaryDosage")
+sample3bfile <- system.file("extdata", "set3b.sample", package = "BinaryDosage")
+bdfile3bm1 <- tempfile()
+gentobd(genfiles = c(gen3bfile, sample3bfile),
+        bdfiles = bdfile3bm1,
+        snpcolumns = c(-1L,2L:5L),
+        chromosome = "1")
+
+bdinfo3bm1 <- getbdinfo(bdfiles = bdfile3bm1)
+
+```
+
+## header parameter 
+
+The <span style="font-family:Courier">header</span> parameter is a character vector of length 1 or 2. These indicate if the GEN file an sample file have headers, respectively. If the first value is <span style="font-family:Courier">TRUE</span>, the second value is ignored as the subjects IDs are in the header of the GEN file.
+
+The following code reads in *set3b.imp* using the sample file *set3bnh.sample* which has no header.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+gen3bfile <- system.file("extdata", "set3b.imp", package = "BinaryDosage")
+sample3bnhfile <- system.file("extdata", "set3bnh.sample", package = "BinaryDosage")
+bdfile3bnh <- tempfile()
+gentobd(genfiles = c(gen3bfile, sample3bnhfile),
+        bdfiles = bdfile3bnh,
+        snpcolumns = c(0L,2L:5L),
+        header = c(FALSE, FALSE))
+
+bdinfo3bnh <- getbdinfo(bdfiles = bdfile3bnh)
+
+```
+
+## gz
+
+The <span style="font-family:Courier">gz</span> parameter is a logical value that indicates if the GEN file is compressed using gzip. The sample file is always assumed to be uncompressed.
+
+The following code reads in *set4b.imp.gz* file using the sample file *set4b.sample*.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+gen4bgzfile <- system.file("extdata", "set4b.imp.gz", package = "BinaryDosage")
+sample4bfile <- system.file("extdata", "set4b.sample", package = "BinaryDosage")
+bdfile4bgz <- tempfile()
+gentobd(genfiles = c(gen4bgzfile, sample4bfile),
+        bdfiles = bdfile4bgz,
+        snpcolumns = c(1L,2L,4L,5L,6L),
+        startcolumn = 7L,
+        impformat = 2L,
+        gz = TRUE)
+
+bdinfo4bgz <- getbdinfo(bdfiles = bdfile4bgz)
+
+```
+## separator
+
+The <span style="font-family:Courier">separator</span> parameter is a character variable. This character separates the columns in the GEN file. Multiple copies of the separator are considered to be separator.
+
+## bdfiles
+
+The <span style="font-family:Courier">bdfiles</span> parameter is a character vector of length 1 or 3. These are the names of the binary dosage, family, and map files. If the format of the binary dosage file is 4, the only value needed is the name of the binary dosage file.
+
+## format
+
+The <span style="font-family:Courier">format</span> parameter determines the format of the binary dosage files. Formats 1, 2 and 3 consist of three files, binary dosage, family, and map. Format 4 combines all of these into one file.
+
+## subformat
+
+The <span style="font-family:Courier">subformat</span> parameter determines what information is in the binary dosage files. All formats can have subformats 1 and 2. A <span style="font-family:Courier">subformat</span> value of 1 indicates that only the dosage values are written to the binary dosage file and a value of 2 indicates that the dosage and genotype probabilities are written to the binary dosage file. Formats 3 and 4 can also have <span style="font-family:Courier">subformat</span> values of 3 and 4. These values have the same meaning as 1 and 2 respectively but have a slightly reordered header in the binary dosage file to improve read speed.
+
+## snpidformat
+
+The <span style="font-family:Courier">snpidformat</span> options specifies how the SNP ID is written to the binary dosage file. The default value is 0. This tells the code to use the SNP IDs that are in the GEN file. Other values that can be supplied to the function creates a SNP ID from the chromosome, location, reference, and alternate allele values.
+
+When the snpidformat is set to 1, the SNP ID is written in the format
+
+<span style="font-family:Courier">Chromosome:Location</span>
+
+When the snpidformat is set to 2, the SNP ID is written in the format
+
+<span style="font-family:Courier">Chromosome:Location:Reference Allele:Alternate Allele</span>
+
+When the snpidformat is set to 3, the SNP ID is written in the format
+
+<span style="font-family:Courier">Chromosome:Location_Reference Allele_Alternate Allele</span>
+
+When the snpidformat is set to -1, the SNP ID is not written to the binary dosage file. When the binary dosage file is read, the SNP ID is generated using the format for snpidformat equal to 2. This reduces the size of the binary dosage file.
+
+## bdoptions
+
+When using binary dosage format 4.x it is possible to store additional information about the SNPs in the file. This is information consists of the following values
+
+- Alternate allele frequency
+- Minor allele frequency
+- Imputation r-squared
+
+It is possible to calculate the alternate and minor allele frequency without the imputation information file. It is also possible to estimate the imputation r-squared. See the vignette [Estimating Imputed R-squares](r2estimates.html) for more information on the r-squared estimate.
+
+The value for bdoptions is a vector of character values that can be "aaf", "maf", "rsq", or and combination of these values. The values indicate to calculate alternate allele frequency, minor allele frequency, and imputation r-squared respectively.
+
+# Additional routines
+
+The following routines are available for accessing information contained in VCF files
+
+- <span style="font-family:Courier">getvcfinfo</span>
+- <span style="font-family:Courier">vcfapply</span>
+
+## getgeninfo
+
+The <span style="font-family:Courier">getgeninfo</span> routine returns information about a GEN file. For more information about the data returned see [Genetic File Information](geneticfileinfo.html). This information needs to be passed to genapply so it can efficiently read the GEN file.
+
+The parameters passed to <span style="font-family:Courier">getgeninfo</span> are
+
+- <span style="font-family:Courier">genfiles</span> - Name of GEN file and the optional sample file.
+- <span style="font-family:Courier">snpcolumns</span> - Columns containing the values for chromosome, SNP ID, location, reference allele, and alternate allele.
+- <span style="font-family:Courier">startcolumn</span> - Column where genotype probabilities start.
+- <span style="font-family:Courier">impformat</span> - Number of genotype probabilities for each subject.
+- <span style="font-family:Courier">chromosome</span> - Optional chromosome, provided if chromosome is not include in GEN file
+- <span style="font-family:Courier">header</span> - Vector of one or two logical values indicating if GEN and sample files have headers respectively.
+- <span style="font-family:Courier">gz</span> - Logical value indicating if GEN file is compressed.
+- <span style="font-family:Courier">index</span> - Logical value indicating if the GEN file is to be indexed.
+- <span style="font-family:Courier">snpidformat</span> - Format to create the SNP ID in.
+- <span style="font-family:Courier">sep</span> - Separator used in GEN file.
+
+All of these parameters have the same meaning as in the <span style="font-family:Courier">gentobd</span> routine above. There is on additional parameter <span style="font-family:Courier">index</span>. This is a logical value indicating if the GEN file should be indexed for quicker reading. This is useful when using <span style="font-family:Courier">genapply</span>. However the <span style="font-family:Courier">index</span> parameter can not be TRUE if the file is compressed.
+
+## genapply
+
+The <span style="font-family:Courier">genapply</span> routine applies a function to all SNPs in the GEN file. The routine returns a list with length equal to the number of SNPs in the GEN file. Each element in the list is the value returned by the user supplied function. The routine takes the following parameters.
+
+- <span style="font-family:Courier">geninfo</span> - list with information about the GEN file returned by <span style="font-family:Courier">getgeninfo</span>.
+- <span style="font-family:Courier">func</span> - user supplied function to be applied to each SNP in the VCF file.
+- <span style="font-family:Courier">...</span> - additional parameters needed by the user supplied function
+
+The user supplied function must have the following parameters.
+
+- <span style="font-family:Courier">geninfo</span> - A numeric vector with the dosage values for each subject.
+- <span style="font-family:Courier">p0</span> - A numeric vector with the probabilities the subject has no alternate alleles for each subject.
+- <span style="font-family:Courier">p1</span> - A numeric vector with the probabilities the subject has one alternate allele for each subject.
+- <span style="font-family:Courier">p2</span> - A numeric vector with the probabilities the subject has two alternate alleles for each subject.
+
+The user supplied function can have other parameters. These parameters need to passed to the <span style="font-family:Courier">genapply</span> routine.
+
+There is a function in the <span style="font-family:Courier">BinaryDosage</span> package named <span style="font-family:Courier">getaaf</span> that calculates the alternate allele frequencies and is the format needed by <span style="font-family:Courier">genapply</span> routine. The following uses <span style="font-family:Courier">getaaf</span> to calculate the alternate allele frequency for each SNP in the *set3b.chr.imp* file using the <span style="font-family:Courier">vcfapply</span> routine.
+
+``` {r, eval = T, echo = T, message = F, warning = F, tidy = T}
+gen3bchrfile <- system.file("extdata", "set3b.chr.imp", package = "BinaryDosage")
+sample3bfile <- system.file("extdata", "set3b.sample", package = "BinaryDosage")
+geninfo <- getgeninfo(genfiles = c(gen3bchrfile, sample3bfile), index = TRUE)
+
+aaf <- unlist(genapply(geninfo = geninfo, getaaf))
+
+altallelefreq <- data.frame(SNP = geninfo$snps$snpid, aafcalc = aaf)
+knitr::kable(altallelefreq, caption = "Calculated aaf", digits = 3)
+
+```

@@ -1,0 +1,417 @@
+---
+title: "1 - Running a simple simulation"
+data: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{1 - Running a simple simulation}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+
+```{r, results="hide", message=FALSE}
+library(landsepi)
+```
+
+## General presentation of the package
+
+See `?lansdepi` for a complete description of the model, assumptions and available functions. 
+See also the [detailed list of parameters](list_of_parameters.pdf) for a detailed description of all model parameters.
+
+## Initialisation of simulation parameters
+
+The function `createSimulParams()` will create a directory to store simulation outputs, 
+and return an object of class `LandsepiParams` that will further contain all simulation parameters. 
+```{r, results="hide", message="FALSE"}
+simul_params <- createSimulParams(outputDir = getwd())
+```
+
+In the following, the object `simul_params` is to be updated with all simulation parameters using `set*()` functions. 
+To help parameterisation, built-in parameters are available and may be loaded via `load*()` functions. 
+
+## Setting the seed and time parameters
+
+A seed (for random number generator) is randomly generated when `simul_params` is initialised by 
+`createSimulParams()`. If a specific seed is required, it can be set using the function `setSeed()`:
+```{r}
+simul_params@Seed
+simul_params <- setSeed(simul_params, seed = 1)
+simul_params@Seed
+```
+
+The number of cropping seasons to simulate (e.g. 10 years) and the number of timesteps per 
+cropping season (e.g. 120 days/year) can be set using `setTime()`:
+```{r}
+simul_params <- setTime(simul_params, Nyears = 6, nTSpY = 120)
+simul_params@TimeParam
+```
+
+
+## Setting pathogen parameters
+
+Pathogen parameters must be stored in a list of aggressiveness components defined on a susceptible host for a 
+pathogen genotype not adapted to resistance.  
+
+Buit-in parameterisation for rust pathogens of cereal crops is available using function `loadPathogen()`:
+```{r}
+basic_patho_param <- loadPathogen(disease = "rust")
+basic_patho_param
+```
+
+This list may be updated to change a specific parameter. For instance, to change the infection rate to 50%:
+```{r}
+basic_patho_param <- loadPathogen("rust")
+basic_patho_param$infection_rate <- 0.5
+basic_patho_param
+```
+
+Finally, the list may be generated manually to control all parameters: 
+```{r}
+basic_patho_param <- list(infection_rate = 0.4
+                          , latent_period_exp = 10
+                          , latent_period_var = 9
+                          , propagule_prod_rate = 3.125
+                          , infectious_period_exp = 24
+                          , infectious_period_var = 105
+                          , survival_prob = 1e-4
+                          , repro_sex_prob = 0
+                          , sigmoid_kappa = 5.333, sigmoid_sigma = 3, sigmoid_plateau = 1)
+```
+
+Then, the list is used to fuel the object `simul_params` via the function `setPathogen()`:
+```{r}
+simul_params <- setPathogen(simul_params, patho_params = basic_patho_param)
+simul_params@Pathogen
+```
+
+## Setting inoculum
+
+The function `setInoculum()` updates `simul_params` with the probability for an individual to be infectious 
+(i.e. state I) at the beginning of the simulation. Note that the inoculum is present on the first cultivar 
+only (usually defined as the susceptible cultivar) and is not adapted to any plant resistance gene. 
+```{r}
+simul_params <- setInoculum(simul_params, val = 5e-4)
+simul_params@PI0
+```
+
+## Setting the landscape and pathogen dispersal
+
+The landscape (i.e. boundaries of fields) must be in shapefile format. Five built-in landscapes of about 150 
+fields are available using the function `loadLandscape()`:
+```{r}
+landscape <- loadLandscape(id = 1)
+length(landscape)
+plot(landscape, main = "Landscape structure")
+```
+
+*See also tutorial on how to [parameterise landscape and dispersal](landscape_dispersal.html) 
+to use your own landscape and compute your own dispersal matrices.*
+
+Dispersal is given by a vectorised matrix giving the probability of dispersal from any field of the 
+landscape to any other field. The size of the matrix must be the square of the number of fields in the landscape. 
+It is thus specific to both the pathogen and the landscape. For rusts pathogens, 
+a built-in dispersal matrix is available for each landscape using the function `loadDispersalPathogen()`:
+```{r}
+disp_patho <- loadDispersalPathogen(id = 1)
+head(disp_patho)
+length(landscape)^2 == length(disp_patho)
+```
+
+Then, the object `simul_params` is updated with the landscape and dispersal matrix via the 
+functions `setLandscape()` and `setDispersalPathogen()`, respectively:
+```{r}
+simul_params <- setLandscape(simul_params, land = landscape)
+simul_params <- setDispersalPathogen(simul_params, mat = disp_patho)
+```
+
+## Setting croptypes, cultivars and resistance genes
+
+Fields of the landscape are cultivated with different croptypes that can rotate through time; 
+each croptype is composed of a pure cultivar or a mixture; and each cultivar may carry one or 
+several resistance genes.
+
+### Cultivars
+
+Characteristics of each host genotype (i.e. cultivar) are summarised in a dataframe, which 
+contains parameters representing the cultivar as if it was cultivated in a pure crop. 
+**Note that the name of the cultivar cannot accept spaces.**  
+A buit-in parameterisation for classical types of cultivars is available using `loadCultivar()` 
+to generate each line of the dataframe. The only difference between the types "growingHost" and 
+"nongrowingHost" is the absence of growth in the later. Type "nonCrop" allows the simulation of 
+forest, fallows, etc. i.e. everything that is not planted, does not cost anything and does not 
+yield anything (with regard to the subject of the study).  
+**It is advised to implement a susceptible cultivar at first line of the dataframe to allow 
+pathogen initial inoculation.**
+```{r}
+cultivar1 <- loadCultivar(name = "Susceptible", type = "growingHost")
+cultivar2 <- loadCultivar(name = "Resistant1", type = "growingHost")
+cultivar3 <- loadCultivar(name = "Resistant2", type = "growingHost")
+cultivar4 <- loadCultivar(name = "Resistant3", type = "nongrowingHost")
+cultivar5 <- loadCultivar(name = "Forest", type = "nonCrop")
+cultivars <- data.frame(rbind(cultivar1, cultivar2, cultivar3, cultivar4, cultivar5)
+                        , stringsAsFactors = FALSE)
+cultivars
+```
+
+Similarly as pathogen parameters, characteristics of the cultivars may be updated as required. 
+For example, to change the growth rate of the susceptible cultivar:
+```{r}
+cultivars[cultivars$cultivarName == "Susceptible", "growth_rate"] <- 0.2
+cultivars
+```
+
+Finally, the dataframe `cultivars` can also be generated entirely from scratch:
+```{r}
+cultivars_new <- data.frame(cultivarName = c("Susceptible", "Resistant"),
+                            initial_density =   c(0.1, 0.2),
+                            max_density =       c(2.0, 3.0),
+                            growth_rate =       c(0.1, 0.2),
+                            reproduction_rate = c(0.0, 0.0),
+                            death_rate =        c(0.0, 0.0),
+                            yield_H =           c(2.5, 2.0),
+                            yield_L =           c(0.0, 0.0),
+                            yield_I =           c(0.0, 0.0),
+                            yield_R =           c(0.0, 0.0),
+                            production_cost =   c(225, 300),
+                            market_value =      c(200, 150),
+                            stringsAsFactors = FALSE)
+cultivars_new
+```
+
+### Resistance genes
+
+Characteristics of each plant resistance gene and each corresponding pathogenicity gene are summarised in a dataframe.  
+A built-in parameterisation for classical resistance sources is available using `loadGene()` to generate each line of the 
+dataframe. Type "majorGene" is for completely efficient resistance to which pathogen may adapt via a single mutation. Type "APR" 
+stands for Adult Plant Resistance, i.e. a major gene which activates after a delay after planting, and type "QTL" is a 
+partially efficient resistance source to which the pathogen may adapt gradually. The type "immunity" code for a completely 
+efficient resistance gene that cannot be overcome, in such a way that infection is totally impossible; it is helpful 
+to parameterise non-host cultivars. 
+```{r}
+gene1 <- loadGene(name = "MG 1", type = "majorGene")
+gene2 <- loadGene(name = "Lr34", type = "APR")
+gene3 <- loadGene(name = "gene 3", type = "QTL")
+gene4 <- loadGene(name = "nonhost resistance", type = "immunity")
+genes <- data.frame(rbind(gene1, gene2, gene3, gene4), stringsAsFactors = FALSE)
+genes
+```
+
+Similarly as pathogen parameters, characteristics of the genes may be updated as required. For example, to change the 
+mutation probability of the pathogen with regard to its adaptation to "MG 1":
+```{r}
+genes[genes$geneName == "MG 1", "mutation_prob"] <- 1e-3
+genes
+```
+
+Finally, the dataframe `genes` can also be generated entirely from scratch:
+```{r}
+genes_new <- data.frame(geneName =               c("MG1", "MG2"),
+                        efficiency =             c(1.0  , 0.8  ),
+                        time_to_activ_exp =      c(0.0  , 0.0  ),
+                        time_to_activ_var =      c(0.0  , 0.0  ),
+                        mutation_prob =          c(1E-7 , 1E-4),
+                        Nlevels_aggressiveness = c(2    , 2    ),
+                        fitness_cost =           c(0.50 , 0.75 ),
+                        tradeoff_strength =      c(1.0  , 1.0  ),
+                        target_trait =           c("IR" , "LAT"),
+                        stringsAsFactors = FALSE)
+genes_new
+```
+
+Note that the column "efficiency" refers to the percentage of reduction of the targeted aggressiveness 
+component on hosts carrying the gene. 
+For example, a 80% efficient resistance against infection rate (target_trait = "IR") 
+means that the infection rate of a non-adapted pathogen is reduced by 80% on a resistant host compared 
+to what it is on a susceptible host. For resistances targetting the latent period, 
+the percentage of reduction is applied to the inverse of the latent period in such a way that latent 
+period is higher in resistant than in susceptible hosts.
+
+
+### Allocating genes to cultivars
+
+The object `simul_params` can be updated with `setGenes()` and `setCultivars()`:
+```{r}
+simul_params <- setGenes(simul_params, dfGenes = genes)
+simul_params <- setCultivars(simul_params, dfCultivars = cultivars)
+simul_params@Genes
+simul_params@Cultivars
+```
+
+Then the function `allocateCultivarGenes()` allows the attribution of resistance genes to cultivars:
+```{r}
+simul_params <- allocateCultivarGenes(simul_params
+                                      , cultivarName = "Resistant1"
+                                      , listGenesNames = c("MG 1"))
+simul_params <- allocateCultivarGenes(simul_params
+                                      , cultivarName = "Resistant2"
+                                      , listGenesNames = c("Lr34", "gene 3"))
+simul_params <- allocateCultivarGenes(simul_params
+                                      , cultivarName = "Resistant3"
+                                      , listGenesNames = c("nonhost resistance"))
+simul_params@Cultivars
+```
+
+With this example of parameterisation:  
+- "Susceptible" is a susceptible cultivar (initially infected by a wild-type pathogen)  
+- "Resistant1" is a mono-resistant cultivar  
+- "Resistant2" is a pyramided cultivar  
+- "Resistant3" is a nonhost cultivar  
+- "Forest" is not a crop.  
+Infection is impossible on both "Resistance3" and "Forest", but the former will 
+be considered for host growth, yield, production costs and benefits, whereas the latter won't.
+
+
+### Allocating cultivars to croptypes
+
+Characteristics of each croptype (a croptype is a set of hosts cultivated in a field with specific proportions) 
+are summarised in a dataframe.  
+A buit-in parameterisation for classical croptypes is available 
+using `loadCroptypes()` to generate the whole table filled with zeros: 
+```{r}
+croptypes <- loadCroptypes(simul_params, names = c("Susceptible crop"
+                                                   , "Pure resistant crop"
+                                                   , "Mixture"
+                                                   , "Other"))
+croptypes
+```
+
+Then `croptype` is updated by `allocateCroptypeCultivars()` 
+to specify the composition of every croptype with regard to cultivars (and proportion for mixtures):
+```{r}
+croptypes <- allocateCroptypeCultivars(croptypes
+                                       , croptypeName = "Susceptible crop"
+                                       , cultivarsInCroptype = "Susceptible")
+croptypes <- allocateCroptypeCultivars(croptypes
+                                       , croptypeName = "Pure resistant crop"
+                                       , cultivarsInCroptype = "Resistant1")
+croptypes <- allocateCroptypeCultivars(croptypes
+                                       , croptypeName = "Mixture"
+                                       , cultivarsInCroptype = c("Resistant2","Resistant3")
+                                       , prop = c(0.4, 0.6))
+croptypes <- allocateCroptypeCultivars(croptypes
+                                       , croptypeName = "Other"
+                                       , cultivarsInCroptype = "Forest")
+croptypes
+```
+
+Finally the object `simul_params` is updated using `setCroptypes()`:
+```{r}
+simul_params <- setCroptypes(simul_params, dfCroptypes = croptypes)
+simul_params@Croptypes
+```
+
+Alternatively, the dataframe `croptypes` can be generated from scratch:
+```{r}
+croptypes <- data.frame(croptypeID = c(0, 1, 2, 3)
+                        , croptypeName = c("Susceptible crop"
+                                           , "Pure resistant crop"
+                                           , "Mixture"
+                                           , "Other")
+                        , Susceptible = c(1,0,0  ,0)
+                        , Resistant1  = c(0,1,0  ,0)
+                        , Resistant2  = c(0,0,0.5,0)
+                        , Resistant3  = c(0,0,0.5,0)
+                        , Forest      = c(0,0,0  ,1)
+                        , stringsAsFactors = FALSE)
+simul_params <- setCroptypes(simul_params, croptypes)
+```
+
+### Allocating croptypes to fields of the landscape
+
+The function `allocateLandscapeCroptypes()` manages the allocation of croptypes in time (for rotations 
+of different croptypes on the same fields) and space (for mosaic of fields cultivated with different croptypes). 
+See `?allocateLandscapeCroptypes` for help in parameters.  
+Briefly, a rotation sequence is defined by a list. Each 
+element of this list is a vector containing the indices of the croptypes that are cultivated simultaneously in the 
+landscape. The "rotation_period" parameter defines the duration before switching from one element of "rotation_sequence" 
+to the next. For each element of "rotation_sequence" is associated a vector of proportions of each croptype in the 
+landscape (parameter "prop"). The parameter "aggreg" controls the level of spatial aggregation between croptypes. 
+
+For example, to generate a landscape whose surface is composed of 
+1/3 of forests, 1/3 of susceptible crop, and 1/3 of fields where a pure resistant crop is alternated with a mixture 
+every two years:
+```{r}
+# croptypeIDs cultivated in each element of the rotation sequence:
+rotation_sequence <- list(c(0,1,3), c(0,2,3))
+rotation_period <- 2  # number of years before rotation of the landscape
+prop <- list(rep(1/3, 3), rep(1/3, 3))  # proportion (in surface) of each croptype
+aggreg <- 1    # level of spatial aggregation
+simul_params <- allocateLandscapeCroptypes(simul_params
+                                           , rotation_period = rotation_period
+                                           , rotation_sequence = rotation_sequence
+                                           , prop = prop
+                                           , aggreg = aggreg
+                                           , graphic = FALSE)
+# plot(simul_params@Landscape)
+```
+
+## Choosing output variables
+Several epidemiological, evolutionary and economic outputs can be generated by landsepi and represented in 
+text files (`writeTXT=TRUE`), graphics (`graphic=TRUE`) and a video (`videoMP4=TRUE`).  
+See `?epid_output` and `?evol_output` for details on the different output variables.  
+
+>Possible epidemiological outputs include:  
+- **"audpc"** : Area Under Disease Progress Curve (average proportion of diseased hosts relative 
+to the carryng capacity)  
+- **"gla_abs"** : Absolute Green Leaf Area (average number of healthy hosts per square meter)  
+- **"gla_rel"** : Relative Green Leaf Area  (average proportion of healthy hosts relative to the 
+total number of existing hosts)  
+- **"eco_cost"** : total crop costs (in weight or volume units per ha)  
+- **"eco_product"** : total crop production (in monetary units per ha)  
+- **"eco_benefit"** : total crop benefits (in monetary units per ha)  
+- **"eco_grossmargin"** : Gross Margin (benefits - costs, in monetary units per ha)  
+- **"HLIR_dynamics", "H_dynamics", "L_dynamics", "IR_dynamics", "HLI_dynamics"**, etc.: Epidemic dynamics 
+related to the specified sanitary status (H, L, I or R and all their combinations). Graphics only, 
+works only if graphic=TRUE.  
+- **"all"** : compute all these outputs (default)  
+- **""** : none of these outputs will be generated.  
+
+>Possible evolutionary outputs include:  
+- **"evol_patho"**: Dynamics of pathogen genotype frequencies  
+- **"evol_aggr"**: Evolution of pathogen aggressiveness  
+- **"durability"**: Durability of resistance genes  
+- **"all"**: compute all these outputs (default)  
+- **""**: none of these outputs will be generated.  
+
+A list of outputs can be generated using `loadOutputs()`:
+```{r}
+outputlist <- loadOutputs(epid_outputs = "all", evol_outputs = "all")
+outputlist
+```
+Then `simul_params` can be updated via `setOutputs()`:
+```{r}
+simul_params <- setOutputs(simul_params, outputlist)
+```
+
+*See also tutorial on how to [run a numerical experimental design](run_exp_design.html) 
+to compute your own output variables and to run several simulations within an experimental design*
+
+## Running the simulation
+
+The functions `checkSimulParams()` and `saveDeploymentStrategy()` check simulation parameters and 
+save the object `simul_params` (which contains all parameters associated with the deployment strategy) 
+into a GPKG file, respectively. 
+```{r, eval=FALSE}
+checkSimulParams(simul_params)
+simul_params <- saveDeploymentStrategy(simul_params)
+```
+
+Then, the function `runSimul()` launches the simulation. Use `?runSimul` to get all available options.
+```{r, eval=FALSE}
+runSimul(simul_params, graphic = TRUE, videoMP4 = FALSE)
+```
+
+```{r, include=FALSE}
+system(paste("rm -rf ", simul_params@OutputDir))
+```
+
+

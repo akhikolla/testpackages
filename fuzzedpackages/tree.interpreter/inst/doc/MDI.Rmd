@@ -1,0 +1,122 @@
+---
+title: "Calculating MDI and MDI-oob with tree.interpreter"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{MDI}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+bibliography: MDI.bib
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+The R package **tree.interpreter** at its core implements the interpretation algorithm proposed by [@saabas_interpreting_2014] for popular RF packages such as **randomForest** and **ranger**. This vignette illustrates how to calculate the MDI, a.k.a Mean Decrease Impurity, and MDI-oob, a debiased MDI feature importance measure proposed by [@li_debiased_2019], with it.
+
+If you use this package for data analysis, please consider citing it with `citation('tree.interpreter')`.
+
+## Saabas's Prediction Interpretation Algorithm
+
+Let's start with the interpretation algorithm by [@saabas_interpreting_2014]. The idea is to decompose the prediction for a specific sample by looking at the decision rule associated with it.
+
+Define for a tree $T$, a feature $k$, and a sample $X$, the function $f_{T, k}(X)$ to be
+
+$$
+f_{T, k}(X) = \sum_{t \in I(T): v(t)=k} \left\{ \mu_n (t^{\text{left}}) \mathbb{1} \left(X \in R_{t^{\text{left}}}\right) + \mu_n (t^{\text{right}}) \mathbb{1} \left(X \in R_{t^{\text{right}}}\right) - \mu_n (t) \mathbb{1} \left(X \in R_t\right) \right\},
+$$
+
+where $I(T)$ is inner nodes of the tree $T$, $v(t)$ is the feature on which the node $t$ is split on, $R(t)$ is the hyper-rectangle in the feature space "occupied" by the node $t$, $\mu_n(t)$ is the average response of samples falling into $R(t)$, and $\mathbb{1}$ is the indicator function. This is calculated by the function `tree.interpreter::featureContribTree`.
+
+Intuitively, it calculates the lagged differences of the responses for the nodes on the decision path of an individual sample, groupped by the feature on which the nodes are split on. Consequently, the sum of the response of the root node and $\sum_{k} f_{T, k}(X)$ is exactly the prediction of $X$ by $T$.
+
+In order to move from a decision tree to a forest, define for a feature $k$ and a sample $X$ the function $f_{k}(X)$ to be
+
+$$
+f_{k}(X) = \frac{1}{n_{\text{tree}}} \sum_{s=1}^{n_{\text{tree}}} f_{T_s, k}(X),
+$$
+
+where the forest is represented by an ensemble of $n_{\text{tree}}$ trees $T_1, \dots, T_{n_{\text{tree}}}$. This is sensible because (at least for regression trees) a forest makes prediction by averaging over the predictions of its trees, so all trees naturally have the same weight. It follows that the prediction of $X$ by the whole forest is exactly the sum of the average response of the root nodes in the forest and $\sum_{k} f_{k}(X)$. This is calculated by the function `tree.interpreter::featureContrib`.
+
+Later, [@saabas_random_2015] released a Python library named **treeinterpreter** on PyPI, implementing this interpretation algorithm for random forest models by the RF library **scikit-learn**. This R package effectively serves as its R counterpart.
+
+## MDI in $f_{T, k}(X)$
+
+Recently, [@li_debiased_2019] have shown that for a tree $T$, the MDI of the feature $k$ can be written as:
+
+$$
+\frac{1}{|\mathcal{D}^{(T)}|} \sum_{i \in \mathcal{D}^{(T)}} f_{T, k}(x_i) \cdot y_i.
+$$
+
+You can calculate the MDI for a tree with `tree.interpreter::MDITree`.
+
+## MDI-oob in $f_{T, k}(X)$
+
+They also proposed a debiased MDI feature importance measure using out-of-bag samples, called MDI-oob:
+
+$$
+\frac{1}{|\mathcal{D} \setminus \mathcal{D}^{(T)}|} \sum_{i \in \mathcal{D} \setminus \mathcal{D}^{(T)}} f_{T, k}(x_i) \cdot y_i.
+$$
+
+You can calculate the MDI-oob for a tree with `tree.interpreter::MDIoobTree`.
+
+## MDI and MDI-oob of the forest
+
+The MDI(-oob) of a forest is simply the average MDI(-oob) of all its trees. As remarked by [@li_debiased_2019], for classification trees, we must convert the factorial response to one-hot vectors.
+
+You can calculate the MDI and MDI-oob for a forest with `tree.interpreter::MDI` and `tree.interpreter::MDIoob`, respectively.
+
+## Examples
+
+Below we present two examples to demonstrate how to calculate MDI and MDI-oob with **tree.interpreter** for regression and classification trees.
+
+```{r setup}
+library(MASS)
+library(ranger)
+library(tree.interpreter)
+```
+
+### Regression
+
+In the first example, we build a random forest on the Boston housing data set, and calculate the MDI/MDI-oob of each feature.
+
+```{r reg}
+# Setup
+set.seed(42L)
+rfobj <- ranger(medv ~ ., Boston, keep.inbag = TRUE, importance = 'impurity')
+tidy.RF <- tidyRF(rfobj, Boston[, -14], Boston[, 14])
+
+# MDI
+t(Boston.MDI <- MDI(tidy.RF, Boston[, -14], Boston[, 14]))
+all.equal(as.vector(Boston.MDI),
+          as.vector(importance(rfobj) /
+                      sum(rfobj$inbag.counts[[1]])))
+
+# MDI-oob
+t(MDIoob(tidy.RF, Boston[, -14], Boston[, 14]))
+```
+
+### Classification
+
+In the second example, we build a random forest on Anderson's iris data set, and calculate the MDI/MDI-oob of each feature.
+
+```{r class}
+# Setup
+set.seed(42L)
+rfobj <- ranger(Species ~ ., iris, keep.inbag = TRUE, importance = 'impurity')
+tidy.RF <- tidyRF(rfobj, iris[, -5], iris[, 5])
+
+# MDI
+(iris.MDI <- rowSums(MDI(tidy.RF, iris[, -5], iris[, 5])))
+all.equal(as.vector(iris.MDI),
+          as.vector(importance(rfobj) /
+                      sum(rfobj$inbag.counts[[1]])))
+
+# MDI-oob
+rowSums(MDIoob(tidy.RF, iris[, -5], iris[, 5]))
+```
+
+## References

@@ -1,0 +1,1167 @@
+\documentclass[10pt]{article}\usepackage[]{graphicx}\usepackage[]{color}
+% maxwidth is the original width if it is less than linewidth
+% otherwise use linewidth (to make sure the graphics do not exceed the margin)
+\makeatletter
+\def\maxwidth{ %
+  \ifdim\Gin@nat@width>\linewidth
+    \linewidth
+  \else
+    \Gin@nat@width
+  \fi
+}
+\makeatother
+
+\definecolor{fgcolor}{rgb}{0.345, 0.345, 0.345}
+\newcommand{\hlnum}[1]{\textcolor[rgb]{0.686,0.059,0.569}{#1}}%
+\newcommand{\hlstr}[1]{\textcolor[rgb]{0.192,0.494,0.8}{#1}}%
+\newcommand{\hlcom}[1]{\textcolor[rgb]{0.678,0.584,0.686}{\textit{#1}}}%
+\newcommand{\hlopt}[1]{\textcolor[rgb]{0,0,0}{#1}}%
+\newcommand{\hlstd}[1]{\textcolor[rgb]{0.345,0.345,0.345}{#1}}%
+\newcommand{\hlkwa}[1]{\textcolor[rgb]{0.161,0.373,0.58}{\textbf{#1}}}%
+\newcommand{\hlkwb}[1]{\textcolor[rgb]{0.69,0.353,0.396}{#1}}%
+\newcommand{\hlkwc}[1]{\textcolor[rgb]{0.333,0.667,0.333}{#1}}%
+\newcommand{\hlkwd}[1]{\textcolor[rgb]{0.737,0.353,0.396}{\textbf{#1}}}%
+\let\hlipl\hlkwb
+
+\usepackage{framed}
+\makeatletter
+\newenvironment{kframe}{%
+ \def\at@end@of@kframe{}%
+ \ifinner\ifhmode%
+  \def\at@end@of@kframe{\end{minipage}}%
+  \begin{minipage}{\columnwidth}%
+ \fi\fi%
+ \def\FrameCommand##1{\hskip\@totalleftmargin \hskip-\fboxsep
+ \colorbox{shadecolor}{##1}\hskip-\fboxsep
+     % There is no \\@totalrightmargin, so:
+     \hskip-\linewidth \hskip-\@totalleftmargin \hskip\columnwidth}%
+ \MakeFramed {\advance\hsize-\width
+   \@totalleftmargin\z@ \linewidth\hsize
+   \@setminipage}}%
+ {\par\unskip\endMakeFramed%
+ \at@end@of@kframe}
+\makeatother
+
+\definecolor{shadecolor}{rgb}{.97, .97, .97}
+\definecolor{messagecolor}{rgb}{0, 0, 0}
+\definecolor{warningcolor}{rgb}{1, 0, 1}
+\definecolor{errorcolor}{rgb}{1, 0, 0}
+\newenvironment{knitrout}{}{} % an empty environment to be redefined in TeX
+
+\usepackage{alltt}
+%*********************************************************************
+%*********************************************************************
+\usepackage{amsmath}
+\usepackage{amscd}
+\usepackage{bbm}
+\usepackage{cite}
+
+%\VignetteIndexEntry{texmexMultivariate}
+%\VignetteEngine{knitr}
+
+%*********************************************************************
+
+
+%*********************************************************************
+%DEFINE SYMBOLS
+\def\IR{\hbox{{\rm I}\kern -0.2em\hbox{{\rm R}}}}
+\def\bX{\boldsymbol X}
+\def\bY{\boldsymbol Y}
+\def\bZ{\boldsymbol Z}
+\def\bc{\boldsymbol c}
+\def\bd{\boldsymbol d}
+\def\balpha{\boldsymbol \alpha}
+\def\bbeta{\boldsymbol \beta}
+%*********************************************************************
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\begin{document}
+
+
+
+
+\title{Conditional modelling of multivariate extreme value data using R}
+\author{Harry Southworth and Janet E.\ Heffernan}
+\maketitle
+
+\setkeys{Gin}{width=1.0\textwidth}
+%
+\section{Introduction}
+%
+
+
+This document illustrates the use of the {\tt texmex} package,~\cite{texmex}
+for performing extreme value analysis of multivariate data in {\tt R},~\cite{R}.
+Broadly speaking, the analysis proceeds in
+two steps: generalized Pareto distribution (GPD) modelling of
+the marginal variables followed by conditional multivariate extreme value
+modelling.  The first step is covered in more detail in the {\tt texmex} vignette
+{\tt texmex1d}; here we describe briefly the stages of the univariate modelling
+and focus in more detail on the multivariate modelling.
+
+To cite this vignette, refer to Vignette name: {\tt texmexMultivariate} and use the package citation:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{verbatim}
+## 
+## To cite package 'texmex' in publications use:
+## 
+##   Harry Southworth, Janet E. Heffernan and Paul D. Metcalfe (2020).
+##   texmex: Statistical modelling of extreme values. R package version
+##   2.4.4.
+## 
+## A BibTeX entry for LaTeX users is
+## 
+##   @Manual{,
+##     title = {texmex: Statistical modelling of extreme values},
+##     author = {Harry Southworth and Janet E. Heffernan and Paul D. Metcalfe},
+##     year = {2020},
+##     note = {R package version 2.4.4},
+##   }
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+%
+\subsection{Preliminaries}
+%
+With {\tt texmex} installed, use the {\tt library} command to make the package
+available to the current session, set the colours used for graphics, and set the
+random seed so that results are reproducible on a given machine:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{library}\hlstd{(texmex)}
+\hlcom{#palette(c("black","purple","cyan","orange"))}
+\hlkwd{set.seed}\hlstd{(}\hlnum{20130618}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+%
+\subsection{Data}
+%
+The dataset used in this example analysis is contained in the {\tt texmex}
+package. This vignette reproduces some of the analysis presented in Heffernan
+and Tawn (2004)~\cite{heffernanTawn}, describing the extremal behaviour of daily
+maxima of hourly means of five air pollutants.  We focus on the {\tt winter}
+data from the months November to February inclusive:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{head}\hlstd{(winter)}
+\end{alltt}
+\begin{verbatim}
+##   O3 NO2  NO SO2 PM10
+## 1 27  50 112  13   34
+## 2 27  51 126  13   29
+## 3 15  43  90  21   33
+## 4  9  71 470  44  101
+## 5 20  51 167  48   30
+## 6  8  50 211  16   44
+\end{verbatim}
+\begin{alltt}
+\hlkwd{summary}\hlstd{(winter,}\hlkwc{digits}\hlstd{=}\hlnum{2}\hlstd{)}
+\end{alltt}
+\begin{verbatim}
+##        O3          NO2            NO           SO2           PM10    
+##  Min.   : 1   Min.   : 19   Min.   : 10   Min.   :  1   Min.   :  7  
+##  1st Qu.:10   1st Qu.: 37   1st Qu.: 64   1st Qu.:  8   1st Qu.: 29  
+##  Median :22   Median : 43   Median :112   Median : 15   Median : 40  
+##  Mean   :20   Mean   : 44   Mean   :135   Mean   : 21   Mean   : 48  
+##  3rd Qu.:29   3rd Qu.: 51   3rd Qu.:166   3rd Qu.: 26   3rd Qu.: 60  
+##  Max.   :44   Max.   :104   Max.   :568   Max.   :200   Max.   :177
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+The response variables are
+\begin{description}
+\item[O3]Daily maximum ozone in parts per billion.
+\item[NO2]Daily maximum NO2 in parts per billion.
+\item[NO]Daily maximum NO in parts per billion.
+\item[SO2]Daily maximum SO2 in parts per billion.
+\item[PM10]Daily maximum PM10 in micrograms/metre$^3$.
+\end{description}
+
+%
+\section{Exploratory multivariate modelling}
+%
+Modelling of multivariate extreme values is more complicated
+than univariate modelling. An issue that quickly arises is how
+to define a multivariate extreme observation. If an
+observation has to be extreme in all components simultaneously,
+the amount of data to model quickly diminishes to numbers too
+small to do anything meaningful with. Moreover, dependencies
+between variables in the body of the data do not necessarily
+tell us anything at all about dependence in the extremes.
+%
+\subsection{Exploratory plots}
+%
+Firstly, we attempt to get a feel for the
+data by examining the pairwise  dependence between
+variables.  A pairwise scatterplot of the data shows some extremal dependence between
+the variables, the nature of which varies considerably between the pairs.
+
+\label{pairsWinter}
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{GGally}\hlopt{::}\hlkwd{ggpairs}\hlstd{(winter)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariaterawData-1} 
+
+\end{knitrout}
+
+Next, we plot each of the other variables against NO; a full analysis would consider
+all pairs of variables.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{p1} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(winter,}\hlkwd{aes}\hlstd{(NO,O3))} \hlopt{+} \hlkwd{geom_point}\hlstd{(}\hlkwc{colour}\hlstd{=}\hlstr{"darkblue"}\hlstd{,}\hlkwc{alpha}\hlstd{=}\hlnum{0.5}\hlstd{)}
+\hlstd{p2} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(winter,}\hlkwd{aes}\hlstd{(NO,NO2))} \hlopt{+} \hlkwd{geom_point}\hlstd{(}\hlkwc{colour}\hlstd{=}\hlstr{"darkblue"}\hlstd{,}\hlkwc{alpha}\hlstd{=}\hlnum{0.5}\hlstd{)}
+\hlstd{p3} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(winter,}\hlkwd{aes}\hlstd{(NO,SO2))} \hlopt{+} \hlkwd{geom_point}\hlstd{(}\hlkwc{colour}\hlstd{=}\hlstr{"darkblue"}\hlstd{,}\hlkwc{alpha}\hlstd{=}\hlnum{0.5}\hlstd{)}
+\hlstd{p4} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(winter,}\hlkwd{aes}\hlstd{(NO,PM10))} \hlopt{+} \hlkwd{geom_point}\hlstd{(}\hlkwc{colour}\hlstd{=}\hlstr{"darkblue"}\hlstd{,}\hlkwc{alpha}\hlstd{=}\hlnum{0.5}\hlstd{)}
+\hlkwd{grid.arrange}\hlstd{(p1,p2,p3,p4,}\hlkwc{ncol}\hlstd{=}\hlnum{2}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariatemvdataplots1-1} 
+
+\end{knitrout}
+\label{fig:NO.Data}
+
+We see that the dependence between these variables differs markedly from one pair to another.
+Ozone (O3) appears to be negatively dependent on NO at high levels, whereas NO2 and PM10 are
+both clearly positively dependent at these levels, although the latter less strongly so than
+the former.  Plotting the other pairs of variables is left as an exercise.
+%
+\subsection{Exploring pairwise extremal dependence}
+%
+We can examine pairwise extremal dependence by plotting summary
+statistics $\chi$ and $\bar\chi$ as defined by Coles, Heffernan
+and Tawn~\cite{colesHeffernanTawn}. Here we do so for associations only between
+O3 and NO, and between NO2 and NO.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{chiO3} \hlkwb{<-} \hlkwd{chi}\hlstd{(winter[,} \hlkwd{c}\hlstd{(}\hlstr{"O3"}\hlstd{,} \hlstr{"NO"}\hlstd{)])}
+\hlkwd{ggplot}\hlstd{(chiO3,} \hlkwc{main}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"Chi"}\hlstd{=}\hlstr{"Chi: O3 and NO"}\hlstd{,}
+                     \hlstr{"ChiBar"}\hlstd{=}\hlstr{"Chi-bar: O3 and NO"}\hlstd{))}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariatechi1-1} 
+
+\end{knitrout}
+
+Note that here the second plot is greyed out -- this is done because the confidence interval for the limiting value of $\bar\chi$ as the quantile tends to 1 excludes 1.  This is evidence of asymptotic independence, in which case the plot of $\chi$ is not relevant -- since this shows the level of dependence only within the asymptotic dependence class.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{chiNO2} \hlkwb{<-} \hlkwd{chi}\hlstd{(winter[,} \hlkwd{c}\hlstd{(}\hlstr{"NO2"}\hlstd{,} \hlstr{"NO"}\hlstd{)])}
+\hlkwd{ggplot}\hlstd{(chiNO2,} \hlkwc{main}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"Chi"}\hlstd{=}\hlstr{"Chi: NO2 and NO"}\hlstd{,}
+                      \hlstr{"ChiBar"}\hlstd{=}\hlstr{"Chi-bar: NO2 and NO"}\hlstd{))}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariatechi2-1} 
+
+\end{knitrout}
+
+The plots are interpreted as follows:
+\begin{description}
+\item[a. Look at limiting value of $\bar\chi(u)$ \bf plot as the quantile $u$
+tends to 1].  This gives a diagnostic as to whether the data
+exhibit asymptotic dependence (the very largest values of each variable tend to
+occur in the same observation).  A limiting value of 1 is indicative of asymptotic
+dependence.
+
+\item[b. If limit in a. is equal to 1] examine plot of
+$\chi(u)$ for a measure of the strength of dependence within the
+asymptotic dependence class.  The limiting value of this function as
+the quantile $u\rightarrow1$ tells us about the strength of this dependence, with
+values closer to 1 indicating stronger dependence.
+\item[c. If limit in a. is less than 1] examine plot of
+$\bar\chi(u)$ for a measure of the strength of dependence within the
+asymptotic independence class. Although at asymptotic levels, the largest values
+of the variables tend not to occur in the same observation, at moderately
+extreme levels, dependence may still be relatively strong.  The limiting value
+of this function as $u\rightarrow1$ tells us about the strength of this
+dependence, with positive values closer to 1 indicating stronger positive
+dependence and negative values closer to -1 indicating stronger negative
+dependence.  Values close to 0 indicate asymptotic near independence.
+\end{description}
+
+The $\bar\chi$ for O3 and NO shows that these variables are likely to be
+asymptotically independent, with weak negative dependence within this class. We
+do not examine the $\chi$ plot for this pair (and hence the $\chi$ plot is
+automatically greyed out). For NO2 and NO, the $\bar\chi$ plot rises towards the
+right, and includes 1 as a possble limit indicating possible asymptotic
+dependence. The $\chi$ plot indicates moderate positive dependence within this
+class.
+
+An alternative approach to examining pairwise extremal dependence
+is to examine the multivariate conditional Spearman's correlation
+coefficient across a
+sliding window of values of the variables, following Schmidt
+and Schmitt~\cite{schmidtSchmitt}.  This is carried out as follows (output not shown):
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{mcsO3} \hlkwb{<-} \hlkwd{MCS}\hlstd{(winter[,} \hlkwd{c}\hlstd{(}\hlstr{"O3"}\hlstd{,} \hlstr{"NO"}\hlstd{)])}
+\hlstd{mcsNO2} \hlkwb{<-} \hlkwd{MCS}\hlstd{(winter[,} \hlkwd{c}\hlstd{(}\hlstr{"NO2"}\hlstd{,} \hlstr{"NO"}\hlstd{)])}
+\hlstd{g1} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(mcsO3,} \hlkwc{main}\hlstd{=}\hlstr{"MCS: O3 and NO"}\hlstd{)}
+\hlstd{g2} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(mcsNO2,} \hlkwc{main}\hlstd{=}\hlstr{"MCS: NO2 and NO"}\hlstd{)}
+\hlstd{gridExtra}\hlopt{::}\hlkwd{grid.arrange}\hlstd{(g1,g2,}\hlkwc{ncol}\hlstd{=}\hlnum{1}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+
+Confidence intervals can be added to the MCS plots by using
+{\tt bootMCS} and its associated plot method as follows:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{bootmcsO3} \hlkwb{<-} \hlkwd{bootMCS}\hlstd{(winter[,} \hlkwd{c}\hlstd{(}\hlstr{"O3"}\hlstd{,} \hlstr{"NO"}\hlstd{)],}\hlkwc{trace}\hlstd{=}\hlnum{1000}\hlstd{)}
+\hlstd{bootmcsNO2} \hlkwb{<-} \hlkwd{bootMCS}\hlstd{(winter[,} \hlkwd{c}\hlstd{(}\hlstr{"NO2"}\hlstd{,} \hlstr{"NO"}\hlstd{)],}\hlkwc{trace}\hlstd{=}\hlnum{1000}\hlstd{)}
+\hlstd{g1} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(bootmcsO3,} \hlkwc{main}\hlstd{=}\hlstr{"MCS: O3 and NO"}\hlstd{)}
+\hlstd{g2} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(bootmcsNO2,} \hlkwc{main}\hlstd{=}\hlstr{"MCS: NO2 and NO"}\hlstd{)}
+\hlstd{gridExtra}\hlopt{::}\hlkwd{grid.arrange}\hlstd{(g1,g2,}\hlkwc{ncol}\hlstd{=}\hlnum{1}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariatemcsBoot-1} 
+
+\end{knitrout}
+
+The plots of the multivariate conditional Spearman's $\rho$
+  do not have the same vertical axes, and tell a similar story
+to the plots of $\chi$ and $\bar\chi$. The exploratory summaries of this section suggest that when we come
+to the conditional multivariate extreme value modelling, we should
+expect to find a negative association between extreme O3 and extreme
+NO, and a possibly stronger positive association between NO2 and NO. The reader is
+left to check the other pairs of variables and to look at the analogous dependence in the {\tt summer} dataset, which is not the same.
+
+\pagebreak
+\newpage
+\clearpage
+
+%
+\section{Conditional multivariate extreme value modelling}
+%
+The conditional multivariate approach of Heffernan and Tawn
+proceeds by first fitting Generalised Pareto distribution (GPD) models to the marginal variables,
+then estimating the dependence structure. For more details on the marginal modelling by using the Generalised Pareto distribution, see the {\tt texmex} vignette {\tt texmex1d}. Like the GPD model for excesses above a threshold, the dependence component of the Heffernan and Tawn model also conditions on a variable exceeding a threshold.  It then seeks to describe the conditional distribution of the remaining variables given the threshold excess by the first variable, using a regression type model.  Uncertainty in the
+parameters in the dependence structure can be characterized via
+a bootstrap scheme.
+%
+\subsection{Marginal transformation}
+%
+The structure of the regression type dependence model is defined not on the original data scale, but after marginal transformation to standardised margins.  In the original implementation, Heffernan and Tawn used a transformation to Gumbel margins but subsequent developments (see~\cite{KeefEtAl2013}) in this area show the structure of the regression model to be greatly simplified if Laplace margins are used instead.  The package {\tt texmex} implements both and correspondingly we describe both here.  Let $\bX = (X_1,\ldots,X_d)$ be a $d$ dimensional random variable with arbitrary marginal distributions.  Let $\hat F_i$ denote an estimate of the $i$th marginal distribution function ($i=1,\ldots,d$) and let $G$ denote the distribution function of the standardised marginal distribution, to be determined.  The original vector variable $\bX$ is transfromed to $\bY=(Y_1,\ldots,Y_d)$, a variable having standardised marginal distributions by using the \emph{probability integral transform} as follows:
+  \begin{eqnarray}
+\label{eqn:PIT}
+Y_i &=& (G^{-1}(\hat F_i(X_i)), i=1,\ldots,d.
+\end{eqnarray}
+In practice, the $\hat F_i$ can be the marginal empirical distribution functions of the data (in which case
+Equation~(\ref{eqn:PIT}) is also known as the \emph{rank transform}), or the semi-parametric model using the empirical
+distributions below a threshold and the fitted GPD models for the tails of the distributions above the threshold.
+%
+\subsubsection{Regression model structure}
+%
+Let $Y_i, i \in \{1,\ldots,d\},$ be the variable on which we are to condition.  Then $\bY_{-i}$ denotes the remainder of the vector $\bY$ excluding the $i$th component. The Heffernan and Tawn approach conditions on $Y_i$ being above some high threshold $t$, and models the dependence of the remaining $\bY_{-i}$ conditional on the observed value of $Y_i>t$.  The form of the regression model for the conditional dependence structure depends on the precise choice of $G$ in Equation~(\ref{eqn:PIT}).
+\begin{description}
+\item[Laplace margins] G is the Laplace distribution function and $\bY$ are marginally Laplace distributed.  Conditional on variable $Y_i$ exceeding a high threshold $t$, the Heffernan and Tawn model for the remaining variables $\bY_{-i}$ takes the form:
+\begin{eqnarray}\label{eqn:HTlaplace}
+\bY_{-i} = \balpha_{|i} Y_i + (Y_i)^{\bbeta_{|i}}\bZ_{|i}
+\end{eqnarray}
+where $\bZ_{|i}$ is a vector residual and $(d-1)$ dimensional parameter vectors $\balpha_{|i}$ and $\bbeta_{|i}$ satisfy $(\balpha_{|i},\bbeta_{|i}) \in [-1, 1]^{d-1}\times(-\infty, 1)^{d-1}$. Here, $\alpha_{j|i}$, the $\balpha_{|i}$ associated with $Y_j, (j\in \{1,\ldots,d\}, j\neq i)$, then $0 < \alpha_{j|i}\leq 1$ and
+$-1 \leq \alpha_{j|i} < 0$ correspond respectively to positive and negative association between $Y_j$ and large values of $Y_i$.
+\item[Gumbel margins] G is the Gumbel distribution function and $\bY$ are marginally Gumbel distributed.  Conditional on variable $Y_i$ exceeding a high threshold $t$, the Heffernan and Tawn model for the remaining variables $\bY_{-i}$ takes the form:
+\begin{eqnarray}\label{eqn:HTgumbel}
+\bY_{-i} = \balpha_{|i} Y_i + I_{\balpha_{|i}=0,\bbeta_{|i}<0}(\bc_{|i}
+                                                                        - \bd_{|i} \log Y_i)+ (Y_i)^{\bbeta_{|i}}\bZ_{|i}
+\end{eqnarray}
+where $\bZ_{|i}$ is a vector residual and $(d-1)$ dimensional parameter vectors $\balpha_{|i}$, $\bbeta_{|i}$, $\bc_{|i}$ and $\bd_{|i}$ this time satisfy $(\balpha_{|i},\bbeta_{|i}, \bc_{|i}, \bd_{|i}) \in [0, 1]^{d-1}\times(-\infty, 1)^{d-1} \times (\infty,\infty)^{d-1}\times(0,1)^{d-1}$.  Here positive association between $Y_j$ and large $Y_i$ is described by $\alpha_{j|i}$, when both $\alpha_{j|i}>0$ and $\beta_{j|i}<0$.  The  model structure changes in the case of negative dependence in which case $\alpha_{j|i}=0$ and further parameters $c_{j|i}$ and $d_{j|i}$ are required.
+\end{description}
+
+The structure of the dependence model is greatly simplified under the use of Laplace margins, in which case a single model structure suffices to describe both positive and negative dependence.  This makes inference considerably more straightforward, particularly in the case of weak dependence.
+
+Note that in both Laplace and Gumbel cases, there is no parametric family of distributions assumed to describe the distribution of model residuals $\bZ_{|i}$.  Thus the Heffernan and Tawn conditional dependence model is semi-parametric.  For a complete description of the dependence between conditioning variable $Y_i$ and the remaining variables $\bY_{-i}$, we need both the parametric regression type model (either~(\ref{eqn:HTlaplace}) or~(\ref{eqn:HTgumbel})) and the distribution of the model residuals $\bZ_{|i}$, the latter being modelled by the empirical distribution of observed model residuals.  These model residuals are calculated by using transformed data $\bY$ and estimates of model parameters $\hat\balpha,\hat\bbeta$ (and possibly also $\hat\bc$ and $\hat\bd$) in~(\ref{eqn:HTlaplace}) or~(\ref{eqn:HTgumbel}).
+%
+\subsection{Constraints on parameter space}
+%
+Recent developments to the Heffernan and Tawn method,~\cite{KeefEtAl2013} address the issue of validity of the fitted model.  This work shows that in order for the fitted model to be valid, it is necessary impose tighter constraints on the parameters of the Heffernan and Tawn model than the originl box constraints described above.  Constraints suggested by Keef {\it et al.}\ enforce the consistency of the fitted dependence model with the strength of extremal dependence exhibited by the data.
+
+The effect of these constraints is to limit the shape of the dependence parameter space so that its boundary is curved. The constraint brings with it some performance issues for the optimiser used to estimate the dependence parameters, in particular sensitivity to choice of starting value.
+
+In {\tt texmex}, this constrained estimation is implemented for Laplace margins
+only.  It is to be preferred to the use of unconstrained estimation which can
+result in invalid, inconsistent inferences and which can lead to misleading
+predictions particularly if extrapolation is to be made far into the tail of the
+modelled distribution.  As such, the package defaults are to use Laplace margins
+and to constrain the parameters to give valid fitted models.  Diagnostic plots
+to visualise this constrained parameter space are provided: see examples below
+in Section~\ref{section:parSpaceConstraints},
+page~\pageref{section:parSpaceConstraints}.
+%
+\section{Conditional multivariate extreme value modelling using {\tt texmex}}
+%
+The whole conditional multivariate extreme value modelling algorithm is rather
+complicated. Fitted models are arguably most easily interpreted by using them to
+predict quantities of interest.
+%
+\subsection{Model fitting}
+%
+Now we fit the multivariate model to the winter dataset, conditioning on each of
+the five marginal variables in turn.  Here, {\tt mqu} specifies the marginal
+quantile which defines the threshold above which the marginal GPD models will be
+fitted.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{mex.O3}  \hlkwb{<-} \hlkwd{mex}\hlstd{(winter,} \hlkwc{mqu}\hlstd{=}\hlnum{.7}\hlstd{,} \hlkwc{penalty}\hlstd{=}\hlstr{"none"}\hlstd{,} \hlkwc{which}\hlstd{=}\hlstr{"O3"}\hlstd{)}
+\hlstd{mex.NO2} \hlkwb{<-} \hlkwd{mex}\hlstd{(winter,} \hlkwc{mqu}\hlstd{=}\hlnum{.7}\hlstd{,} \hlkwc{penalty}\hlstd{=}\hlstr{"none"}\hlstd{,} \hlkwc{which}\hlstd{=}\hlstr{"NO2"}\hlstd{)}
+\hlstd{mex.NO}  \hlkwb{<-} \hlkwd{mex}\hlstd{(winter,} \hlkwc{mqu}\hlstd{=}\hlnum{.7}\hlstd{,} \hlkwc{penalty}\hlstd{=}\hlstr{"none"}\hlstd{,} \hlkwc{which}\hlstd{=}\hlstr{"NO"}\hlstd{)}
+\hlstd{mex.SO2} \hlkwb{<-} \hlkwd{mex}\hlstd{(winter,} \hlkwc{mqu}\hlstd{=}\hlnum{.7}\hlstd{,} \hlkwc{penalty}\hlstd{=}\hlstr{"none"}\hlstd{,} \hlkwc{which}\hlstd{=}\hlstr{"SO2"}\hlstd{)}
+\hlstd{mex.PM10} \hlkwb{<-} \hlkwd{mex}\hlstd{(winter,} \hlkwc{mqu}\hlstd{=}\hlnum{.7}\hlstd{,} \hlkwc{penalty}\hlstd{=}\hlstr{"none"}\hlstd{,} \hlkwc{which}\hlstd{=}\hlstr{"PM10"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+
+The function {\tt mex} is a wrapper for the functions {\tt migpd} and {\tt mexDependence} which carry out the marginal and dependence modelling stages respectively.  An equivalent way of carrying out the above, conditioning on O3 would be to use:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{marg} \hlkwb{<-} \hlkwd{migpd}\hlstd{(winter,} \hlkwc{mqu}\hlstd{=}\hlnum{0.7}\hlstd{,} \hlkwc{penalty}\hlstd{=}\hlstr{"none"}\hlstd{)}
+\hlstd{mex.O3} \hlkwb{<-} \hlkwd{mexDependence}\hlstd{(marg,} \hlkwc{which} \hlstd{=} \hlstr{"O3"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+
+This would be a more efficient way to fit the above models, as it does the GPD
+estimation only once, whereas this was repeated for each of the different
+conditioning variables in the preceding code chunk. By default, if no dependence
+threshold is supplied, the threshold for fitting the dependence component of the
+model is taken to be equal to that used to fit the GPD model to the tail of the
+conditioning variable, and a warning message is given. There is, however, no
+reason why the thresholds employed for marginal and dependence modelling should
+be the same, and there is no required ordering on the two types of threshold.
+Different thresholds can be used for marginal and dependence modelling, by
+specifying the quantile {\tt dqu} to be used for the dependence threshold:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{mexDependence}\hlstd{(marg,} \hlkwc{which} \hlstd{=} \hlstr{"O3"}\hlstd{,} \hlkwc{dqu}\hlstd{=}\hlnum{0.8}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+
+\subsection{Marginal model diagnostics}
+%
+We can check the diagnostics for the fitted marginal models in the usual way.
+Use of {\tt mrlPlot} and {\tt gpdRangeFit} can also be informative at this stage
+(see {\tt texmex1d} vignette for more details of these univariate methods - here
+output is suppressed since it is lengthy!).
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{g} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(marg)}
+
+\hlkwd{do.call}\hlstd{(}\hlstr{"grid.arrange"}\hlstd{,} \hlkwd{c}\hlstd{(g[[}\hlnum{1}\hlstd{]],} \hlkwd{list}\hlstd{(}\hlkwc{ncol}\hlstd{=}\hlnum{2}\hlstd{,} \hlkwc{nrow}\hlstd{=}\hlnum{2}\hlstd{)))}  \hlcom{# ... etc}
+\hlkwd{do.call}\hlstd{(}\hlstr{"grid.arrange"}\hlstd{,} \hlkwd{c}\hlstd{(g[[}\hlnum{2}\hlstd{]],} \hlkwd{list}\hlstd{(}\hlkwc{ncol}\hlstd{=}\hlnum{2}\hlstd{,} \hlkwc{nrow}\hlstd{=}\hlnum{2}\hlstd{)))}  \hlcom{# ... etc}
+
+\hlkwd{ggplot}\hlstd{(}\hlkwd{gpdRangeFit}\hlstd{(winter}\hlopt{$}\hlstd{O3))}  \hlcom{# ... etc}
+\hlkwd{ggplot}\hlstd{(}\hlkwd{mrl}\hlstd{(winter}\hlopt{$}\hlstd{O3))}          \hlcom{# ... etc}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+%
+\subsection{Dependence model diagnostics}
+%
+Plotting model diagnostics for the dependence component of the model is carried
+out as follows - first, for the model fitted by conditioning on the O3 variable:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{ggplot}\hlstd{(mex.O3)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariatemexO3-1} 
+
+\end{knitrout}
+
+The plots show (top to bottom): centred and scaled values of the
+dependence model residuals across
+the range of the extreme conditioning variable; absolute
+values of these; and the original untransformed data with contours
+showing quantiles of the fitted conditional model. If the
+model fits the data, the top and centre rows of the plots should show no
+structure with scatterplot smoothers being more or
+less horizontal.  In the bottom row, the fitted quantiles should
+agree with the shape of the raw data distribution.  Take care to
+note that the one dimensional conditional distribution of $(X_j \,|\, X_i)$
+(whose estimated quantiles at each value of $X_i$ are shown by the contours) is
+\emph{not} the same thing as the (two dimensional) joint distribution of the
+$(X_i,X_j)$, estimated by the scatterplot of the data points.
+
+For the models fitted by conditioning on the NO variable, we do:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{ggplot}\hlstd{(mex.NO)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariatemexNO-1} 
+
+\end{knitrout}
+
+Most of the plots support the choice of threshold, however the top plot for SO2
+given NO shows a decrease in location with increase in conditioning NO.
+
+We can investigate further
+by plotting the dependence structure parameter estimates
+across a range of thresholds. Beyond a suitably high
+threshold, we should expect the parameters to be constant.
+To gain some feeling for the variability in the parameters,
+we perform 10 (by default) bootstrap samples.  We set {\tt trace=11}
+to suppress printing of progress reports in this document (the
+default is to report every ten replicates).
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{mrf} \hlkwb{<-} \hlkwd{mexRangeFit}\hlstd{(marg,} \hlstr{"NO"}\hlstd{,} \hlkwc{trace}\hlstd{=}\hlnum{11}\hlstd{)}
+\hlkwd{ggplot}\hlstd{(mrf)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariatemexRangeFitPlot-1} 
+
+\end{knitrout}
+
+These plots suggest that there is an issue with the starting values in the NO2 model fit.  We try using different starting values.  There is an option for using a previously fitted dependence model as a starting point, see the documentation for {\tt mexDependence}.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{start} \hlkwb{<-} \hlkwd{coef}\hlstd{(mex.NO}\hlopt{$}\hlstd{dependence)[}\hlnum{1}\hlopt{:}\hlnum{2}\hlstd{,]} \hlcom{# alternative starting value}
+
+\hlstd{mrf} \hlkwb{<-} \hlkwd{mexRangeFit}\hlstd{(marg,} \hlstr{"NO"}\hlstd{,} \hlkwc{trace}\hlstd{=}\hlnum{11}\hlstd{,}\hlkwc{start}\hlstd{=}\hlkwd{c}\hlstd{(}\hlnum{0.1}\hlstd{,}\hlnum{0.1}\hlstd{))}
+\hlkwd{ggplot}\hlstd{(mrf)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariatemexRangeFitPlot2-1} 
+
+\end{knitrout}
+
+This does appear to have resolved the issue about the starting value which we had identified. We would need to take care in other fitting that the fitted model for NO2 given NO does not suffer from this issue.
+
+The stability of the parameter estimates in the resulting plot provides some
+reassurance that the $70^{th}$ percentile is a suitable threshold.
+%
+\subsection{Constrained parameter space}
+\label{section:parSpaceConstraints}
+%
+Before carrying on to examine our fitted models or to use them for prediction,
+we need to take some care to make sure our parameter estimates do correspond to
+the true maximum of the objective functions used for estimation.  This is an
+issue since the performance of the optimiser can be sensitive to the choice of
+starting value. It is up to the user to check that the parameter estimates have
+converged to the true maximum likelihood estimates.  This is carried out
+straightforwardly using simple visual diagnostics.
+
+To reduce the amount of output produced, here we show the procedure only for NO2
+given NO.  We use {\tt mexDependence} to plot the profile-likelihood surface
+which is maximised for estimation of the dependence model parameters.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{par}\hlstd{(}\hlkwc{mfrow}\hlstd{=}\hlkwd{c}\hlstd{(}\hlnum{3}\hlstd{,}\hlnum{4}\hlstd{),} \hlkwc{mar}\hlstd{=}\hlkwd{par}\hlstd{(}\hlstr{"mar"}\hlstd{)}\hlopt{/}\hlnum{2}\hlstd{)}
+\hlstd{marg.NO2.NO} \hlkwb{<-} \hlkwd{migpd}\hlstd{(winter[,}\hlkwd{c}\hlstd{(}\hlstr{"NO2"}\hlstd{,}\hlstr{"NO"}\hlstd{)],}\hlkwc{mqu}\hlstd{=}\hlnum{0.7}\hlstd{)}
+\hlstd{mex.NO2.NO} \hlkwb{<-} \hlkwd{mexDependence}\hlstd{(marg.NO2.NO,} \hlkwc{which} \hlstd{=} \hlstr{"NO"}\hlstd{,}
+                            \hlkwc{dqu}\hlstd{=}\hlnum{0.7}\hlstd{,} \hlkwc{PlotLikDo}\hlstd{=}\hlnum{TRUE}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+
+This plot shows the point estimate to lie on the edge of the permissible
+parameter space, and we can home in on the region containing this estimate to
+check that the surface has been successfully maximised:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{par}\hlstd{(}\hlkwc{mfrow}\hlstd{=}\hlkwd{c}\hlstd{(}\hlnum{1}\hlstd{,}\hlnum{1}\hlstd{))}
+\hlstd{mex.NO2.NO} \hlkwb{<-} \hlkwd{mexDependence}\hlstd{(marg.NO2.NO,} \hlkwc{which} \hlstd{=} \hlstr{"NO"}\hlstd{,}
+                            \hlkwc{dqu}\hlstd{=}\hlnum{0.7}\hlstd{,} \hlkwc{PlotLikDo}\hlstd{=}\hlnum{TRUE}\hlstd{,}
+                            \hlkwc{PlotLikRange}\hlstd{=}\hlkwd{list}\hlstd{(}\hlkwc{a}\hlstd{=}\hlkwd{c}\hlstd{(}\hlnum{0.6}\hlstd{,}\hlnum{0.8}\hlstd{),}\hlkwc{b}\hlstd{=}\hlkwd{c}\hlstd{(}\hlnum{0.1}\hlstd{,}\hlnum{0.3}\hlstd{) ))}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariatecheckMax2-1} 
+
+\end{knitrout}
+
+This plot reassures us that the point estimate does correspond to the maximum of
+the objective function.  If this had not been the case, we should have tried a
+range of different starting values for the optimisation.  More details are given
+in the documentation for {\tt mexDependence}.
+
+It is left as an exercise to produce plots for all of the conditional models
+fitted in this section here, for example:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{mexDependence}\hlstd{(marg,}\hlkwc{which}\hlstd{=}\hlstr{"O3"}\hlstd{,}\hlkwc{dqu}\hlstd{=}\hlnum{0.7}\hlstd{,}\hlkwc{PlotLikDo}\hlstd{=}\hlnum{TRUE}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+%
+\subsection{Fitted model parameters}
+%
+Now that we are satisfied with the fit of our model, we can examine the
+estimated model parameters.  The parameters in the dependence structure are not
+straighforwardly interpretable, though values of {\tt a} close to 1 (or -1)
+indicate strong positive (or negative) extremal dependence.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{mex.O3}
+\end{alltt}
+\begin{verbatim}
+## mexDependence(x = marg, which = "O3")
+## 
+## 
+## Marginal models:
+## 
+## Dependence model:
+## 
+## Conditioning on O3 variable.
+## Thresholding quantiles for transformed data: dqu = 0.7
+## Using laplace margins for dependence estimation.
+## Constrained estimation of dependence parameters using v = 10 .
+## Log-likelihood = -257.702 -256.6681 -231.7684 -234.0916 
+## 
+## Dependence structure parameter estimates:
+##       NO2       NO     SO2     PM10
+## a 0.01301 -0.07278 -0.1683 -0.04719
+## b 0.02020  0.03038 -0.1418  0.07142
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+It is clear from the values of the dependence parameters, that SO2 is the most
+strongly (negatively) dependent on large values of O3, with the other variables
+having only weak extremal dependence on ozone.
+
+
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{mex.NO}
+\end{alltt}
+\begin{verbatim}
+## mexDependence(x = marg, which = "NO", dqu = 0.7, start = c(0.1, 
+##     0.1))
+## 
+## 
+## Marginal models:
+## 
+## Dependence model:
+## 
+## Conditioning on NO variable.
+## Thresholding quantiles for transformed data: dqu = 0.7
+## Using laplace margins for dependence estimation.
+## Constrained estimation of dependence parameters using v = 10 .
+## Log-likelihood = -230.9793 -218.0096 -220.2708 -243.5154 
+## 
+## Dependence structure parameter estimates:
+##        O3    NO2     SO2     PM10
+## a -0.2558 0.6850  0.2851  0.70840
+## b -0.2986 0.2335 -0.3101 -0.09802
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+The values of the estimated dependence parameters show that NO2, SO2 and PM10
+all have positive extremal dependence on NO, the strongest being that of PM10 on
+NO.  Ozone has fairly weak negative dependence on NO.
+
+%
+\subsection{Prediction under the fitted model}
+%
+The dependence between pairs of variables is described by a pair of parameters
+$(a,b)$ and also the associated empirical distribution of the residuals
+$\bZ_{|i}$.  For this reason, the interpretation of the fitted models is
+arguably most straightforward via prediction of variables given extreme values
+of the conditioning variable, which we cover now.
+
+Comparison of the plots of the remaining variables against NO
+reveals that the extremal dependence between the variables
+varies considerably (see plot on page~\pageref{fig:NO.Data}).
+
+We can obtain predictions under the fitted conditional multivariate
+model by importance sampling using the {\tt predict} method. We tell the function
+to simulate values of the variables conditional on {\tt NO}
+being above its $90^{th}$ percentile.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{set.seed}\hlstd{(}\hlnum{20130619}\hlstd{)}
+\hlstd{nsim} \hlkwb{<-} \hlnum{1000}
+\hlstd{pO3} \hlkwb{<-} \hlkwd{predict}\hlstd{(mex.O3,} \hlkwc{pqu}\hlstd{=}\hlnum{.9}\hlstd{,} \hlkwc{nsim}\hlstd{=nsim)}
+\hlstd{pNO2} \hlkwb{<-} \hlkwd{predict}\hlstd{(mex.NO2,} \hlkwc{pqu}\hlstd{=}\hlnum{.9}\hlstd{,} \hlkwc{nsim}\hlstd{=nsim)}
+\hlstd{pNO} \hlkwb{<-} \hlkwd{predict}\hlstd{(mex.NO,} \hlkwc{pqu}\hlstd{=}\hlnum{.9}\hlstd{,} \hlkwc{nsim}\hlstd{=nsim)}
+\hlstd{pSO2} \hlkwb{<-} \hlkwd{predict}\hlstd{(mex.SO2,} \hlkwc{pqu}\hlstd{=}\hlnum{.9}\hlstd{,} \hlkwc{nsim}\hlstd{=nsim)}
+\hlstd{pPM10} \hlkwb{<-} \hlkwd{predict}\hlstd{(mex.PM10,} \hlkwc{pqu}\hlstd{=}\hlnum{.9}\hlstd{,} \hlkwc{nsim}\hlstd{=nsim)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+
+The resulting conditional distributions are summarised as follows:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{summary}\hlstd{(pO3)}
+\end{alltt}
+\begin{verbatim}
+## predict.mex(object = mex.O3, pqu = 0.9, nsim = nsim)
+## 
+## Conditioned on O3 being above its 90th percentile.
+## 
+## 
+## Conditional Mean and Quantiles:
+## 
+##      O3|O3>Q90 NO2|O3>Q90 NO|O3>Q90 SO2|O3>Q90 PM10|O3>Q90
+## mean      36.6       42.2      89.1       12.2        37.5
+## 5%        33.8       26.0      18.0        3.0        19.0
+## 50%       36.1       43.0      78.5       10.0        32.0
+## 95%       41.2       59.0     184.0       26.7        85.0
+## 
+## Conditional probability of threshold exceedance:
+## 
+##  P(O3>28|O3>Q90) P(NO2>49|O3>Q90) P(NO>149|O3>Q90) P(SO2>23|O3>Q90)
+##                1             0.27            0.148            0.089
+##  P(PM10>53|O3>Q90)
+##              0.107
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+The thresholds cited in the final part of the output are by default taken to be
+the marginal thresholds used for fitting the GPD models  (in this case these are
+the 0.7 quantiles of the marginal distributions).  However, any value of
+threshold can be used for prediction by specifying the argument {\tt mth} of the
+{\tt summary} function, for example:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{summary}\hlstd{(pO3,}\hlkwc{mth}\hlstd{=}\hlkwd{c}\hlstd{(}\hlnum{39}\hlstd{,}\hlnum{40}\hlstd{,}\hlnum{100}\hlstd{,}\hlnum{10}\hlstd{,}\hlnum{40}\hlstd{))}
+\end{alltt}
+\begin{verbatim}
+## predict.mex(object = mex.O3, pqu = 0.9, nsim = nsim)
+## 
+## Conditioned on O3 being above its 90th percentile.
+## 
+## 
+## Conditional Mean and Quantiles:
+## 
+##      O3|O3>Q90 NO2|O3>Q90 NO|O3>Q90 SO2|O3>Q90 PM10|O3>Q90
+## mean      36.6       42.2      89.1       12.2        37.5
+## 5%        33.8       26.0      18.0        3.0        19.0
+## 50%       36.1       43.0      78.5       10.0        32.0
+## 95%       41.2       59.0     184.0       26.7        85.0
+## 
+## Conditional probability of threshold exceedance:
+## 
+##  P(O3>39|O3>Q90) P(NO2>40|O3>Q90) P(NO>100|O3>Q90) P(SO2>10|O3>Q90)
+##            0.177             0.57            0.414            0.465
+##  P(PM10>40|O3>Q90)
+##              0.287
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+The plot method can be used to visualise the fitted conditional models using the
+importance samples as follows:
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{ggplot}\hlstd{(pO3)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariateplotPredictO3-1} 
+
+\end{knitrout}
+
+Plots show the original data (grey circles) and data importance sampled under
+the fitted model above the threshold for prediction (orange triangles  and blue diamonds).  Samples represented by a blue diamond are largest (on the common quantile scale) in the conditioning variable, orange diamonds are largest in a different variable.  The solid curve in each plot is for reference and joins equal quantiles of the marginal
+distributions -- perfectly dependent variables would lie exactly on this line
+(this line is analogous to the diagnonal line on a QQ plot, but here since the
+two marginal distributions are not equal, the curve is not a straight line). We
+can compare the above output conditioning on O3 (which has weak or negative
+dependence) with that obtained when we condition on NO where the dependence is
+stronger:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{ggplot}\hlstd{(pNO)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariateplotPredictNO-1} 
+
+\end{knitrout}
+The strong extremal dependence of winter PM10 on NO is evident here, with the
+sampled data following closely the curve of equal marginal quantiles.  These plots show that the sampled points are a greater mixture of points that are largest in the conditioning variable and points that are not (there are many orange diamonds below the solid orange ``diagonal" line).
+
+The importance samples generated by the {\tt predict} method can also be used to
+estimate probabilities of arbitrary tail regions falling above the threshold for
+the conditioning variable used for importance sampling, or to calculate
+functionals of the multidimensional variables.  The precise implementation will
+depend on the application in question.
+
+\subsection{Building samples from multiple conditional models}
+\label{sect:MultipleCondModels}
+
+In some applications, there is a requirement to sample from the whole of the joint distribution of the multivariate random variable, and not just from the conditional distribution given that a single component is large.  This sampling approach could be taken for example for evaluating probabilities of events falling in failure sets located in arbitrary regions of the distribution's tails.  The precise definition of any failulre regions will depend on the application in question.  Here we show how to construct a large Monte Carlo sample from the whole of the modelled joint distribution defined by a collection of conditional models fitted by conditioning on each of the marginal variables in turn.
+
+This process of collecting conditional models together is assumed to take place after these models have been fitted individually, including all the necessary threshold selection procedures that go with such model fitting.
+
+We follow the example given in Heffernan and Tawn (2004) using the Winter air pollution data again.  We assume that the chosen modelling thresholds for each variable have been chosen at appropriate values given in Table~4 (marginal thresholds) and page 519 (dependence thresholds) of that paper.
+
+The winter dataset is 5 dimensional, giving 5 conditional dependence models and 5 fitted GPD models.   We must use the same five fitted GPDs for each of the conditional models we fit to ensure consistency of the resulting combination. We gather our fitted models into a single R opbject:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{mAll} \hlkwb{<-} \hlkwd{mexAll}\hlstd{(winter,}\hlkwc{mqu}\hlstd{=}\hlnum{0.7}\hlstd{,}\hlkwc{dqu}\hlstd{=}\hlkwd{rep}\hlstd{(}\hlnum{0.7}\hlstd{,}\hlnum{5}\hlstd{))}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+
+We can then generate a Monte Carlo sample of the required size from the collection of fitted models.  As in Heffernan and Tawn, we use the model that conditions on the $i$th component of the random vector to simulate values in that part of the sample space for which the $i$th component is the largest of all components (measured on a quantile scale).  This is carried out as follows:
+
+\begin{enumerate}
+\item \label{Step1} Generate a Monte Carlo sample from the original dataset, by sampling the required number of observations uniformly with replacement from the entire dataset;
+\item Transform the Monte Carlo sample obtained in step 1. to the Laplace scale by using the fitted GPDs (here we can see why we must take care to use the same fitted GPD for all of the conditional model fits);
+\item \label{Step3} On the Laplace scale, identify which component of each transformed data point is the largest (since we are working on the common Laplace scale, this step calculates which component represents the highest marginal quantile);
+\item \label{Step4} Identify which of our Monte Carlo sample identified in Step~\ref{Step3} additionally lie above the corresponding conditional dependence model threshold (for example, for all points whose $i$th component is the largest component, we find which of these have $i$th component above the dependence threshold used to fit the conditional model given the $i$th component is above a given threshold);
+\item\label{Step5} For each conditioning variable in turn, generate a large independent sample from the fitted conditional distribution, conditional upon being above the associated dependence model fitting threshold.  This is carried out on the original scale of the data;
+\item On the original scale of the data, for each variable in turn, replace those values in our Monte Carlo sample from step~\ref{Step1} which are both above their conditional model threshold and for which the conditioning variable is the largest component (identified in Step~\ref{Step4}) by a value generated from the appropriate conditional model (from step~\ref{Step5}).
+\end{enumerate}
+
+The following plots highlight the selection of points in step~\ref{Step4}. Points fulfilling the requirements of step ~\ref{Step4} are shown by blue dots:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariateexamplePartition-1} 
+
+\end{knitrout}
+
+The second of these plots shows the NO2 and SO2 values of all Monte Carlo samples above the conditional dependence threshold, conditioning on NO2.   All of the orange diamonds and blue triangles are large in NO2, but only those shown by the blue triangles are largest in NO2 (assessed on a common quantile scale).  Clearly the diamonds which lie above the solid blue line are larger in SO2 than in NO2.  Those samples shown by orange diamonds {\it below} the solid blue line are largest in a different variable -- neither NO2 nor SO2, but another variable not shown on the plot.
+
+All the steps required for the simulation are carried out in the {\tt texmex} function {\tt mexMonteCarlo}.  Here, we generate 5000 points from the original dataset (below the dependence thresholds) and the collection of conditional models above each of the dependence thresholds:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{mexMC} \hlkwb{<-} \hlkwd{mexMonteCarlo}\hlstd{(}\hlnum{5000}\hlstd{, mAll)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+
+For each margin, the number of points from the original sample from the dataset that were replaced by points sampled parametrically from the corresponding conditional tail model is as follows:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{mexMC}\hlopt{$}\hlstd{nR}
+\end{alltt}
+\begin{verbatim}
+##   O3  NO2   NO  SO2 PM10 
+## 1295  705  593  789  504
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+This shows that considerably more samples were replaced for points which had O3 as the most extreme component than for any other margin (O3 has around twice as many points replaced as any of the other margins).  This corresponds to the fitted models which describe very weak or negative dependence between  O3 and the remaining variables when O3 is large:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{mAll}\hlopt{$}\hlstd{O3}\hlopt{$}\hlstd{dependence}
+\end{alltt}
+\begin{verbatim}
+## Conditioning on O3 variable.
+## Thresholding quantiles for transformed data: dqu = 0.7
+## Using laplace margins for dependence estimation.
+## Constrained estimation of dependence parameters using v = 10 .
+## Log-likelihood = -257.7152 -256.7165 -231.7644 -234.1655 
+## 
+## Dependence structure parameter estimates:
+##       NO2       NO     SO2     PM10
+## a 0.01444 -0.07238 -0.1678 -0.04756
+## b 0.02122  0.03100 -0.1404  0.07132
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+A consequence of this is that when O3 is large, the other variables are not.
+
+We can plot our large Monte Carlo sample and compare it with the original dataset which was plotted on page~\pageref{pairsWinter} (not shown here).
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{pairs}\hlstd{(mexMC}\hlopt{$}\hlstd{MCsample)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+
+There are clear limitations in using this approach to try to generate large samples from the required joint distribution:
+\begin{enumerate}
+\item The first and the most fundamental is that the taken together, the collection of conditional models do not give a consistent or even well defined joint distribution.  This approach is entirey empirical and relies on the validity of the underlying joint distribution of the data which is used to estimate conditional models. We hope that these models -- being estimated from the same underlying data -- will reflect the underlying joint structure and therefore give approximately consistent distributions but there is no guarantee that this works in practice.  Recent work by~\cite{ylt} has had some success in addressing this issue but is not yet implemented in {\tt texmex}.
+\item The importance of appropriate threshold choice is highlighted in this approach to combining different estimated models.  Marginal and dependence thresholds should be selected so that the transition from empirical model (e.g.\ below the GPD or conditional model threshold) to parametric model (above the respective thresholds) is smooth.  Lack of the required continuity between the components of the resulting semi-parametric models will be revealed in Monte Carlo samples which have the appearance of failing to fit together at the joins between the component models, as indeed would be the case.
+\end{enumerate}
+
+\subsection{Joint exceedance curve estimation}
+\label{sect:JointExcCurve}
+In the univariate setting, {\it return level curves} show the way in which the marginal distribution of a variable extrapolates.  It is useful to report the tail behaviour in terms of {\it return levels} associated with given {\it return periods}.  Return periods have a simple interpretation of being the expected waiting time between events at or above the associated {\it return level}, or alternatively, the time interval during which we would expect to see exactly one exceedance of this level.
+
+In two or more dimensions, there is no such simple curve.  When we  fix a {\it return period}, say 200 years, then this is equivalent to specifying a probability of observing the associated event in any one observation.  For daily i.i.d.\ data, this probability would be $1/(365\times 200)$.  In the univarite setting, we can calculate the quantile of the fitted distribution with this exceedance probability, and this is the {\it return level} associated with the given return period.  For two or more dimensions however, there are many joint events, involving both/all variables that occur with any given small probablility.  Instead of a single value consituting our {\it return level}, we now need a curve that describes a set of events, all of which have the probability which was specified by our return period.  For a given exceedance probability $p$, the {\it joint exceedance curve} is the set of points
+
+\[\{(x_{1,p},\ldots,x_{d,p}): \mbox{Pr}(X_1>x_{1,p},\ldots,X_d>x_{d,p}) = p\}.\]
+
+In {\tt texmex}, joint exceedance curve estimation is implemented for two-dimensional subsets of variables.  The curve can be estimated in a variety of ways:
+
+\begin{description}
+\item[from the original data] for relatively non-extreme curves only, within the range of observations seen in the data;
+\item[from a single fitted conditional model] conditioning on one variable only being large: curves can therefore be estimated only in that part of the space in which this estimated model is defined;
+\item[from a collection of conditional models] each fitted conditional model is used to estimate that part of the joint exceedance curve in which that model's conditioning variable is largest.
+\end{description}
+
+We show how to do each of these types of estimation in the following sections, using the (NO2,NO) variables from the Winter dataset.
+
+\subsubsection{Joint exceedance curve directly from original data}
+
+Using the raw data only, we are not able to extrapolate beyond the levels observed in the data, as the following plot shows.  The three return level curves shown correspond to constant joint exceedance probabilities of 0.2, 0.1 and 0.05.  These curves are estimated empirically and so become increasingly badly estimated as we move to higher levels where there is less data.
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{WinterNO.NO2} \hlkwb{<-} \hlstd{winter[,}\hlnum{3}\hlopt{:}\hlnum{2}\hlstd{]}
+\hlstd{j1} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(WinterNO.NO2,}\hlnum{0.2}\hlstd{)}
+\hlstd{j2} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(WinterNO.NO2,}\hlnum{0.1}\hlstd{)}
+\hlstd{j3} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(WinterNO.NO2,}\hlnum{0.05}\hlstd{)}
+\hlkwd{ggplot}\hlstd{(WinterNO.NO2,}\hlkwd{aes}\hlstd{(NO,NO2))} \hlopt{+}
+    \hlkwd{geom_point}\hlstd{(}\hlkwc{colour}\hlstd{=}\hlstr{"dark blue"}\hlstd{,}\hlkwc{alpha}\hlstd{=}\hlnum{0.5}\hlstd{)} \hlopt{+}
+    \hlkwd{geom_jointExcCurve}\hlstd{(j1,}\hlkwc{colour}\hlstd{=}\hlstr{"orange"}\hlstd{)} \hlopt{+}
+    \hlkwd{geom_jointExcCurve}\hlstd{(j2,}\hlkwc{colour}\hlstd{=}\hlstr{"orange"}\hlstd{)} \hlopt{+}
+    \hlkwd{geom_jointExcCurve}\hlstd{(j3,}\hlkwc{colour}\hlstd{=}\hlstr{"orange"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariateJointExceedanceDataOnly-1} 
+
+\end{knitrout}
+
+\subsubsection{Joint exceedance curve from fitted conditional model: one conditioning variable only}
+
+We can extrapolate further if we use the fitted conditional model, and generate importance samples from the joint tail region where we want to estimate our curve.  Here we use the model for the conditional behvaiour of NO2 given extreme NO, from Section~\ref{section:parSpaceConstraints}.
+
+It is up to the user to ensure that the threshold used for generating importance samples (the argument {\tt pqu} to the function {\tt predict} in the following) is chosen suitably for the joint exceedance curve of interest (plot not shown):
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{p1} \hlkwb{<-} \hlkwd{predict}\hlstd{(mex.NO2.NO,}\hlkwc{nsim}\hlstd{=}\hlnum{5000}\hlstd{,}\hlkwc{pqu}\hlstd{=}\hlnum{0.999}\hlstd{)}
+\hlstd{g} \hlkwb{<-} \hlkwd{ggplot}\hlstd{(p1,}\hlkwc{plot.}\hlstd{=}\hlnum{FALSE}\hlstd{)}
+\hlstd{j4} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(p1,}\hlnum{0.0005}\hlstd{,}\hlkwc{which}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{))}
+\hlstd{j5} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(p1,}\hlnum{0.0002}\hlstd{,}\hlkwc{which}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{))}
+\hlstd{j6} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(p1,}\hlnum{0.0001}\hlstd{,}\hlkwc{which}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{))}
+\hlstd{pl} \hlkwb{<-} \hlstd{g[[}\hlnum{1}\hlstd{]]} \hlopt{+}
+    \hlkwd{geom_jointExcCurve}\hlstd{(j4,}\hlkwd{aes}\hlstd{(NO,NO2),}\hlkwc{col}\hlstd{=}\hlstr{"purple"}\hlstd{)} \hlopt{+}
+    \hlkwd{geom_jointExcCurve}\hlstd{(j5,}\hlkwd{aes}\hlstd{(NO,NO2),}\hlkwc{col}\hlstd{=}\hlstr{"purple"}\hlstd{)} \hlopt{+}
+    \hlkwd{geom_jointExcCurve}\hlstd{(j6,}\hlkwd{aes}\hlstd{(NO,NO2),}\hlkwc{col}\hlstd{=}\hlstr{"purple"}\hlstd{)}
+\hlstd{pl}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariateJointExceedanceOneCondModelOnly-1} 
+
+\end{knitrout}
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{pl}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariateJointExceedanceOneCondModelOnlyPlot-1} 
+
+\end{knitrout}
+
+If required, we can combine importance samples from more than one choice of threshold as follows:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{p2} \hlkwb{<-} \hlkwd{predict}\hlstd{(mex.NO2.NO,}\hlkwc{nsim}\hlstd{=}\hlnum{5000}\hlstd{,}\hlkwc{pqu}\hlstd{=}\hlnum{0.99}\hlstd{)}
+\hlstd{j7} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(p2,}\hlnum{0.0005}\hlstd{,}\hlkwc{which}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{))}
+\hlstd{j8} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(p2,}\hlnum{0.0002}\hlstd{,}\hlkwc{which}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{))}
+\hlstd{j9} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(p2,}\hlnum{0.0001}\hlstd{,}\hlkwc{which}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{))}
+
+\hlstd{pl} \hlopt{+} \hlkwd{geom_jointExcCurve}\hlstd{(j7,}\hlkwd{aes}\hlstd{(NO,NO2),}\hlkwc{col}\hlstd{=}\hlstr{"purple"}\hlstd{)} \hlopt{+}
+    \hlkwd{geom_jointExcCurve}\hlstd{(j8,}\hlkwd{aes}\hlstd{(NO,NO2),}\hlkwc{col}\hlstd{=}\hlstr{"purple"}\hlstd{)} \hlopt{+}
+    \hlkwd{geom_jointExcCurve}\hlstd{(j9,}\hlkwd{aes}\hlstd{(NO,NO2),}\hlkwc{col}\hlstd{=}\hlstr{"purple"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariateJointExceedanceOneCondModelCombineThresholds-1} 
+
+\end{knitrout}
+
+The calculated joint exceedance curves can be returned explicitly (optionally the user can specify the values of the first variable at which to report the curve, by using the argument {\tt x} in the call to {\tt JointExceedanceCurve} below):
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{Curve} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(p2,}\hlnum{0.0005}\hlstd{,}\hlkwc{which}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{),}\hlkwc{x}\hlstd{=}\hlkwd{seq}\hlstd{(}\hlnum{43}\hlstd{,}\hlnum{96}\hlstd{,}\hlkwc{by}\hlstd{=}\hlnum{3}\hlstd{))}
+\hlstd{Curve}
+\end{alltt}
+\begin{verbatim}
+## 
+##  Estimated curve with constant joint exceedance probability equal to 5e-04 
+##    NO      NO2
+## 1  43 96.69013
+## 2  46 96.69013
+## 3  49 96.69013
+## 4  52 96.69013
+## 5  55 96.69013
+## 6  58 96.69013
+## 7  61 96.69013
+## 8  64 96.69013
+## 9  67 96.69013
+## 10 70 96.69013
+## 11 73 96.69013
+## 12 76 96.69013
+## 13 79 96.69013
+## 14 82 96.69013
+## 15 85 96.69013
+## 16 88 96.69013
+## 17 91 96.69013
+## 18 94 96.69013
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+\subsubsection{Joint exceedance curve from family of conditional models}
+
+If required, we can combine multiple conditional models fitted to each margin as conditioning variable in turn.  The fitting of this set of models was demonstrated in Section~\ref{sect:MultipleCondModels}, and we use the fitted models from that section, held in the object {\tt mAll} here for sampling.
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{p3} \hlkwb{<-} \hlkwd{mexMonteCarlo}\hlstd{(}\hlkwc{nSample}\hlstd{=}\hlnum{5000}\hlstd{,}\hlkwc{mexList}\hlstd{=mAll)}
+\hlstd{j10} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(p3,}\hlnum{0.05}\hlstd{,}\hlkwc{which}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{))}
+\hlstd{j11} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(p3,}\hlnum{0.02}\hlstd{,}\hlkwc{which}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{))}
+\hlstd{j12} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(p3,}\hlnum{0.01}\hlstd{,}\hlkwc{which}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{))}
+\hlkwd{ggplot}\hlstd{(}\hlkwd{as.data.frame}\hlstd{(p3}\hlopt{$}\hlstd{MCsample[,}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{)]),}\hlkwd{aes}\hlstd{(NO,NO2))} \hlopt{+}
+    \hlkwd{geom_point}\hlstd{(}\hlkwc{col}\hlstd{=}\hlstr{"light blue"}\hlstd{,}\hlkwc{alpha}\hlstd{=}\hlnum{0.5}\hlstd{)} \hlopt{+}
+    \hlkwd{geom_jointExcCurve}\hlstd{(j10,}\hlkwd{aes}\hlstd{(NO,NO2),}\hlkwc{col}\hlstd{=}\hlstr{"orange"}\hlstd{)} \hlopt{+}
+    \hlkwd{geom_jointExcCurve}\hlstd{(j11,}\hlkwd{aes}\hlstd{(NO,NO2),}\hlkwc{col}\hlstd{=}\hlstr{"orange"}\hlstd{)} \hlopt{+}
+    \hlkwd{geom_jointExcCurve}\hlstd{(j12,}\hlkwd{aes}\hlstd{(NO,NO2),}\hlkwc{col}\hlstd{=}\hlstr{"orange"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\includegraphics[width=\maxwidth]{AutoGeneratedFiles/texmexMultivariateJointExcCurveFamilyCondModels-1} 
+
+\end{knitrout}
+
+For smaller exceedance probabilities, the size of the sample used to estimate these curves can be made arbitrarily large until the required accuracy is achieved.
+
+Again, the precise values of points making up these curves are given in the objects returned by the call to {\tt JointExceedanceCurve}, for example the object {\tt j10} above gives the coordinates of the joint exceedance curve associated with an exceedance probability of 0.05.  Alternatively, we can calculate the curve at user specified points {\tt x} as follows:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlkwd{JointExceedanceCurve}\hlstd{(p3,}\hlnum{0.05}\hlstd{,}\hlkwc{which}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{),}\hlkwc{x}\hlstd{=}\hlkwd{seq}\hlstd{(}\hlnum{10}\hlstd{,}\hlnum{360}\hlstd{,}\hlkwc{by}\hlstd{=}\hlnum{50}\hlstd{))}
+\end{alltt}
+\begin{verbatim}
+## 
+##  Estimated curve with constant joint exceedance probability equal to 0.05 
+##    NO      NO2
+## 1  10 65.54611
+## 2  60 65.46787
+## 3 110 65.46784
+## 4 160 64.98234
+## 5 210 63.61024
+## 6 260 61.72612
+## 7 310 59.11373
+## 8 360 37.00000
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+\subsubsection{Specifying return periods in terms of units of time}
+
+Throughout the package {\tt texmex} the units of return period is the {\it observation}.  This is because in some applications, observations may represent time periods but in others, they may represent individual patients in which case it makes no sense to talk about time scales.  We have aimed to keep the package very general in its implementation.
+
+However, in some settings it is useful to think about return levels as being associated with particular temporal return periods (or for joint exceedance curves to have a given {\it Annual Exceedance Probability} (AEP) of e.g.\ 1 in 10 years).  It is trivial to convert from return periods stated in terms of numbers of observations (as implemented in the package) to years, by considering the numbers of observations in a year.  For example in the {\tt winter} air pollution example, there are 120 observations per winter (winter being defined here as November -- February inclusive).  So to calculate the 200 year joint exceedance curve, we carry out the following calculation:
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{ReturnPeriodInYears} \hlkwb{<-} \hlnum{200}
+\hlstd{NobsPerYear} \hlkwb{<-} \hlnum{120}
+\hlstd{ExceedanceProb} \hlkwb{<-} \hlnum{1}\hlopt{/} \hlstd{(ReturnPeriodInYears} \hlopt{*} \hlstd{NobsPerYear)}
+\hlstd{ExceedanceProb}
+\end{alltt}
+\begin{verbatim}
+## [1] 4.166667e-05
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{j200} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(p1,ExceedanceProb,}\hlkwc{which}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{),}
+                             \hlkwc{x}\hlstd{=}\hlkwd{seq}\hlstd{(}\hlnum{700}\hlstd{,}\hlkwc{by}\hlstd{=}\hlnum{50}\hlstd{,}\hlkwc{len}\hlstd{=}\hlnum{5}\hlstd{))}
+\hlstd{j200}
+\end{alltt}
+\begin{verbatim}
+## 
+##  Estimated curve with constant joint exceedance probability equal to 4.166667e-05 
+##    NO       NO2
+## 1 700 109.85036
+## 2 750 108.47649
+## 3 800 105.60229
+## 4 850  98.73148
+## 5 900  83.04037
+\end{verbatim}
+\end{kframe}
+\end{knitrout}
+
+To plot the data and curve (not shown):
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{alltt}
+\hlstd{j200} \hlkwb{<-} \hlkwd{JointExceedanceCurve}\hlstd{(p1,ExceedanceProb,}
+                             \hlkwc{which}\hlstd{=}\hlkwd{c}\hlstd{(}\hlstr{"NO"}\hlstd{,}\hlstr{"NO2"}\hlstd{))}
+\hlkwd{ggplot}\hlstd{(WinterNO.NO2,}\hlkwd{aes}\hlstd{(NO,NO2))}\hlopt{+}
+    \hlkwd{geom_point}\hlstd{(}\hlkwc{colour}\hlstd{=}\hlstr{"light blue"}\hlstd{,}\hlkwc{alpha}\hlstd{=}\hlnum{0.5}\hlstd{)} \hlopt{+}
+    \hlkwd{geom_jointExcCurve}\hlstd{(j200,}\hlkwd{aes}\hlstd{(NO,NO2),}\hlkwc{col}\hlstd{=}\hlstr{"purple"}\hlstd{)} \hlopt{+}
+    \hlkwd{labs}\hlstd{(}\hlkwc{title}\hlstd{=}\hlstr{"200 year joint exceedance curve"}\hlstd{)}
+\end{alltt}
+\end{kframe}
+\end{knitrout}
+
+\bibliography{texmex}
+\bibliographystyle{plain}
+\end{document}
+
+

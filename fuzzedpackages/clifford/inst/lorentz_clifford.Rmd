@@ -1,0 +1,319 @@
+---
+title: "Lorentz transforms using Clifford algebra"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("clifford")
+library("lorentz")
+library("emulator")
+```
+
+
+# Lorentz transforms
+
+(throughout, we use units in which $c=1$).  Consider the following
+four-vector:
+
+```{r,define4vec}
+(fourvec <- c(1,5,3,2))  # a four-vector
+u <- c(0.2,0.3,0.4)  # a three-velocity
+```
+
+We wish to consider the effect of transforming `s` by the following boost:
+
+```{r,b1b2}
+(Bmat <- boost(u))  # Bmat = "B-matrix"
+```
+
+This is simply matrix multiplication:
+
+```{r,matmultb}
+Bmat %*% fourvec
+```
+
+We will effect this operation using Clifford algebra.  Conceptually I
+am following Snygg but using a somewhat modified notation for
+consistency with the `clifford` and `lorentz` packages.
+
+## Lorentz transforms in terms of rapidity
+
+The general form for a Lorentz transform of speed $u$ in the $x$-direction is
+
+$$
+\begin{pmatrix}
+\overline{t}\\
+\overline{x}
+\end{pmatrix}
+=
+\begin{pmatrix}
+\gamma&-\gamma v\\
+-\gamma v&\gamma
+\end{pmatrix}
+\begin{pmatrix}
+t\\x\end{pmatrix}
+$$
+
+where $\gamma=(1-u^2)^{-1/2}$.  Writing $\cosh\phi=\gamma$ and noting
+that $\phi$ is real (sometimes $\phi$ is known as the _rapidity_) we
+get
+
+$$
+\begin{pmatrix}
+\cosh\phi&-\sinh\phi\\
+-\sinh\phi &\cosh\phi
+\end{pmatrix}
+$$
+for the transformation, and we can see that the matrix has unit determinant.
+
+## Lorentz transforms in Clifford algebra
+
+Above we considered the four-vector $s=(1,5,3,2)$.  In Clifford
+formalism this appears as
+
+```{r,cliff1}
+(scliff <- as.1vector(fourvec))
+```
+
+Algebraically this would be
+$1\mathbf{e}_1+5\mathbf{e}_2+3\mathbf{e}_3+2\mathbf{e}_4$ (Snygg would
+write $1\mathbf{e}_0+5\mathbf{e}_1+3\mathbf{e}_2+2\mathbf{e}_3$; we
+cannot use that notation here because basis vectors are numbered from
+1 in the package, not zero).  The metric would be
+ 
+$$
+\begin{pmatrix}
+ 1&0&0&0\\
+ 0&-1&0&0\\
+ 0&0&-1&0\\
+ 0&0&0&-1
+\end{pmatrix}
+$$
+   
+So the squared interval for our four-vector would be given by 
+ 
+```{r,squaredinterval}
+M <- diag(c(1,-1,-1,-1))
+t(fourvec) %*% M %*% fourvec
+```
+ 
+We might use the slightly slicker idiom `quad.form()` from the `emulator` package:
+
+```{r,useemulator}
+quad.form(M,fourvec)
+```
+
+The Clifford equivalent would be `scalprod()` [remembering to set the
+signature to 1]:
+
+```{r,usescalprod}
+signature(1)
+scalprod(scliff,scliff)
+```
+
+\newcommand{\ei}{\mathbf e}
+
+We seek a boost $B\in{\mathcal C}_{1,3}$ such that
+$\overline{s}=B^{-1}sB$ (juxtaposition indicating geometric product).
+We will start with a boost in the $x$-direction with rapidity $\phi$.
+This would be
+
+$$
+B=\cosh(\phi/2){\mathbf e}_1 + {\mathbf e}_{12}\sinh(\phi/2)
+$$
+ 
+We note that $B^{-1}=\cosh(\phi/2){\mathbf e}_1- {\mathbf
+e}_{12}\sinh(\phi/2)$, if we use a signature of 1.  Proof:
+ 
+$$
+\begin{eqnarray}
+BB^{-1}&=& \left(\cosh(\phi/2){\mathbf e}_1 + {\mathbf e}_{12}\sinh(\phi/2)\right)\left(\cosh(\phi/2){\mathbf e}_1- {\mathbf e}_{12}\sinh(\phi/2)\right)\\ &=& \cosh(\phi/2)^2{\mathbf e}_{11}-\sin(\phi/2)^2{\mathbf e}_{1212}+\cosh(\phi/2)\sinh(\phi/2)(-{\mathbf e}_{112}+{\mathbf e}_{121})\\
+&=&1.
+\end{eqnarray}
+$$
+ 
+We may formally write $B=\exp({\mathbf e}_{12}\phi/2)$ on the grounds that
+ 
+$$
+\begin{eqnarray}
+\exp({\mathbf e}_{12}x) &=&1+\mathbf{e}_{12}x + \frac{(\mathbf{e}_{12}x)^2}{2!} + 
+\frac{(\mathbf{e}_{12}x)^3}{3!}+\frac{(\mathbf{e}_{12}x)^4}{4!}+\cdots\\
+&=& (1+x^2/2+x^4/4!+\cdots) + \mathbf{e}_{12}(x+\frac{x^3}{3!}+\cdots)\\
+&=& \cosh x + \mathbf{e}_{12}\sinh x
+\end{eqnarray}
+$$
+ 
+and note that this exponential obeys the usual rules for the regular
+exponential function $e^x,x\in\mathbb{R}$.  More generally, if we have
+a transform of rapidity $\phi$ and direction cosines $k_x,k_y,k_z$
+then the transform would be
+
+$$
+B_{xyz}=
+\cosh(\phi/2)\mathbf{e}_1
++k_x\mathbf{e}_{12}\sinh(\phi/2)
++k_y\mathbf{e}_{13}\sinh(\phi/2)
++k_z\mathbf{e}_{14}\sinh(\phi/2)
+$$
+
+and we can use standard Clifford algebra (together with the fact that
+$k_x^2+k_y^2+k_z^2=1$) to show that
+
+$$
+B_{xyz}^{-1}=
+\cosh(\phi/2)\mathbf{e}_1
+-k_x\mathbf{e}_{12}\sinh(\phi/2)
+-k_y\mathbf{e}_{13}\sinh(\phi/2)
+-k_z\mathbf{e}_{14}\sinh(\phi/2)
+$$
+
+is an inverse to $B_{xyz}$ in the sense that $B_{xyz}B=BB_{xyz}=1$.
+Now we consider a general
+$s=s^1\mathbf{e}_1+s^2\mathbf{e}_2+s^3\mathbf{e}_3+s^4\mathbf{e}_4$
+and calculate $B^{-1}sB$.  This is made easier if we use the facts
+that $\mathbf{e}_{12}$ commutes with $\mathbf{e}_3$ and $\mathbf{e}_4$
+as well as scalars, and anticommutes with $\mathbf{e}_1$ and
+$\mathbf{e}_2$.  Noting that $\exp(\mathbf{e}_{12})$ is a linear
+combination of a scalar and $\mathbf{e}_{12}$ we have
+
+$$
+\begin{eqnarray}
+B^{-1}sB &=& \exp(-\mathbf{e}_{12}\phi/2)(s^1\mathbf{e}_1+s^2\mathbf{e}_2+s^3\mathbf{e}_3+s^4\mathbf{e}_4)\exp(\mathbf{e}_{12}\phi/2)\\
+&=& (\mathbf{e}_1s^1+\mathbf{e}_2s^2)\exp(\mathbf{e}_{12}\phi/2)\exp(\mathbf{e}_{12}\phi/2)+\mathbf{e}_3s^3 + \mathbf{e}_4s^4\\
+&=& \mathbf{e}_1(s^1\cosh\phi-s^2\sinh\phi)+\mathbf{e}_2(s^2\cosh\phi-s^1\sinh\phi)
++\mathbf{e}_3s^3+\mathbf{e}_4s^4
+\end{eqnarray}$$
+
+as required (it matches the matrix version).  If we have two boosts
+$B_1$ and $B_2$ then the combined boost is either $B_1B_2$ (for $B_1$
+followed by $B_2$) or $B_2B_1$ (for $B_2$ followed by $B_1$).  Let's
+consider a simple case with $B_1$ being a boost of rapidity $\phi_1$
+in the $x$-direction and $B_2$ being a boost of rapidity $\phi_2$ in
+the $y$-direction.  Then the combined boost $B_1$ followed by $B_2$
+will be
+
+$$
+\exp(\mathbf{e}_{12}\phi_1/2)\exp(\mathbf{e}_{13}\phi_2/2) =
+\exp(\mathbf{e}_{12}\phi_1/2+\mathbf{e}_{13}\phi_2/2)\\
+$$
+
+And we further note that the right hand side of the above expression
+is a dog's breakfast (observe that
+$\exp\left(x\mathbf{e}_{12}+y\mathbf{e}_{13}\right)$ is a nightmare).
+However, numerical methods are straightforward as I will demonstrate
+below.
+
+## Numerical methods: Lorentz transforms using the Clifford package
+
+Above we considered boost `Bmat`, and here I will show the effect of
+this boost in terms of Clifford objects, using a specialist function
+`f()`:
+
+```{r,speedtocliff}
+f <- function(u){
+	phi <- acosh(gam(u))               # rapidity
+	k <- cosines(u)                    # direction cosines
+ 	return(
+	       cosh(phi/2)                 # t
+	+ k[1]*sinh(phi/2)*basis(c(1,2))   # x
+	+ k[2]*sinh(phi/2)*basis(c(1,3))   # y
+	+ k[3]*sinh(phi/2)*basis(c(1,4))   # z
+	)
+}
+```
+
+Thus we can express the Lorentz transform as a Clifford object:
+
+```{r,dasadx}
+u <- as.3vel(-c(0.2,0.3,0.4))  # negative (passive transform)
+options(digits=5)
+(B <- f(u))
+```
+
+The first thing to do is to verify that the inverse of `B` behaves as
+expected:
+
+```{r,checkrev}
+B*rev(B)
+```
+
+Then we can apply the transformation $\overline{s}=B^{-1}sB$:
+
+```{r,dsdasdfds}
+zap(rev(B)*scliff*B)
+```
+
+Comparing with the result from the `lorentz` package
+
+```{r,comparelorentz}
+Bmat %*% fourvec
+```
+
+we see agreement to within numerical precision.  We can further verify
+that the squared interval is unchanged:
+
+```{r,checkinterval}
+jj <- rev(B)*scliff*B
+scalprod(jj,jj)
+```
+matching the untransformed square interval.
+
+
+## Multiple boosts
+
+Successive Lorentz boosts can induce a rotation as well as a
+translation.
+
+```{r,defv}
+u <- as.3vel(c(0.2, 0.3,  0.4))
+v <- as.3vel(c(0.5, 0.0, -0.4))
+w <- as.3vel(c(0.0, 0.7,  0.1))
+Buvw <- f(u)*f(v)*f(w)
+zap(Buvw)
+```
+
+In the above, note that Clifford object `Buvw` has a nonzero scalar
+component, and also a nonzero `e_1234` component.  However, it
+represents a consistent Lorentz transformation:
+
+```{r,checkbuvw}
+zap(Buvw*rev(Buvw))
+```
+
+We can now apply this transform to a four-velocity:
+
+```{r,testiton1000}
+n <- as.1vector(c(1,0,0,0))
+zap(rev(Buvw) * n * Buvw)
+```
+
+
+## Algebra of Clifford representations
+
+
+We can shed some light on this representation of Lorentz transforms as follows:
+
+```{r,algecliff}
+signature(1)
+L <- list(
+    C     = basis(numeric()),
+    e12   = basis(c(1,2)), e13 = basis(c(1,3)),
+    e14   = basis(c(1,4)), e23 = basis(c(2,3)),
+    e24   = basis(c(2,4)), e34 = basis(c(3,4)),
+    e1234 = basis(1:4)
+) 
+
+out <- noquote(matrix("",8,8))
+rownames(out) <- names(L)
+colnames(out) <- names(L)
+for(i in 1:8){
+  for(j in 1:8){
+    out[i,j] <- gsub('[_ ]','',as.character(L[[i]]*L[[j]]))
+  }
+}
+options("width" = 110)
+out
+```
+
+Thus we can see, for example, that `e12*e13 = -e23` and `e13*e12 = +e23`.

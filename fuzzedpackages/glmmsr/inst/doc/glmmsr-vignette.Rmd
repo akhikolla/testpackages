@@ -1,0 +1,462 @@
+---
+title: "Fitting GLMMs with `glmmsr`"
+author: "Helen Ogden"
+date: " "
+output: pdf_document
+bibliography: glmmsr.bib
+vignette: >
+  %\VignetteIndexEntry{glmmsr}
+  %\VignetteEngine{knitr::rmarkdown}
+  \usepackage[utf8]{inputenc}
+  
+---
+
+# Introduction
+
+Generalized linear mixed models (GLMMs) are an important and widely-used model 
+class. In R, it is possible to fit these models with the 
+`lme4` package [@lme4], but there are some
+limitations. First, except in very simple cases, `lme4` uses a Laplace 
+approximation to the likelihood for inference, which may be of poor quality in 
+some cases. Second, it is difficult to fit some GLMMs, such as pairwise 
+comparison models, with `lme4`. 
+The `glmmsr` package offers progress on both of these problems. 
+
+# Approximations to the likelihood
+In order to fit a GLMM with `glmmsr`, 
+a user must first choose which method to use to approximate
+the likelihood. In addition
+to the Laplace and adaptive Gaussian quadrature approximations,
+which are borrowed from `lme4`, the likelihood may
+be approximated by the sequential reduction approximation [@Ogden2015],
+or an importance sampling approximation. These methods
+provide an accurate approximation to the likelihood in some situations
+where it is not possible to use adaptive Gaussian quadrature.
+
+##  Example: a two-level model
+Suppose that our data are clustered, so that we observe $y_{ij}$
+for $i=1, \ldots, m$ and $j = 1, \ldots, m_i$,
+where $y_{ij}$ is the $j$th observation from the
+$i$th cluster.
+We model $Y_{ij} \sim \text{Bernoulli}(p_{ij})$
+where $$\log\left(\frac{p_{ij}}{1 - p_{ij}}\right) = \alpha + \beta x_{ij} + \sigma u_i,$$
+and $u_i \sim N(0, 1)$.
+The artificial data `two_level`, available in
+`glmmsr`, is simulated from a binary two-level model
+with $m_i = 2$ observations per cluster, and 
+with $m = 50$ clusters in total.  
+
+We want to infer the parameters
+$\theta = (\alpha, \beta, \sigma)$ of the model. 
+The likelihood may be written as
+$$L(\theta) = \int_{\mathbb{R}^m} g(\mathbf{u}; \theta) d\mathbf{u},$$
+where $$g(u; \theta) = \prod_{i=1}^m \prod_{j=1}^{m_i} Pr(Y_{ij} = y_{ij} | u_i, \theta) \phi(u_i).$$
+
+For this model, and for other GLMMs, 
+the likelihood function is an integral over the latent variables.
+It is not possible to evaluate this integral analytically, except in the
+case of a linear mixed model.
+In `glmmsr`, the interface for fitting this model is
+```{r two_level interface, eval = FALSE}
+glmm(response ~ covariate + (1 | cluster), data = two_level,
+     family = binomial, method = method)
+```
+where the choice of `method` determines the approximation
+to the likelihood. There is no default for `method`. This is a deliberate
+choice, to highlight to the user that some approximation must be used, and
+that the choice of this approximation might affect the resulting inference.
+
+## The Laplace approximation (`method = "Laplace"`)
+The (first-order) Laplace approximation works by approximating the integrand 
+$g(\mathbf{u}; \theta)$ by a function proportional to a Gaussian density.
+
+```{r two_level Laplace}
+library(glmmsr)
+mod_Laplace <- glmm(response ~ covariate + (1 | cluster), data = two_level,
+                    family = binomial, method = "Laplace")
+mod_Laplace
+```
+This gives some estimates of the parameters, but we do not know if these
+are close to the maximum likelihood estimates. Typically the structure
+of the data gives some hints about the quality of the Laplace approximation:
+if the data are 'sparse', in that there is only a small number
+of observations per random effect, the Laplace approximation may be a poor
+approximation to the likelihood. This is certainly the case here, since
+we only have two observations per cluster, and we would like to try
+using a more accurate approximation to the likelihood.
+
+An experimental check of the impact of the error in the Laplace approximation
+may be switched on by setting `check_Laplace = TRUE` in the `control` options:
+```{r}
+mod_Laplace <- glmm(response ~ covariate + (1 | cluster), data = two_level,
+                    family = binomial, method = "Laplace",
+                    control = list(check_Laplace = TRUE))
+```
+As the warning indicates that the Laplace approximation may be unreliable in
+this case, we should try to use a more accurate approximation to the 
+likelihood. This check of the quality of the first-order Laplace 
+approximation is likely to be switched on by default in future versions of
+`glmmsr`.
+
+## Adaptive Gaussian quadrature (`method = "AGQ"`)
+For a two-level model, where each observation is contained within
+a single cluster, the likelihood simplifies to a product of
+one-dimensional integrals:
+$$L(\theta) = \prod_{i=1}^m  \int \prod_{j=1}^{m_i} Pr(Y_{ij} = y_{ij} | u_i, \theta) \phi(u_i) du_i.$$
+In this case, we can use adaptive Gaussian
+quadrature with `nAGQ` points to approximate each of the one-dimensional 
+integrals.
+```{r two_level_AGQ}
+glmm(response ~ covariate + (1 | cluster), data = two_level,
+     family = binomial, method = "AGQ", control = list(nAGQ = 16),
+     prev_fit = mod_Laplace)
+```
+The estimate of the random-effect standard deviation is significantly
+larger than that obtained using the Laplace approximation to the likelihood.
+
+Unfortunately, we can only use this method for a simple two-level model.
+Next, we consider a situation where we cannot use this method.
+
+## Example: three-level model
+
+Now suppose that each of the clusters is itself
+contained within a larger group, so that we observe $y_{ijk}$
+for $i=1, \ldots, m,$ $j = 1, \ldots, m_i$ and $k = 1, \ldots, m_{ij}$,
+where $y_{ijk}$ represents the $k$th observation in the $j$th cluster
+of the $i$th group.
+We have $Y_{ijk} \sim \text{Bernoulli}(p_{ijk})$
+where $$\log\left(\frac{p_{ijk}}{1 - p_{ijk}}\right) = \alpha + \beta x_{ijk} + b_i + c_j,$$
+$b_i \sim N(0, \sigma_b^2)$ and $c_j \sim N(0, \sigma_c^2)$.
+
+The artificial data `three_level`, available in
+`glmmsr`, is simulated from a binary two-level model
+with $m_{ij} = 2$ observations per cluster, $m_i = 2$ clusters
+per group, and $m = 50$ clusters in total.  
+
+We may fit the model with the Laplace approximation to the likelihood:
+```{r three_level_Laplace}
+mod_3_Laplace <- glmm(response ~ covariate + (1 | cluster) + (1 | group),
+                      data = three_level, family = binomial, method = "Laplace")
+mod_3_Laplace
+```
+The structure is sparse -- there is little
+information provided by the data about the value of each random effect --
+so we might again question whether the Laplace approximation is of
+sufficiently high quality.
+
+We could try to increase the accuracy of the approximation by using 
+adaptive Gaussian quadrature to approximate the integral.
+```{r three_level_AGQ, error = TRUE}
+glmm(response ~ covariate + (1 | cluster) + (1 | group), data = three_level,
+     family = binomial, method = "AGQ", control = list(nAGQ = 16))
+```
+We get an error message, because the likelihood does not reduce to a product
+of one-dimensional integrals in this case, as it does for a two-level model.
+
+## The sequential reduction approximation (`method = "SR"`)
+The sequential reduction approximation to the likelihood is described in
+@Ogden2015. 
+
+The approximation is controlled by a parameter `nSL`, the 
+level of sparse grid storage. `nSL` is a non-negative integer, 
+where `nSL = 0` corresponds to the Laplace approximation, 
+and increasing `nSL` gives a more accurate approximation to the likelihood.
+In the special case of a two-level model, sequential reduction is equivalent
+to adaptive Gaussian quadrature with $(2^{n_{SL} + 1} - 1)$ quadrature points.
+Typically `nSL = 3` is large enough to give inference fairly
+close to the exact likelihood inference, although this
+varies according to the structure of the model.
+
+In the three-level example,
+`glmm` may be used to fit the model using the sequential reduction
+approximation, with 3 sparse grid levels.
+```{r three_level_SR}
+mod_3_SR <- glmm(response ~ covariate + (1 | cluster) + (1 | group),
+                 data = three_level, family = binomial, method = "SR",
+                 control = list(nSL = 3), prev_fit = mod_3_Laplace)
+mod_3_SR
+```
+The estimates of the random effects standard deviations
+are larger than the corresponding estimates from the Laplace approximation.
+
+To check the quality of the approximation, we increase the level
+of sparse grid storage
+```{r three_level_SR_4}
+mod_3_SR_4 <- glmm(response ~ covariate + (1 | cluster) + (1 | group),
+                   data = three_level, family = binomial, method = "SR",
+                   control = list(nSL = 4), prev_fit = mod_3_SR)
+```
+We see that the parameter estimates are very close to those obtained with
+the lower level of sparse grid storage, and conclude that these
+estimates are probably close to the exact maximum likelihood estimates.
+
+## Example: `salamander` data
+
+@McCullagh1989 discuss an experiment designed to study
+whether salamanders from two different populations would
+breed with one another. This well-known salamander mating data set 
+is available in the `mdhglm` package. 
+
+```{r check_mdhglm, echo = FALSE}
+mdhglm_avail <- requireNamespace("mdhglm", quietly = TRUE)
+```
+
+```{r salamander_data, eval = mdhglm_avail}
+data(salamander, package = "mdhglm")
+```
+
+Here, we fit the model used by @Booth1999, and many other authors.
+Writing $Y_{ij}$ for an indicator of whether the female salamander
+$i$ mates with male salamander $j$, we have $Y_{ij} \sim \text{Bernoulli}(p_{ij})$,
+where
+\[  \log\left(\frac{p_{ij}}{1 - p_{ij}}\right) = \beta^T \mathbf{x}_{ij} + b_i + c_j, \]
+and $b_i \sim N(0, \sigma_f^2)$, $c_j \sim N(0, \sigma_m^2)$. 
+Here $\mathbf{x}_{ij}$ tells us which population each of the pair of
+salamanders belongs to, given by the interaction of the variables 
+`TypeM` and `TypeF` in the
+`salamander` data. The latent variables $b_i$ and $c_j$ represent
+the differences in propensity to mate between individual animals,
+not explained by the population effects.
+
+We can fit the model using the Laplace approximation:
+```{r salamander_Laplace, eval = mdhglm_avail}
+mod_sal_Laplace <- glmm(Mate ~ 0 + TypeM:TypeF + (1 | Male) + (1 | Female),
+                        family = binomial, data = salamander, method = "Laplace")
+mod_sal_Laplace
+```
+
+We can fit the model using the sequential
+reduction approximation with $2$ sparse levels, although
+this is quite time-consuming:
+```{r salamander_SR_2, eval = FALSE}
+mod_sal_SR_2 <- glmm(Mate ~ 0 + TypeM:TypeF + (1 | Male) + (1 | Female),
+                     family = binomial, data = salamander, method = "SR", 
+                     control = list(nSL = 2), prev_fit = mod_sal_Laplace)
+```
+If we try to use $3$ sparse levels, we get an error:
+```{r salamander_SR_3, eval = mdhglm_avail, error = TRUE}
+mod_sal_SR_3 <- glmm(Mate ~ 0 + TypeM:TypeF + (1 | Male) + (1 | Female),
+                     family = binomial, data = salamander, method = "SR", 
+                     control = list(nSL = 3))
+```
+The sequential reduction approximation is too expensive to compute in this case.
+
+## Importance sampling (`method = "IS"`)
+
+If the sequential reduction approximation is too difficult to compute,
+we can use an importance sampling approximation to the likelihood.
+
+This takes `nIS` samples $\mathbf{u}^{(j)}$ 
+from the Gaussian approximation $N(\mu_\theta, \Sigma_\theta)$ used in the 
+Laplace approximation, and approximates $L(\theta)$ with
+\[ \hat L_{n_\text{IS}}(\theta) = 
+\sum_{j=1}^{n_\text{IS}} \frac{g(\mathbf{u}^{(j)}; \theta)}{\phi(\mathbf{u}^{(j)}; \mu_\theta, \Sigma_\theta)}.\]
+To ensure that the approximation to the likelihood surface is smooth, the samples
+used for each value of $\theta$ are constructed by transforming a common
+set of standard normal samples.
+
+Since this is a stochastic approximation, we will obtain different
+fits with different random seeds. We fit our model for the
+`salamander` data using importance sampling with $1000$ samples:
+```{r salamander_IS_1000, eval = mdhglm_avail}
+set.seed(1)
+mod_sal_IS_1000 <- glmm(Mate ~ 0 + TypeM:TypeF + (1 | Male) + (1 | Female),
+                          family = binomial, data = salamander,
+                          method = "IS", control = list(nIS = 1000),
+                          prev_fit = mod_sal_Laplace)
+mod_sal_IS_1000
+```
+We observe a small increase in the estimate of the random-effects standard
+deviation when we this importance sampling approximation to the likelihood.
+We could increase `nIS` even further, to check that the inference
+is close to exact likelihood inference.
+
+# The subformula interface
+The interface of `glmm` allows fitting
+of some more complex models which are not easy to fit with `lme4`.
+
+A typical call using this extended interface looks like
+`glmm(formula, subformula, data, family, method)`
+where
+
+1. `formula` may contain one or more terms surrounded with `Sub(.)`. We call the
+expression contained within `Sub(.)` a **substitution expression**. This is a 
+mathematical expression dictating how the response depends on a
+**substituted variable**: a dummy variable not contained in `data`. 
+
+2. `subformula` contains a **subformula** for each substituted variable, which
+describes how the substituted variable depends on 
+covariates.
+
+Next, we consider an example of the type of model we might want to fit using 
+this interface.
+
+## Pairwise competition models
+Suppose that we observe the outcome of a set of matches played between pairs of 
+players, and that we also observe some covariates $x_{i}$ for each player $i$. 
+We suppose that each player $i$ has an 'ability' $\lambda_i$, and that
+\[Pr(\text{$i$ beats $j$} | \lambda_i, \lambda_j) = g(\lambda_i - \lambda_j),\]
+where $g(.)$ is an inverse link function. If we are interested in how the 
+ability depends on the covariates, we might model
+\[\lambda_i = \beta x_{i} + b_i, \]
+where $b_i \sim N(0, \sigma^2)$, and $\beta$ and $\sigma$ are unknown
+parameters.
+
+This is a structured pairwise competition model. The `BradleyTerry2` package 
+[@BradleyTerry2]
+provides a good interface to fit these models, but it uses Penalized Quasi 
+Likelihood (PQL) for inference if there are random effects in the model. PQL
+is often a poor approximation to the true likelihood. 
+
+We wrote down the structured pairwise competition model using a two-step 
+approach: first we described how the response depends on the unknown 
+abilities, then we wrote down how the abilities depend on covariates. This type 
+of model can be written quite naturally using the subformula interface. We have 
+a formula
+`response ~ 0 + Sub(ability[player1] - ability[player2])`,
+where `ability` is a substitution variable. We write
+down a corresponding subformula
+`ability[i] ~ 0 + x[i] + (1 | i)`.
+Here `player1` and `player2` are factors with common levels, and `x`
+is a vector of player-specific covariates. The common levels 
+of `player1` and `player2` give the full vector of players involved
+in the tournament, and the covariates should ordered so that the $i$th
+component of `x` gives covariates for the $i$th player in this vector. The 
+symbol used index the players, in this case `i`, is arbitrary.
+
+## Example: `flatlizards` data
+
+@Whiting2006 study contests between male flat lizards.
+The data are available in `BradleyTerry2`: see `?flatlizards` for
+more details. The aim of the study was to determine which
+covariates affected the fighting 'ability' of a lizard.
+We consider a simplified example, using only the covariate `SVL`,
+the snout vent length of the lizard. Unlike many of the other
+predictors, `SVL` has no missing values.
+
+The model may be analysed using `BradleyTerry2`.
+
+```{r lizards_BTm, message = FALSE}
+library(BradleyTerry2)
+result <- rep(1, nrow(flatlizards$contests))
+lizards_mod_BTm <- BTm(result, winner, loser, ~ SVL[..] + (1|..),
+                       family = binomial(link = "probit"), data = flatlizards)
+summary(lizards_mod_BTm)
+```
+
+We can fit the same model using `glmmsr`, first using the Laplace
+approximation to the likelihood.
+
+```{r lizards_Laplace}
+flatlizards_glmmsr <- c(list(result = result, 
+                             winner = flatlizards$contests$winner, 
+                             loser = flatlizards$contests$loser),
+                        flatlizards$predictors)
+lizards_mod_Laplace <- glmm(result ~ 0 + Sub(ability[winner] - ability[loser]), 
+                            ability[liz] ~ 0 + SVL[liz] + (1 | liz),
+                            data = flatlizards_glmmsr, family = binomial(link = "probit"),
+                            method = "Laplace")
+summary(lizards_mod_Laplace)
+```
+We can try using a more accurate likelihood approximation, such as sequential reduction with `nSL = 2`.
+```{r lizards_SR_2}
+lizards_mod_SR_2 <- glmm(result ~ 0 + Sub(ability[winner] - ability[loser]), 
+                         ability[liz] ~ 0 + SVL[liz] + (1 | liz),
+                         data = flatlizards_glmmsr, family = binomial(link = "probit"),
+                         method = "SR", control = list(nSL = 2),
+                         prev_fit = lizards_mod_Laplace)
+summary(lizards_mod_SR_2)
+```
+
+We can increase `nSL` further.
+
+```{r lizards_SR_3}
+lizards_mod_SR_3 <- glmm(result ~ 0 + Sub(ability[winner] - ability[loser]), 
+                         ability[liz] ~ 0 + SVL[liz] + (1 | liz),
+                         data = flatlizards_glmmsr, family = binomial(link = "probit"),
+                         method = "SR", control = list(nSL = 3),
+                         prev_fit = lizards_mod_SR_2)
+summary(lizards_mod_SR_3)
+```
+
+The inference we get using different approximations to the likelihood
+is very different. As we increase `nSL`, the estimate of the 
+random-effect standard deviation $\sigma$ increases.
+
+To investigate why this happens, 
+we examine a cut across the various approximate log-likelihood surfaces, at $\beta = 0.3$,
+for various values of $\sigma$.
+
+```{r lizards_loglikelihood}
+modfr_lizards <-  find_modfr_glmm(result ~ 0 + Sub(ability[winner] - ability[loser]), 
+                                  ability[liz] ~ 0 + SVL[liz] + (1 | liz), 
+                                  data = flatlizards_glmmsr,
+                                  family = binomial(link = "probit"))
+theta_poss <- cbind(seq(0, 3, by = 0.25), 0.3)
+l_SR_theta_poss <- list()
+for(i in 0:4) {
+  lfun_SR_i <- find_lfun_glmm(modfr_lizards, method = "SR", control = list(nSL = i))
+  l_SR_theta_poss[[i + 1]] <- apply(theta_poss, 1, lfun_SR_i)
+}
+plot(theta_poss[,1], l_SR_theta_poss[[5]], type = "l", col = 5,
+     xlab = "sigma", ylab = "log-likelihood")
+for(i in 1:4) {
+  lines(theta_poss[,1], l_SR_theta_poss[[i]], col = i)
+}
+legend("bottomright", legend = paste("nSL =", 0:4), col = 1:5, lty = 1, bty = "n")
+```
+
+The log-likelihood $\ell(\sigma, \beta = 0.3)$ is an increasing function
+of $\sigma$, but the less accurate approximations to the likelihood
+substantially underestimate the likelihood for large values of $\sigma$,
+and so mask this difficulty. We will not discuss here how to deal
+with this problem, but note that without access to an accurate
+approximation to the likelihood, this problem would have gone unnoticed.
+
+## Example: `salamander` data revisited
+
+Recall that we assume that female $i$ and male $j$ mated
+with probability $p_{ij}$, where
+\[  \log\left(\frac{p_{ij}}{1 - p_{ij}}\right) = \beta^T \mathbf{x}_{ij} + b_i + c_j. \]
+Previously, we assumed that $b_i \sim N(0, \sigma_f^2)$ and $c_j \sim N(0, \sigma_m^2)$
+are samples from different distributions. We might also
+be interested in a simpler model, where $b_i$ and $c_j$ are both samples
+from a common $N(0, \sigma^2)$ distribution.
+
+We may fit this model using the subformula interface of `glmmsr`.
+To do this, we will use a substituted variable `propen`, representing
+the latent propensity of each salamander to mate.
+First, we must construct identifiers for the female and 
+the male salamander involved in each match. These identifiers should
+be factors with common levels, where the levels are the identifiers
+of all the salamanders involved in the experiment:
+```{r salamander_equal_ids, eval = mdhglm_avail}
+female_id <- paste("F", salamander$Female, sep = "")
+male_id <- paste("M", salamander$Male, sep = "")
+ids <- unique(c(female_id, male_id))
+salamander$female_id <- factor(female_id, levels = ids)
+salamander$male_id <- factor(male_id, levels = ids)
+```
+
+We may then fit the model, using a Laplace approximation to the likelihood:
+```{r salamander_equal, eval = mdhglm_avail}
+mod_sal_equal <- glmm(Mate ~ 0 + TypeM:TypeF + Sub(propen[female_id] + propen[male_id]),
+                      propen[sal] ~ 0 + (1 | sal), family = binomial, 
+                      data = salamander, method = "Laplace")
+mod_sal_equal
+```
+
+# Conclusions
+The `glmmsr` package provides the user with a choice of methods for approximating
+the likelihood, including the sequential reduction approximation [@Ogden2015],
+which gives an accurate approximation to the likelihood in many cases for which 
+the Laplace approximation is unreliable. Some cases remain in which the sequential 
+reduction approximation is too expensive to compute, despite the poor quality 
+of the Laplace approximation. An importance sampling approximation may sometimes 
+be used to obtain accurate inference in such cases, although if the Laplace 
+approximation is a poor approximation, the importance sampling approximation 
+might take a very long time to converge. This motivates the need for other 
+methods for approximating the likelihood, and we hope to add such methods in 
+future versions of `glmmsr`.
+
+## References

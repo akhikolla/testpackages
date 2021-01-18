@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<meta name="author" content="Alejandro Ochoa" />
+
+<meta name="date" content="2019-12-17" />
+
+<title>Read and write BED files with genio</title>
+
+
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css" data-origin="pandoc">
+a.sourceLine { display: inline-block; line-height: 1.25; }
+a.sourceLine { pointer-events: none; color: inherit; text-decoration: inherit; }
+a.sourceLine:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode { white-space: pre; position: relative; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+code.sourceCode { white-space: pre-wrap; }
+a.sourceLine { text-indent: -1em; padding-left: 1em; }
+}
+pre.numberSource a.sourceLine
+  { position: relative; left: -4em; }
+pre.numberSource a.sourceLine::before
+  { content: attr(title);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; pointer-events: all; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {  }
+@media screen {
+a.sourceLine::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    for (var j = 0; j < rules.length; j++) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") continue;
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') continue;
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#header {
+text-align: center;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; }  code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Read and write BED files with <code>genio</code></h1>
+<h4 class="author">Alejandro Ochoa</h4>
+<h4 class="date">2019-12-17</h4>
+
+
+
+<div id="introduction" class="section level1">
+<h1>Introduction</h1>
+<p>The <code>genio</code> (GenIO = Genetics I/O) package aims to facilitate reading and writing genetics data. The focus of this vignette is processing plink BED/BIM/FAM files.</p>
+<p>There are some limited alternatives for reading and/or writing BED files in R, which are slower and harder to use, which motivated me to write this package. Here we make direct comparisons to those packages, to illustrate the advantages of <code>genio</code>.</p>
+</div>
+<div id="generate-a-large-matrix-of-random-genotypes" class="section level1">
+<h1>Generate a large matrix of random genotypes</h1>
+<p>Let’s begin by creating a large genotype matrix with completely random data, and with missing values so this becomes non-trivial to read and write.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb1-1" title="1"><span class="co"># Data dimensions.</span></a>
+<a class="sourceLine" id="cb1-2" title="2"><span class="co"># Choose non-multiples of 4 to test edge cases of BED parsers.</span></a>
+<a class="sourceLine" id="cb1-3" title="3"><span class="co"># Number of loci.</span></a>
+<a class="sourceLine" id="cb1-4" title="4">m_loci &lt;-<span class="st"> </span><span class="dv">10001</span></a>
+<a class="sourceLine" id="cb1-5" title="5"><span class="co"># Number of individuals</span></a>
+<a class="sourceLine" id="cb1-6" title="6">n_ind &lt;-<span class="st"> </span><span class="dv">1001</span></a>
+<a class="sourceLine" id="cb1-7" title="7"><span class="co"># Overall allele frequency</span></a>
+<a class="sourceLine" id="cb1-8" title="8"><span class="co"># (we don&#39;t do any actual genetics in this vignette,</span></a>
+<a class="sourceLine" id="cb1-9" title="9"><span class="co"># so just set to a reasonable value)</span></a>
+<a class="sourceLine" id="cb1-10" title="10">p &lt;-<span class="st"> </span><span class="fl">0.5</span></a>
+<a class="sourceLine" id="cb1-11" title="11"><span class="co"># Missingness rate</span></a>
+<a class="sourceLine" id="cb1-12" title="12">miss &lt;-<span class="st"> </span><span class="fl">0.1</span></a>
+<a class="sourceLine" id="cb1-13" title="13"></a>
+<a class="sourceLine" id="cb1-14" title="14"><span class="co"># Total number of genotypes</span></a>
+<a class="sourceLine" id="cb1-15" title="15">n_data &lt;-<span class="st"> </span>n_ind <span class="op">*</span><span class="st"> </span>m_loci</a>
+<a class="sourceLine" id="cb1-16" title="16"><span class="co"># Draw random genotypes from Binomial</span></a>
+<a class="sourceLine" id="cb1-17" title="17">X &lt;-<span class="st"> </span><span class="kw">rbinom</span>( n_data, <span class="dv">2</span>, p)</a>
+<a class="sourceLine" id="cb1-18" title="18"><span class="co"># Add missing values</span></a>
+<a class="sourceLine" id="cb1-19" title="19">X[ <span class="kw">sample</span>(n_data, n_data <span class="op">*</span><span class="st"> </span>miss) ] &lt;-<span class="st"> </span><span class="ot">NA</span></a>
+<a class="sourceLine" id="cb1-20" title="20"><span class="co"># Turn into matrix</span></a>
+<a class="sourceLine" id="cb1-21" title="21">X &lt;-<span class="st"> </span><span class="kw">matrix</span>(X, <span class="dt">nrow =</span> m_loci, <span class="dt">ncol =</span> n_ind)</a>
+<a class="sourceLine" id="cb1-22" title="22"></a>
+<a class="sourceLine" id="cb1-23" title="23"><span class="co"># Inspect the first 10 individuals at the first 10 loci</span></a>
+<a class="sourceLine" id="cb1-24" title="24">X[<span class="dv">1</span><span class="op">:</span><span class="dv">10</span>, <span class="dv">1</span><span class="op">:</span><span class="dv">10</span>]</a>
+<a class="sourceLine" id="cb1-25" title="25"><span class="co">#&gt;       [,1] [,2] [,3] [,4] [,5] [,6] [,7] [,8] [,9] [,10]</span></a>
+<a class="sourceLine" id="cb1-26" title="26"><span class="co">#&gt;  [1,]    2    1    0    2    2   NA    1    1   NA     1</span></a>
+<a class="sourceLine" id="cb1-27" title="27"><span class="co">#&gt;  [2,]   NA    2    0    1   NA    0    1    1    1     2</span></a>
+<a class="sourceLine" id="cb1-28" title="28"><span class="co">#&gt;  [3,]    1   NA    2    1    1    0    2   NA    1     1</span></a>
+<a class="sourceLine" id="cb1-29" title="29"><span class="co">#&gt;  [4,]    1    2    1    1    0    2    2    2    0    NA</span></a>
+<a class="sourceLine" id="cb1-30" title="30"><span class="co">#&gt;  [5,]    0    1    1   NA    2    0   NA    2    1     0</span></a>
+<a class="sourceLine" id="cb1-31" title="31"><span class="co">#&gt;  [6,]    2    1   NA    0    1    1    0    0    0     2</span></a>
+<a class="sourceLine" id="cb1-32" title="32"><span class="co">#&gt;  [7,]    1    2    2    0    1    1    0   NA    2     2</span></a>
+<a class="sourceLine" id="cb1-33" title="33"><span class="co">#&gt;  [8,]    1    1    1    1   NA   NA    2    2    0     1</span></a>
+<a class="sourceLine" id="cb1-34" title="34"><span class="co">#&gt;  [9,]    0    1    0   NA   NA    0    2    1    1     1</span></a>
+<a class="sourceLine" id="cb1-35" title="35"><span class="co">#&gt; [10,]    2   NA    1    1    1    1   NA    1    2    NA</span></a></code></pre></div>
+<p>To create annotation tables that look a bit more interesting than the defaults, let us create some slightly more realistic values. Here we use our first <code>genio</code> function!</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb2-1" title="1"><span class="kw">library</span>(genio)</a></code></pre></div>
+<p>First we create and edit the locus annotations table.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb3-1" title="1"><span class="co"># We have to specify the number of loci</span></a>
+<a class="sourceLine" id="cb3-2" title="2">bim &lt;-<span class="st"> </span><span class="kw">make_bim</span>( <span class="dt">n =</span> m_loci )</a>
+<a class="sourceLine" id="cb3-3" title="3"></a>
+<a class="sourceLine" id="cb3-4" title="4"><span class="co"># Inspect the default values</span></a>
+<a class="sourceLine" id="cb3-5" title="5">bim</a>
+<a class="sourceLine" id="cb3-6" title="6"><span class="co">#&gt; # A tibble: 10,001 x 6</span></a>
+<a class="sourceLine" id="cb3-7" title="7"><span class="co">#&gt;      chr    id  posg   pos   ref   alt</span></a>
+<a class="sourceLine" id="cb3-8" title="8"><span class="co">#&gt;    &lt;dbl&gt; &lt;int&gt; &lt;dbl&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;</span></a>
+<a class="sourceLine" id="cb3-9" title="9"><span class="co">#&gt;  1     1     1     0     1     1     2</span></a>
+<a class="sourceLine" id="cb3-10" title="10"><span class="co">#&gt;  2     1     2     0     2     1     2</span></a>
+<a class="sourceLine" id="cb3-11" title="11"><span class="co">#&gt;  3     1     3     0     3     1     2</span></a>
+<a class="sourceLine" id="cb3-12" title="12"><span class="co">#&gt;  4     1     4     0     4     1     2</span></a>
+<a class="sourceLine" id="cb3-13" title="13"><span class="co">#&gt;  5     1     5     0     5     1     2</span></a>
+<a class="sourceLine" id="cb3-14" title="14"><span class="co">#&gt;  6     1     6     0     6     1     2</span></a>
+<a class="sourceLine" id="cb3-15" title="15"><span class="co">#&gt;  7     1     7     0     7     1     2</span></a>
+<a class="sourceLine" id="cb3-16" title="16"><span class="co">#&gt;  8     1     8     0     8     1     2</span></a>
+<a class="sourceLine" id="cb3-17" title="17"><span class="co">#&gt;  9     1     9     0     9     1     2</span></a>
+<a class="sourceLine" id="cb3-18" title="18"><span class="co">#&gt; 10     1    10     0    10     1     2</span></a>
+<a class="sourceLine" id="cb3-19" title="19"><span class="co">#&gt; # … with 9,991 more rows</span></a>
+<a class="sourceLine" id="cb3-20" title="20"></a>
+<a class="sourceLine" id="cb3-21" title="21"><span class="co"># Let&#39;s add the &quot;chr&quot; prefix to the chromosome values,</span></a>
+<a class="sourceLine" id="cb3-22" title="22"><span class="co"># so we recognize them when we see them later.</span></a>
+<a class="sourceLine" id="cb3-23" title="23">bim<span class="op">$</span>chr &lt;-<span class="st"> </span><span class="kw">paste0</span>(<span class="st">&#39;chr&#39;</span>, bim<span class="op">$</span>chr)</a>
+<a class="sourceLine" id="cb3-24" title="24"><span class="co"># Make SNP IDs look like &quot;rs&quot; IDs</span></a>
+<a class="sourceLine" id="cb3-25" title="25">bim<span class="op">$</span>id &lt;-<span class="st"> </span><span class="kw">paste0</span>(<span class="st">&#39;rs&#39;</span>, bim<span class="op">$</span>id)</a>
+<a class="sourceLine" id="cb3-26" title="26"><span class="co"># Make positions 1000 bigger</span></a>
+<a class="sourceLine" id="cb3-27" title="27">bim<span class="op">$</span>pos &lt;-<span class="st"> </span>bim<span class="op">$</span>pos <span class="op">*</span><span class="st"> </span><span class="dv">1000</span></a>
+<a class="sourceLine" id="cb3-28" title="28"><span class="co"># Select randomly between Cs and Gs for the reference alleles</span></a>
+<a class="sourceLine" id="cb3-29" title="29">bim<span class="op">$</span>ref &lt;-<span class="st"> </span><span class="kw">sample</span>(<span class="kw">c</span>(<span class="st">&#39;C&#39;</span>, <span class="st">&#39;G&#39;</span>), m_loci, <span class="dt">replace =</span> <span class="ot">TRUE</span>)</a>
+<a class="sourceLine" id="cb3-30" title="30"><span class="co"># Select randomly between As and Ts for the alternative alleles</span></a>
+<a class="sourceLine" id="cb3-31" title="31">bim<span class="op">$</span>alt &lt;-<span class="st"> </span><span class="kw">sample</span>(<span class="kw">c</span>(<span class="st">&#39;A&#39;</span>, <span class="st">&#39;T&#39;</span>), m_loci, <span class="dt">replace =</span> <span class="ot">TRUE</span>)</a>
+<a class="sourceLine" id="cb3-32" title="32"></a>
+<a class="sourceLine" id="cb3-33" title="33"><span class="co"># Inspect the table with our changes</span></a>
+<a class="sourceLine" id="cb3-34" title="34">bim</a>
+<a class="sourceLine" id="cb3-35" title="35"><span class="co">#&gt; # A tibble: 10,001 x 6</span></a>
+<a class="sourceLine" id="cb3-36" title="36"><span class="co">#&gt;    chr   id     posg   pos ref   alt  </span></a>
+<a class="sourceLine" id="cb3-37" title="37"><span class="co">#&gt;    &lt;chr&gt; &lt;chr&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;chr&gt; &lt;chr&gt;</span></a>
+<a class="sourceLine" id="cb3-38" title="38"><span class="co">#&gt;  1 chr1  rs1       0  1000 G     T    </span></a>
+<a class="sourceLine" id="cb3-39" title="39"><span class="co">#&gt;  2 chr1  rs2       0  2000 C     A    </span></a>
+<a class="sourceLine" id="cb3-40" title="40"><span class="co">#&gt;  3 chr1  rs3       0  3000 G     A    </span></a>
+<a class="sourceLine" id="cb3-41" title="41"><span class="co">#&gt;  4 chr1  rs4       0  4000 C     T    </span></a>
+<a class="sourceLine" id="cb3-42" title="42"><span class="co">#&gt;  5 chr1  rs5       0  5000 C     T    </span></a>
+<a class="sourceLine" id="cb3-43" title="43"><span class="co">#&gt;  6 chr1  rs6       0  6000 G     T    </span></a>
+<a class="sourceLine" id="cb3-44" title="44"><span class="co">#&gt;  7 chr1  rs7       0  7000 G     T    </span></a>
+<a class="sourceLine" id="cb3-45" title="45"><span class="co">#&gt;  8 chr1  rs8       0  8000 G     A    </span></a>
+<a class="sourceLine" id="cb3-46" title="46"><span class="co">#&gt;  9 chr1  rs9       0  9000 G     T    </span></a>
+<a class="sourceLine" id="cb3-47" title="47"><span class="co">#&gt; 10 chr1  rs10      0 10000 C     T    </span></a>
+<a class="sourceLine" id="cb3-48" title="48"><span class="co">#&gt; # … with 9,991 more rows</span></a></code></pre></div>
+<p>Now we similarly create and edit the individual annotations table.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb4-1" title="1"><span class="co"># Specify the number of individuals</span></a>
+<a class="sourceLine" id="cb4-2" title="2">fam &lt;-<span class="st"> </span><span class="kw">make_fam</span>( <span class="dt">n =</span> n_ind )</a>
+<a class="sourceLine" id="cb4-3" title="3"></a>
+<a class="sourceLine" id="cb4-4" title="4"><span class="co"># Inspect the default values</span></a>
+<a class="sourceLine" id="cb4-5" title="5">fam</a>
+<a class="sourceLine" id="cb4-6" title="6"><span class="co">#&gt; # A tibble: 1,001 x 6</span></a>
+<a class="sourceLine" id="cb4-7" title="7"><span class="co">#&gt;      fam    id   pat   mat   sex pheno</span></a>
+<a class="sourceLine" id="cb4-8" title="8"><span class="co">#&gt;    &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;</span></a>
+<a class="sourceLine" id="cb4-9" title="9"><span class="co">#&gt;  1     1     1     0     0     0     0</span></a>
+<a class="sourceLine" id="cb4-10" title="10"><span class="co">#&gt;  2     2     2     0     0     0     0</span></a>
+<a class="sourceLine" id="cb4-11" title="11"><span class="co">#&gt;  3     3     3     0     0     0     0</span></a>
+<a class="sourceLine" id="cb4-12" title="12"><span class="co">#&gt;  4     4     4     0     0     0     0</span></a>
+<a class="sourceLine" id="cb4-13" title="13"><span class="co">#&gt;  5     5     5     0     0     0     0</span></a>
+<a class="sourceLine" id="cb4-14" title="14"><span class="co">#&gt;  6     6     6     0     0     0     0</span></a>
+<a class="sourceLine" id="cb4-15" title="15"><span class="co">#&gt;  7     7     7     0     0     0     0</span></a>
+<a class="sourceLine" id="cb4-16" title="16"><span class="co">#&gt;  8     8     8     0     0     0     0</span></a>
+<a class="sourceLine" id="cb4-17" title="17"><span class="co">#&gt;  9     9     9     0     0     0     0</span></a>
+<a class="sourceLine" id="cb4-18" title="18"><span class="co">#&gt; 10    10    10     0     0     0     0</span></a>
+<a class="sourceLine" id="cb4-19" title="19"><span class="co">#&gt; # … with 991 more rows</span></a>
+<a class="sourceLine" id="cb4-20" title="20"></a>
+<a class="sourceLine" id="cb4-21" title="21"><span class="co"># Add prefixes to families and IDs to recognize them later</span></a>
+<a class="sourceLine" id="cb4-22" title="22">fam<span class="op">$</span>fam &lt;-<span class="st"> </span><span class="kw">paste0</span>(<span class="st">&#39;fam&#39;</span>, fam<span class="op">$</span>fam)</a>
+<a class="sourceLine" id="cb4-23" title="23">fam<span class="op">$</span>id &lt;-<span class="st"> </span><span class="kw">paste0</span>(<span class="st">&#39;id&#39;</span>, fam<span class="op">$</span>id)</a>
+<a class="sourceLine" id="cb4-24" title="24"><span class="co"># Sex values are usually 1 and 2</span></a>
+<a class="sourceLine" id="cb4-25" title="25">fam<span class="op">$</span>sex &lt;-<span class="st"> </span><span class="kw">sample</span>(<span class="dv">1</span><span class="op">:</span><span class="dv">2</span>, n_ind, <span class="dt">replace =</span> <span class="ot">TRUE</span>)</a>
+<a class="sourceLine" id="cb4-26" title="26"><span class="co"># Let&#39;s make phenotypes continuous.</span></a>
+<a class="sourceLine" id="cb4-27" title="27"><span class="co"># Draw independently from Standard Normal.</span></a>
+<a class="sourceLine" id="cb4-28" title="28">fam<span class="op">$</span>pheno &lt;-<span class="st"> </span><span class="kw">rnorm</span>(n_ind)</a>
+<a class="sourceLine" id="cb4-29" title="29"><span class="co"># Let&#39;s leave maternal and paternal IDs as missing</span></a>
+<a class="sourceLine" id="cb4-30" title="30"></a>
+<a class="sourceLine" id="cb4-31" title="31"><span class="co"># Inspect again</span></a>
+<a class="sourceLine" id="cb4-32" title="32">fam</a>
+<a class="sourceLine" id="cb4-33" title="33"><span class="co">#&gt; # A tibble: 1,001 x 6</span></a>
+<a class="sourceLine" id="cb4-34" title="34"><span class="co">#&gt;    fam   id      pat   mat   sex   pheno</span></a>
+<a class="sourceLine" id="cb4-35" title="35"><span class="co">#&gt;    &lt;chr&gt; &lt;chr&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;int&gt;   &lt;dbl&gt;</span></a>
+<a class="sourceLine" id="cb4-36" title="36"><span class="co">#&gt;  1 fam1  id1       0     0     2 -0.899 </span></a>
+<a class="sourceLine" id="cb4-37" title="37"><span class="co">#&gt;  2 fam2  id2       0     0     2  1.49  </span></a>
+<a class="sourceLine" id="cb4-38" title="38"><span class="co">#&gt;  3 fam3  id3       0     0     2 -1.28  </span></a>
+<a class="sourceLine" id="cb4-39" title="39"><span class="co">#&gt;  4 fam4  id4       0     0     2 -0.0518</span></a>
+<a class="sourceLine" id="cb4-40" title="40"><span class="co">#&gt;  5 fam5  id5       0     0     1  0.455 </span></a>
+<a class="sourceLine" id="cb4-41" title="41"><span class="co">#&gt;  6 fam6  id6       0     0     2 -0.431 </span></a>
+<a class="sourceLine" id="cb4-42" title="42"><span class="co">#&gt;  7 fam7  id7       0     0     2  0.342 </span></a>
+<a class="sourceLine" id="cb4-43" title="43"><span class="co">#&gt;  8 fam8  id8       0     0     2  1.11  </span></a>
+<a class="sourceLine" id="cb4-44" title="44"><span class="co">#&gt;  9 fam9  id9       0     0     2 -0.235 </span></a>
+<a class="sourceLine" id="cb4-45" title="45"><span class="co">#&gt; 10 fam10 id10      0     0     2  1.68  </span></a>
+<a class="sourceLine" id="cb4-46" title="46"><span class="co">#&gt; # … with 991 more rows</span></a></code></pre></div>
+<p>Lastly, let’s copy the locus and individual IDs as row and column names of the genotype matrix, respectively. Although this step is not required, it is encouraged for consistency (if present, values are checked when writing files).</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb5-1" title="1"><span class="co"># Add column and row names from bim and fam tables we just created.</span></a>
+<a class="sourceLine" id="cb5-2" title="2"><span class="kw">rownames</span>(X) &lt;-<span class="st"> </span>bim<span class="op">$</span>id</a>
+<a class="sourceLine" id="cb5-3" title="3"><span class="kw">colnames</span>(X) &lt;-<span class="st"> </span>fam<span class="op">$</span>id</a>
+<a class="sourceLine" id="cb5-4" title="4"><span class="co"># Inspect again the first 10 individuals and loci</span></a>
+<a class="sourceLine" id="cb5-5" title="5">X[<span class="dv">1</span><span class="op">:</span><span class="dv">10</span>, <span class="dv">1</span><span class="op">:</span><span class="dv">10</span>]</a>
+<a class="sourceLine" id="cb5-6" title="6"><span class="co">#&gt;      id1 id2 id3 id4 id5 id6 id7 id8 id9 id10</span></a>
+<a class="sourceLine" id="cb5-7" title="7"><span class="co">#&gt; rs1    2   1   0   2   2  NA   1   1  NA    1</span></a>
+<a class="sourceLine" id="cb5-8" title="8"><span class="co">#&gt; rs2   NA   2   0   1  NA   0   1   1   1    2</span></a>
+<a class="sourceLine" id="cb5-9" title="9"><span class="co">#&gt; rs3    1  NA   2   1   1   0   2  NA   1    1</span></a>
+<a class="sourceLine" id="cb5-10" title="10"><span class="co">#&gt; rs4    1   2   1   1   0   2   2   2   0   NA</span></a>
+<a class="sourceLine" id="cb5-11" title="11"><span class="co">#&gt; rs5    0   1   1  NA   2   0  NA   2   1    0</span></a>
+<a class="sourceLine" id="cb5-12" title="12"><span class="co">#&gt; rs6    2   1  NA   0   1   1   0   0   0    2</span></a>
+<a class="sourceLine" id="cb5-13" title="13"><span class="co">#&gt; rs7    1   2   2   0   1   1   0  NA   2    2</span></a>
+<a class="sourceLine" id="cb5-14" title="14"><span class="co">#&gt; rs8    1   1   1   1  NA  NA   2   2   0    1</span></a>
+<a class="sourceLine" id="cb5-15" title="15"><span class="co">#&gt; rs9    0   1   0  NA  NA   0   2   1   1    1</span></a>
+<a class="sourceLine" id="cb5-16" title="16"><span class="co">#&gt; rs10   2  NA   1   1   1   1  NA   1   2   NA</span></a></code></pre></div>
+</div>
+<div id="write-genotypes-to-plink-files" class="section level1">
+<h1>Write genotypes to plink files</h1>
+<p>Let’s write this random data to a file. This mode is intended for simulated data, generating dummy BIM and FAM files in the process and writing out all three.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb6-1" title="1"><span class="co"># Will delete at the end of the vignette</span></a>
+<a class="sourceLine" id="cb6-2" title="2">file_plink &lt;-<span class="st"> </span><span class="kw">tempfile</span>(<span class="st">&#39;vignette-random-data&#39;</span>)</a>
+<a class="sourceLine" id="cb6-3" title="3"></a>
+<a class="sourceLine" id="cb6-4" title="4"><span class="co"># Write genotypes, along with the BIM and FAM files we created.</span></a>
+<a class="sourceLine" id="cb6-5" title="5"><span class="co"># Omiting them would result in writing the original dummy version of these tables,</span></a>
+<a class="sourceLine" id="cb6-6" title="6"><span class="co"># before we edited them.</span></a>
+<a class="sourceLine" id="cb6-7" title="7">time_write_genio &lt;-<span class="st"> </span><span class="kw">system.time</span>(</a>
+<a class="sourceLine" id="cb6-8" title="8">    <span class="kw">write_plink</span>(file_plink, X, bim, fam)</a>
+<a class="sourceLine" id="cb6-9" title="9">)</a>
+<a class="sourceLine" id="cb6-10" title="10"><span class="co">#&gt; Writing: /tmp/RtmpMsCEXK/vignette-random-data778e5ef14ce6.bed</span></a>
+<a class="sourceLine" id="cb6-11" title="11"><span class="co">#&gt; Writing: /tmp/RtmpMsCEXK/vignette-random-data778e5ef14ce6.fam</span></a>
+<a class="sourceLine" id="cb6-12" title="12"><span class="co">#&gt; Writing: /tmp/RtmpMsCEXK/vignette-random-data778e5ef14ce6.bim</span></a>
+<a class="sourceLine" id="cb6-13" title="13">time_write_genio</a>
+<a class="sourceLine" id="cb6-14" title="14"><span class="co">#&gt;    user  system elapsed </span></a>
+<a class="sourceLine" id="cb6-15" title="15"><span class="co">#&gt;   0.151   0.014   0.164</span></a></code></pre></div>
+</div>
+<div id="read-back-the-genotypes" class="section level1">
+<h1>Read back the genotypes</h1>
+<p>Here we demonstrate how easy it is to read the data back. To compare to other packages, we shall time loading all this data.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb7-1" title="1"><span class="co"># Read the data back in memory.</span></a>
+<a class="sourceLine" id="cb7-2" title="2"><span class="co"># Time this step</span></a>
+<a class="sourceLine" id="cb7-3" title="3">time_read_genio &lt;-<span class="st"> </span><span class="kw">system.time</span>(</a>
+<a class="sourceLine" id="cb7-4" title="4">    data_genio &lt;-<span class="st"> </span><span class="kw">read_plink</span>(file_plink)</a>
+<a class="sourceLine" id="cb7-5" title="5">)</a>
+<a class="sourceLine" id="cb7-6" title="6"><span class="co">#&gt; Reading: /tmp/RtmpMsCEXK/vignette-random-data778e5ef14ce6.bim</span></a>
+<a class="sourceLine" id="cb7-7" title="7"><span class="co">#&gt; Reading: /tmp/RtmpMsCEXK/vignette-random-data778e5ef14ce6.fam</span></a>
+<a class="sourceLine" id="cb7-8" title="8"><span class="co">#&gt; Reading: /tmp/RtmpMsCEXK/vignette-random-data778e5ef14ce6.bed</span></a>
+<a class="sourceLine" id="cb7-9" title="9">time_read_genio</a>
+<a class="sourceLine" id="cb7-10" title="10"><span class="co">#&gt;    user  system elapsed </span></a>
+<a class="sourceLine" id="cb7-11" title="11"><span class="co">#&gt;   0.078   0.013   0.091</span></a>
+<a class="sourceLine" id="cb7-12" title="12"></a>
+<a class="sourceLine" id="cb7-13" title="13"><span class="co"># Inspect the data we just read back</span></a>
+<a class="sourceLine" id="cb7-14" title="14"></a>
+<a class="sourceLine" id="cb7-15" title="15"><span class="co"># The same random genotypes (first 10 individuals and loci, now with row and column names):</span></a>
+<a class="sourceLine" id="cb7-16" title="16">data_genio<span class="op">$</span>X[<span class="dv">1</span><span class="op">:</span><span class="dv">10</span>, <span class="dv">1</span><span class="op">:</span><span class="dv">10</span>]</a>
+<a class="sourceLine" id="cb7-17" title="17"><span class="co">#&gt;      id1 id2 id3 id4 id5 id6 id7 id8 id9 id10</span></a>
+<a class="sourceLine" id="cb7-18" title="18"><span class="co">#&gt; rs1    2   1   0   2   2  NA   1   1  NA    1</span></a>
+<a class="sourceLine" id="cb7-19" title="19"><span class="co">#&gt; rs2   NA   2   0   1  NA   0   1   1   1    2</span></a>
+<a class="sourceLine" id="cb7-20" title="20"><span class="co">#&gt; rs3    1  NA   2   1   1   0   2  NA   1    1</span></a>
+<a class="sourceLine" id="cb7-21" title="21"><span class="co">#&gt; rs4    1   2   1   1   0   2   2   2   0   NA</span></a>
+<a class="sourceLine" id="cb7-22" title="22"><span class="co">#&gt; rs5    0   1   1  NA   2   0  NA   2   1    0</span></a>
+<a class="sourceLine" id="cb7-23" title="23"><span class="co">#&gt; rs6    2   1  NA   0   1   1   0   0   0    2</span></a>
+<a class="sourceLine" id="cb7-24" title="24"><span class="co">#&gt; rs7    1   2   2   0   1   1   0  NA   2    2</span></a>
+<a class="sourceLine" id="cb7-25" title="25"><span class="co">#&gt; rs8    1   1   1   1  NA  NA   2   2   0    1</span></a>
+<a class="sourceLine" id="cb7-26" title="26"><span class="co">#&gt; rs9    0   1   0  NA  NA   0   2   1   1    1</span></a>
+<a class="sourceLine" id="cb7-27" title="27"><span class="co">#&gt; rs10   2  NA   1   1   1   1  NA   1   2   NA</span></a>
+<a class="sourceLine" id="cb7-28" title="28"></a>
+<a class="sourceLine" id="cb7-29" title="29"><span class="co"># The locus annotations</span></a>
+<a class="sourceLine" id="cb7-30" title="30">data_genio<span class="op">$</span>bim</a>
+<a class="sourceLine" id="cb7-31" title="31"><span class="co">#&gt; # A tibble: 10,001 x 6</span></a>
+<a class="sourceLine" id="cb7-32" title="32"><span class="co">#&gt;    chr   id     posg   pos ref   alt  </span></a>
+<a class="sourceLine" id="cb7-33" title="33"><span class="co">#&gt;    &lt;chr&gt; &lt;chr&gt; &lt;dbl&gt; &lt;int&gt; &lt;chr&gt; &lt;chr&gt;</span></a>
+<a class="sourceLine" id="cb7-34" title="34"><span class="co">#&gt;  1 chr1  rs1       0  1000 G     T    </span></a>
+<a class="sourceLine" id="cb7-35" title="35"><span class="co">#&gt;  2 chr1  rs2       0  2000 C     A    </span></a>
+<a class="sourceLine" id="cb7-36" title="36"><span class="co">#&gt;  3 chr1  rs3       0  3000 G     A    </span></a>
+<a class="sourceLine" id="cb7-37" title="37"><span class="co">#&gt;  4 chr1  rs4       0  4000 C     T    </span></a>
+<a class="sourceLine" id="cb7-38" title="38"><span class="co">#&gt;  5 chr1  rs5       0  5000 C     T    </span></a>
+<a class="sourceLine" id="cb7-39" title="39"><span class="co">#&gt;  6 chr1  rs6       0  6000 G     T    </span></a>
+<a class="sourceLine" id="cb7-40" title="40"><span class="co">#&gt;  7 chr1  rs7       0  7000 G     T    </span></a>
+<a class="sourceLine" id="cb7-41" title="41"><span class="co">#&gt;  8 chr1  rs8       0  8000 G     A    </span></a>
+<a class="sourceLine" id="cb7-42" title="42"><span class="co">#&gt;  9 chr1  rs9       0  9000 G     T    </span></a>
+<a class="sourceLine" id="cb7-43" title="43"><span class="co">#&gt; 10 chr1  rs10      0 10000 C     T    </span></a>
+<a class="sourceLine" id="cb7-44" title="44"><span class="co">#&gt; # … with 9,991 more rows</span></a>
+<a class="sourceLine" id="cb7-45" title="45"></a>
+<a class="sourceLine" id="cb7-46" title="46"><span class="co"># The individual annotations</span></a>
+<a class="sourceLine" id="cb7-47" title="47">data_genio<span class="op">$</span>fam</a>
+<a class="sourceLine" id="cb7-48" title="48"><span class="co">#&gt; # A tibble: 1,001 x 6</span></a>
+<a class="sourceLine" id="cb7-49" title="49"><span class="co">#&gt;    fam   id    pat   mat     sex   pheno</span></a>
+<a class="sourceLine" id="cb7-50" title="50"><span class="co">#&gt;    &lt;chr&gt; &lt;chr&gt; &lt;chr&gt; &lt;chr&gt; &lt;int&gt;   &lt;dbl&gt;</span></a>
+<a class="sourceLine" id="cb7-51" title="51"><span class="co">#&gt;  1 fam1  id1   0     0         2 -0.899 </span></a>
+<a class="sourceLine" id="cb7-52" title="52"><span class="co">#&gt;  2 fam2  id2   0     0         2  1.49  </span></a>
+<a class="sourceLine" id="cb7-53" title="53"><span class="co">#&gt;  3 fam3  id3   0     0         2 -1.28  </span></a>
+<a class="sourceLine" id="cb7-54" title="54"><span class="co">#&gt;  4 fam4  id4   0     0         2 -0.0518</span></a>
+<a class="sourceLine" id="cb7-55" title="55"><span class="co">#&gt;  5 fam5  id5   0     0         1  0.455 </span></a>
+<a class="sourceLine" id="cb7-56" title="56"><span class="co">#&gt;  6 fam6  id6   0     0         2 -0.431 </span></a>
+<a class="sourceLine" id="cb7-57" title="57"><span class="co">#&gt;  7 fam7  id7   0     0         2  0.342 </span></a>
+<a class="sourceLine" id="cb7-58" title="58"><span class="co">#&gt;  8 fam8  id8   0     0         2  1.11  </span></a>
+<a class="sourceLine" id="cb7-59" title="59"><span class="co">#&gt;  9 fam9  id9   0     0         2 -0.235 </span></a>
+<a class="sourceLine" id="cb7-60" title="60"><span class="co">#&gt; 10 fam10 id10  0     0         2  1.68  </span></a>
+<a class="sourceLine" id="cb7-61" title="61"><span class="co">#&gt; # … with 991 more rows</span></a>
+<a class="sourceLine" id="cb7-62" title="62"></a>
+<a class="sourceLine" id="cb7-63" title="63"><span class="co"># Quickly test that the inputs and outputs are identical.</span></a>
+<a class="sourceLine" id="cb7-64" title="64"><span class="co"># Genotypes have NAs, so we have to compare this way.</span></a>
+<a class="sourceLine" id="cb7-65" title="65"><span class="kw">stopifnot</span>( <span class="kw">all</span>( X <span class="op">==</span><span class="st"> </span>data_genio<span class="op">$</span>X, <span class="dt">na.rm =</span> <span class="ot">TRUE</span>) )</a>
+<a class="sourceLine" id="cb7-66" title="66"><span class="kw">stopifnot</span>( bim <span class="op">==</span><span class="st"> </span>data_genio<span class="op">$</span>bim )</a>
+<a class="sourceLine" id="cb7-67" title="67"><span class="co"># FAM has mixed content (chars, ints, and doubles).</span></a>
+<a class="sourceLine" id="cb7-68" title="68"><span class="co"># First 5 columns should be exact match:</span></a>
+<a class="sourceLine" id="cb7-69" title="69"><span class="kw">stopifnot</span>( fam[,<span class="dv">1</span><span class="op">:</span><span class="dv">5</span>] <span class="op">==</span><span class="st"> </span>data_genio<span class="op">$</span>fam[,<span class="dv">1</span><span class="op">:</span><span class="dv">5</span>] )</a>
+<a class="sourceLine" id="cb7-70" title="70"><span class="co"># Exact equality may fail for pheno due to precisions, so test this way instead:</span></a>
+<a class="sourceLine" id="cb7-71" title="71"><span class="kw">stopifnot</span>( <span class="kw">max</span>(<span class="kw">abs</span>(fam<span class="op">$</span>pheno <span class="op">-</span><span class="st"> </span>data_genio<span class="op">$</span>fam<span class="op">$</span>pheno)) <span class="op">&lt;</span><span class="st"> </span><span class="fl">1e-4</span> )</a></code></pre></div>
+</div>
+<div id="memory-estimation" class="section level1">
+<h1>Memory estimation</h1>
+<p>One drawback of <code>genio</code> and other related approaches is high memory consumption (see more on that at the end of this vignette). It is entirely possible that an attempt to parse a genotype matrix into memory will fail with an “out of memory” error message. Let’s estimate memory usage here.</p>
+<p>Genotypes are stored as integers by <code>genio</code>, which in R on a modern machine (64 bit architecture) consumes 4 bytes! So an <span class="math inline">\(n \times m\)</span> matrix takes up at least <span class="math inline">\(4 n m\)</span> bytes (an R matrix contains an additional constant overhead, which does not depend on <span class="math inline">\(n,m\)</span> and is relatively small for large matrices).</p>
+<p>To get an idea of how much this is, let’s assume a standard genotyping array, where <span class="math inline">\(m\)</span> is about half a million. In this scenario, we get a simple rule of thumb that every 1000 individuals consume a little less than 2G:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb8-1" title="1"><span class="co"># Constants</span></a>
+<a class="sourceLine" id="cb8-2" title="2">bytes_per_genotype &lt;-<span class="st"> </span><span class="dv">4</span></a>
+<a class="sourceLine" id="cb8-3" title="3">bytes_per_gb &lt;-<span class="st"> </span><span class="dv">1024</span> <span class="op">^</span><span class="st"> </span><span class="dv">3</span></a>
+<a class="sourceLine" id="cb8-4" title="4"><span class="co"># Example data dimensions</span></a>
+<a class="sourceLine" id="cb8-5" title="5">num_ind &lt;-<span class="st"> </span><span class="dv">1000</span></a>
+<a class="sourceLine" id="cb8-6" title="6">num_loci &lt;-<span class="st"> </span><span class="dv">500000</span></a>
+<a class="sourceLine" id="cb8-7" title="7"><span class="co"># Gigabytes per 1000 individuals for a typical genotyping array</span></a>
+<a class="sourceLine" id="cb8-8" title="8">bytes_per_genotype <span class="op">*</span><span class="st"> </span>num_ind <span class="op">*</span><span class="st"> </span>num_loci <span class="op">/</span><span class="st"> </span>bytes_per_gb</a>
+<a class="sourceLine" id="cb8-9" title="9"><span class="co">#&gt; [1] 1.862645</span></a></code></pre></div>
+<p>This is the amount of free memory required just to load the matrix. Several common matrix operations for genotypes consume even more memory, so more free memory will be needed to accomplish anything.</p>
+</div>
+<div id="comparison-to-other-packages" class="section level1">
+<h1>Comparison to other packages</h1>
+<p>There are several R packages that provide BED readers, and to a lesser extent some of the other functionality of <code>genio</code>. Here we compare directly to <code>BEDMatrix</code>, <code>snpStats</code>, and <code>lfa</code>. Each of these packages has different goals so they are optimized for their use cases. The <code>genio</code> parser is optimized to read the entire genotype data into a native R matrix, so that it is easy to inspect and manipulate for R beginners. Here we demonstrate that <code>genio</code> is not only the fastest at this task, but also the easiest to obtain in terms of requiring the least amount of coding.</p>
+<div id="bedmatrix" class="section level2">
+<h2>BEDMatrix</h2>
+<p>The <code>BEDMatrix</code> package allows access to genotypes from a BED file without loading the entire matrix in memory. This is very convenient for large datasets, as long as only small portions of the data are pulled at once. However, there are some disadvantages:</p>
+<ul>
+<li>The <code>BEDMatrix</code> return object is not a regular R matrix, which confuses some users.</li>
+<li>The <code>BEDMatrix</code> package provides no way to access the full annotation tables (BIM and FAM files).
+<ul>
+<li>From BIM, only the locus ID and reference allele are returned, merged into a vector of strings and placed as column names.</li>
+<li>From FAM, only the family and individual IDs are returned, merged into a vector of strings and placed as row names.</li>
+</ul></li>
+<li><code>BEDMatrix</code> does not have any write functions.</li>
+</ul>
+<p>Here is an example of that usage and how the data compares. Note in particular that the <code>BEDMatrix</code> representation of the genotype matrix is transposed compared to the <code>genio</code> matrix:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb9-1" title="1"><span class="kw">library</span>(BEDMatrix)</a>
+<a class="sourceLine" id="cb9-2" title="2"><span class="co"># Time it too.</span></a>
+<a class="sourceLine" id="cb9-3" title="3"><span class="co"># Although the BIM and FAM tables are not returned,</span></a>
+<a class="sourceLine" id="cb9-4" title="4"><span class="co"># they are partially parsed and kept in memory,</span></a>
+<a class="sourceLine" id="cb9-5" title="5"><span class="co"># which can take time for extremely large files</span></a>
+<a class="sourceLine" id="cb9-6" title="6">time_read_bedmatrix_<span class="dv">1</span> &lt;-<span class="st"> </span><span class="kw">system.time</span>(</a>
+<a class="sourceLine" id="cb9-7" title="7">    X_BEDMatrix &lt;-<span class="st"> </span><span class="kw">BEDMatrix</span>(file_plink)</a>
+<a class="sourceLine" id="cb9-8" title="8">)</a>
+<a class="sourceLine" id="cb9-9" title="9"><span class="co">#&gt; Extracting number of samples and rownames from vignette-random-data778e5ef14ce6.fam...</span></a>
+<a class="sourceLine" id="cb9-10" title="10"><span class="co">#&gt; Extracting number of variants and colnames from vignette-random-data778e5ef14ce6.bim...</span></a>
+<a class="sourceLine" id="cb9-11" title="11"></a>
+<a class="sourceLine" id="cb9-12" title="12"><span class="co"># Inspect the first 10 loci and individuals as usual.</span></a>
+<a class="sourceLine" id="cb9-13" title="13"><span class="co"># Note it is transposed compared to our X.</span></a>
+<a class="sourceLine" id="cb9-14" title="14"><span class="co"># Also note the column and row names are different from genio&#39;s.</span></a>
+<a class="sourceLine" id="cb9-15" title="15">X_BEDMatrix[<span class="dv">1</span><span class="op">:</span><span class="dv">10</span>, <span class="dv">1</span><span class="op">:</span><span class="dv">10</span>]</a>
+<a class="sourceLine" id="cb9-16" title="16"><span class="co">#&gt;            rs1_G rs2_C rs3_G rs4_C rs5_C rs6_G rs7_G rs8_G rs9_G rs10_C</span></a>
+<a class="sourceLine" id="cb9-17" title="17"><span class="co">#&gt; fam1_id1       2    NA     1     1     0     2     1     1     0      2</span></a>
+<a class="sourceLine" id="cb9-18" title="18"><span class="co">#&gt; fam2_id2       1     2    NA     2     1     1     2     1     1     NA</span></a>
+<a class="sourceLine" id="cb9-19" title="19"><span class="co">#&gt; fam3_id3       0     0     2     1     1    NA     2     1     0      1</span></a>
+<a class="sourceLine" id="cb9-20" title="20"><span class="co">#&gt; fam4_id4       2     1     1     1    NA     0     0     1    NA      1</span></a>
+<a class="sourceLine" id="cb9-21" title="21"><span class="co">#&gt; fam5_id5       2    NA     1     0     2     1     1    NA    NA      1</span></a>
+<a class="sourceLine" id="cb9-22" title="22"><span class="co">#&gt; fam6_id6      NA     0     0     2     0     1     1    NA     0      1</span></a>
+<a class="sourceLine" id="cb9-23" title="23"><span class="co">#&gt; fam7_id7       1     1     2     2    NA     0     0     2     2     NA</span></a>
+<a class="sourceLine" id="cb9-24" title="24"><span class="co">#&gt; fam8_id8       1     1    NA     2     2     0    NA     2     1      1</span></a>
+<a class="sourceLine" id="cb9-25" title="25"><span class="co">#&gt; fam9_id9      NA     1     1     0     1     0     2     0     1      2</span></a>
+<a class="sourceLine" id="cb9-26" title="26"><span class="co">#&gt; fam10_id10     1     2     1    NA     0     2     2     1     1     NA</span></a></code></pre></div>
+<p>Therefore, for very large datasets, if it suffices to access the genotype data in small portions and the user is willing to deal with the limitations of the object, and no detailed annotation table information is required, then <code>BEDMatrix</code> is a better solution than the <code>read_bed</code> function provided in the <code>genio</code> package.</p>
+<p>To compare the two genotype reading functions on an equal footing, let us assume that the entire genotype matrix is required in memory and stored in a regular R matrix.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb10-1" title="1"><span class="co"># This turns it into a regular R matrix.</span></a>
+<a class="sourceLine" id="cb10-2" title="2"><span class="co"># Since most of the reading is actually happening now,</span></a>
+<a class="sourceLine" id="cb10-3" title="3"><span class="co"># we time this step now.</span></a>
+<a class="sourceLine" id="cb10-4" title="4">time_read_bedmatrix_<span class="dv">2</span> &lt;-<span class="st"> </span><span class="kw">system.time</span>(</a>
+<a class="sourceLine" id="cb10-5" title="5">    X_BEDMatrix_Rmat &lt;-<span class="st"> </span><span class="kw">as.matrix</span>(X_BEDMatrix)</a>
+<a class="sourceLine" id="cb10-6" title="6">)</a>
+<a class="sourceLine" id="cb10-7" title="7">time_read_bedmatrix_<span class="dv">2</span></a>
+<a class="sourceLine" id="cb10-8" title="8"><span class="co">#&gt;    user  system elapsed </span></a>
+<a class="sourceLine" id="cb10-9" title="9"><span class="co">#&gt;   0.070   0.007   0.078</span></a>
+<a class="sourceLine" id="cb10-10" title="10"><span class="co"># Now we can test that the BEDMatrix agrees with the original matrix we simulated.</span></a>
+<a class="sourceLine" id="cb10-11" title="11"><span class="co"># Need to transpose first.</span></a>
+<a class="sourceLine" id="cb10-12" title="12"><span class="kw">stopifnot</span>( <span class="kw">all</span>( X <span class="op">==</span><span class="st"> </span><span class="kw">t</span>(X_BEDMatrix_Rmat), <span class="dt">na.rm =</span> <span class="ot">TRUE</span>) )</a></code></pre></div>
+</div>
+<div id="snpstats" class="section level2">
+<h2>snpStats</h2>
+<p>The <code>snpStats</code> package is the most fully-featured alternative to <code>genio</code>. One of its advantages is its memory efficiency, encoding the entire data in less memory than a native R matrix. However, this memory efficiency comes at the cost of making the data harder to access, especially for inexperienced R users. Like <code>genio</code>, and in contrast to the other packages, <code>snpStats</code> also reads the BIM and FAM tables fully, and provides a BED writer, but it is considerably harder to use.</p>
+<p>First we illustrate data parsing. The annotation tables are similar but column names are different, and certain missing values (zero in text files) are converted to <code>NA</code> instead.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb11-1" title="1"><span class="kw">library</span>(snpStats)</a>
+<a class="sourceLine" id="cb11-2" title="2"><span class="co">#&gt; Loading required package: survival</span></a>
+<a class="sourceLine" id="cb11-3" title="3"><span class="co">#&gt; Loading required package: Matrix</span></a>
+<a class="sourceLine" id="cb11-4" title="4"></a>
+<a class="sourceLine" id="cb11-5" title="5"><span class="co"># Read data, time it.</span></a>
+<a class="sourceLine" id="cb11-6" title="6">time_read_snpStats_<span class="dv">1</span> &lt;-<span class="st"> </span><span class="kw">system.time</span>(</a>
+<a class="sourceLine" id="cb11-7" title="7">    data_snpStats &lt;-<span class="st"> </span><span class="kw">read.plink</span>(file_plink)</a>
+<a class="sourceLine" id="cb11-8" title="8">)</a>
+<a class="sourceLine" id="cb11-9" title="9">time_read_snpStats_<span class="dv">1</span></a>
+<a class="sourceLine" id="cb11-10" title="10"><span class="co">#&gt;    user  system elapsed </span></a>
+<a class="sourceLine" id="cb11-11" title="11"><span class="co">#&gt;   0.030   0.003   0.032</span></a>
+<a class="sourceLine" id="cb11-12" title="12"></a>
+<a class="sourceLine" id="cb11-13" title="13"><span class="co"># Inspect the data</span></a>
+<a class="sourceLine" id="cb11-14" title="14"></a>
+<a class="sourceLine" id="cb11-15" title="15"><span class="co"># Genotypes.</span></a>
+<a class="sourceLine" id="cb11-16" title="16"><span class="co"># Note data is not visualized this way.</span></a>
+<a class="sourceLine" id="cb11-17" title="17"><span class="co"># This matrix is also transposed compared to the genio matrix.</span></a>
+<a class="sourceLine" id="cb11-18" title="18">data_snpStats<span class="op">$</span>genotypes</a>
+<a class="sourceLine" id="cb11-19" title="19"><span class="co">#&gt; A SnpMatrix with  1001 rows and  10001 columns</span></a>
+<a class="sourceLine" id="cb11-20" title="20"><span class="co">#&gt; Row names:  fam1 ... fam1001 </span></a>
+<a class="sourceLine" id="cb11-21" title="21"><span class="co">#&gt; Col names:  rs1 ... rs10001</span></a>
+<a class="sourceLine" id="cb11-22" title="22"></a>
+<a class="sourceLine" id="cb11-23" title="23"><span class="co"># Locus annotations</span></a>
+<a class="sourceLine" id="cb11-24" title="24"><span class="kw">head</span>( data_snpStats<span class="op">$</span>map )</a>
+<a class="sourceLine" id="cb11-25" title="25"><span class="co">#&gt;     chromosome snp.name cM position allele.1 allele.2</span></a>
+<a class="sourceLine" id="cb11-26" title="26"><span class="co">#&gt; rs1       chr1      rs1 NA     1000        G        T</span></a>
+<a class="sourceLine" id="cb11-27" title="27"><span class="co">#&gt; rs2       chr1      rs2 NA     2000        C        A</span></a>
+<a class="sourceLine" id="cb11-28" title="28"><span class="co">#&gt; rs3       chr1      rs3 NA     3000        G        A</span></a>
+<a class="sourceLine" id="cb11-29" title="29"><span class="co">#&gt; rs4       chr1      rs4 NA     4000        C        T</span></a>
+<a class="sourceLine" id="cb11-30" title="30"><span class="co">#&gt; rs5       chr1      rs5 NA     5000        C        T</span></a>
+<a class="sourceLine" id="cb11-31" title="31"><span class="co">#&gt; rs6       chr1      rs6 NA     6000        G        T</span></a>
+<a class="sourceLine" id="cb11-32" title="32"></a>
+<a class="sourceLine" id="cb11-33" title="33"><span class="co"># Individual annotations</span></a>
+<a class="sourceLine" id="cb11-34" title="34"><span class="kw">head</span> (data_snpStats<span class="op">$</span>fam )</a>
+<a class="sourceLine" id="cb11-35" title="35"><span class="co">#&gt;      pedigree member father mother sex    affected</span></a>
+<a class="sourceLine" id="cb11-36" title="36"><span class="co">#&gt; fam1     fam1    id1     NA     NA   2 -0.89945429</span></a>
+<a class="sourceLine" id="cb11-37" title="37"><span class="co">#&gt; fam2     fam2    id2     NA     NA   2  1.48550249</span></a>
+<a class="sourceLine" id="cb11-38" title="38"><span class="co">#&gt; fam3     fam3    id3     NA     NA   2 -1.27863368</span></a>
+<a class="sourceLine" id="cb11-39" title="39"><span class="co">#&gt; fam4     fam4    id4     NA     NA   2 -0.05182039</span></a>
+<a class="sourceLine" id="cb11-40" title="40"><span class="co">#&gt; fam5     fam5    id5     NA     NA   1  0.45474930</span></a>
+<a class="sourceLine" id="cb11-41" title="41"><span class="co">#&gt; fam6     fam6    id6     NA     NA   2 -0.43133813</span></a></code></pre></div>
+<p>As for <code>BEDMatrix</code>, assuming we ultimately desire to convert the entire data into a regular R matrix, an extra step is required:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb12-1" title="1"><span class="co"># Transpose, then convert to a regular R matrix.</span></a>
+<a class="sourceLine" id="cb12-2" title="2"><span class="co"># Let&#39;s time this step too.</span></a>
+<a class="sourceLine" id="cb12-3" title="3">time_read_snpStats_<span class="dv">2</span> &lt;-<span class="st"> </span><span class="kw">system.time</span>(</a>
+<a class="sourceLine" id="cb12-4" title="4">    X_snpStats &lt;-<span class="st"> </span><span class="kw">as</span>( <span class="kw">t</span>(data_snpStats<span class="op">$</span>genotypes), <span class="st">&#39;numeric&#39;</span>)</a>
+<a class="sourceLine" id="cb12-5" title="5">)</a>
+<a class="sourceLine" id="cb12-6" title="6">time_read_snpStats_<span class="dv">2</span></a>
+<a class="sourceLine" id="cb12-7" title="7"><span class="co">#&gt;    user  system elapsed </span></a>
+<a class="sourceLine" id="cb12-8" title="8"><span class="co">#&gt;   0.071   0.015   0.086</span></a>
+<a class="sourceLine" id="cb12-9" title="9"></a>
+<a class="sourceLine" id="cb12-10" title="10"><span class="co"># Now we can visualize the matrix.</span></a>
+<a class="sourceLine" id="cb12-11" title="11"><span class="co"># First 10 loci and individuals, as before.</span></a>
+<a class="sourceLine" id="cb12-12" title="12"><span class="co"># Note that, compared to (genio, BEDMatrix, lfa), alleles are encoded in reverse,</span></a>
+<a class="sourceLine" id="cb12-13" title="13"><span class="co"># so 0s and 2s are flipped in this matrix.</span></a>
+<a class="sourceLine" id="cb12-14" title="14">X_snpStats[<span class="dv">1</span><span class="op">:</span><span class="dv">10</span>, <span class="dv">1</span><span class="op">:</span><span class="dv">10</span>]</a>
+<a class="sourceLine" id="cb12-15" title="15"><span class="co">#&gt;      fam1 fam2 fam3 fam4 fam5 fam6 fam7 fam8 fam9 fam10</span></a>
+<a class="sourceLine" id="cb12-16" title="16"><span class="co">#&gt; rs1     0    1    2    0    0   NA    1    1   NA     1</span></a>
+<a class="sourceLine" id="cb12-17" title="17"><span class="co">#&gt; rs2    NA    0    2    1   NA    2    1    1    1     0</span></a>
+<a class="sourceLine" id="cb12-18" title="18"><span class="co">#&gt; rs3     1   NA    0    1    1    2    0   NA    1     1</span></a>
+<a class="sourceLine" id="cb12-19" title="19"><span class="co">#&gt; rs4     1    0    1    1    2    0    0    0    2    NA</span></a>
+<a class="sourceLine" id="cb12-20" title="20"><span class="co">#&gt; rs5     2    1    1   NA    0    2   NA    0    1     2</span></a>
+<a class="sourceLine" id="cb12-21" title="21"><span class="co">#&gt; rs6     0    1   NA    2    1    1    2    2    2     0</span></a>
+<a class="sourceLine" id="cb12-22" title="22"><span class="co">#&gt; rs7     1    0    0    2    1    1    2   NA    0     0</span></a>
+<a class="sourceLine" id="cb12-23" title="23"><span class="co">#&gt; rs8     1    1    1    1   NA   NA    0    0    2     1</span></a>
+<a class="sourceLine" id="cb12-24" title="24"><span class="co">#&gt; rs9     2    1    2   NA   NA    2    0    1    1     1</span></a>
+<a class="sourceLine" id="cb12-25" title="25"><span class="co">#&gt; rs10    0   NA    1    1    1    1   NA    1    0    NA</span></a>
+<a class="sourceLine" id="cb12-26" title="26"></a>
+<a class="sourceLine" id="cb12-27" title="27"><span class="co"># Again verify that the matrices are identical.</span></a>
+<a class="sourceLine" id="cb12-28" title="28"><span class="co"># (Here 2-X flips back 0s and 2s)</span></a>
+<a class="sourceLine" id="cb12-29" title="29"><span class="kw">stopifnot</span>( <span class="kw">all</span>( X <span class="op">==</span><span class="st"> </span><span class="dv">2</span> <span class="op">-</span><span class="st"> </span>X_snpStats, <span class="dt">na.rm =</span> <span class="ot">TRUE</span>) )</a></code></pre></div>
+<p><code>snpStats</code> is the only package other than <code>genio</code> to provide a BED writer. Here we demonstrate how hard it is to use it to write our data.</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb13-1" title="1"><span class="co"># Let&#39;s write this to another file</span></a>
+<a class="sourceLine" id="cb13-2" title="2">file_plink_copy &lt;-<span class="st"> </span><span class="kw">tempfile</span>(<span class="st">&#39;vignette-random-data-copy&#39;</span>)</a>
+<a class="sourceLine" id="cb13-3" title="3"></a>
+<a class="sourceLine" id="cb13-4" title="4"><span class="co"># Copy objects to not change originals</span></a>
+<a class="sourceLine" id="cb13-5" title="5">X_snpStats &lt;-<span class="st"> </span>X</a>
+<a class="sourceLine" id="cb13-6" title="6">bim_snpStats &lt;-<span class="st"> </span><span class="kw">as.data.frame</span>(bim) <span class="co"># to use rownames</span></a>
+<a class="sourceLine" id="cb13-7" title="7">fam_snpStats &lt;-<span class="st"> </span><span class="kw">as.data.frame</span>(fam) <span class="co"># ditto</span></a>
+<a class="sourceLine" id="cb13-8" title="8"></a>
+<a class="sourceLine" id="cb13-9" title="9"><span class="co"># All data requires matching row and/or column names.</span></a>
+<a class="sourceLine" id="cb13-10" title="10"><span class="co"># These first two were already done above.</span></a>
+<a class="sourceLine" id="cb13-11" title="11"><span class="co">#rownames(X_snpStats) &lt;- bim$id</span></a>
+<a class="sourceLine" id="cb13-12" title="12"><span class="co">#colnames(X_snpStats) &lt;- fam$id</span></a>
+<a class="sourceLine" id="cb13-13" title="13"><span class="co"># Row names here are redundant but required.</span></a>
+<a class="sourceLine" id="cb13-14" title="14"><span class="kw">rownames</span>(bim_snpStats) &lt;-<span class="st"> </span>bim<span class="op">$</span>id</a>
+<a class="sourceLine" id="cb13-15" title="15"><span class="kw">rownames</span>(fam_snpStats) &lt;-<span class="st"> </span>fam<span class="op">$</span>id</a>
+<a class="sourceLine" id="cb13-16" title="16"></a>
+<a class="sourceLine" id="cb13-17" title="17"><span class="co"># We shall time several required steps in order to write genotypes in a standard R matrix,</span></a>
+<a class="sourceLine" id="cb13-18" title="18"><span class="co"># and the related annotation tables, to BED.</span></a>
+<a class="sourceLine" id="cb13-19" title="19">time_write_snpStats &lt;-<span class="st"> </span><span class="kw">system.time</span>({</a>
+<a class="sourceLine" id="cb13-20" title="20">    <span class="co"># Transpose and convert our genotypes to SnpMatrix object.</span></a>
+<a class="sourceLine" id="cb13-21" title="21">    <span class="co"># We flip 0s and 2s before converting</span></a>
+<a class="sourceLine" id="cb13-22" title="22">    X_snpStats &lt;-<span class="st"> </span><span class="kw">as</span>(<span class="dv">2</span> <span class="op">-</span><span class="st"> </span><span class="kw">t</span>(X_snpStats), <span class="st">&#39;SnpMatrix&#39;</span>)</a>
+<a class="sourceLine" id="cb13-23" title="23">    </a>
+<a class="sourceLine" id="cb13-24" title="24">    <span class="co"># This complicated command is required to write the data.</span></a>
+<a class="sourceLine" id="cb13-25" title="25">    <span class="co"># Although X, fam, and bim are passed as for genio&#39;s write_plink,</span></a>
+<a class="sourceLine" id="cb13-26" title="26">    <span class="co"># here the name of every column must be specified (there are no reasonable defaults).</span></a>
+<a class="sourceLine" id="cb13-27" title="27">    <span class="co"># Interestingly, the parameter names of snpStats&#39; write.plink</span></a>
+<a class="sourceLine" id="cb13-28" title="28">    <span class="co"># do not agree with read.plink from the same package.</span></a>
+<a class="sourceLine" id="cb13-29" title="29">    <span class="kw">write.plink</span>(</a>
+<a class="sourceLine" id="cb13-30" title="30">        file_plink_copy,</a>
+<a class="sourceLine" id="cb13-31" title="31">        <span class="dt">snps =</span> X_snpStats,</a>
+<a class="sourceLine" id="cb13-32" title="32">        <span class="dt">subject.data =</span> fam_snpStats,</a>
+<a class="sourceLine" id="cb13-33" title="33">        <span class="dt">pedigree =</span> fam,</a>
+<a class="sourceLine" id="cb13-34" title="34">        <span class="dt">id =</span> id,</a>
+<a class="sourceLine" id="cb13-35" title="35">        <span class="dt">father =</span> pat,</a>
+<a class="sourceLine" id="cb13-36" title="36">        <span class="dt">mother =</span> mat,</a>
+<a class="sourceLine" id="cb13-37" title="37">        <span class="dt">sex =</span> sex,</a>
+<a class="sourceLine" id="cb13-38" title="38">        <span class="dt">phenotype =</span> pheno,</a>
+<a class="sourceLine" id="cb13-39" title="39">        <span class="dt">snp.data =</span> bim_snpStats,</a>
+<a class="sourceLine" id="cb13-40" title="40">        <span class="dt">chromosome =</span> chr,</a>
+<a class="sourceLine" id="cb13-41" title="41">        <span class="dt">genetic.distance =</span> posg,</a>
+<a class="sourceLine" id="cb13-42" title="42">        <span class="dt">position =</span> pos,</a>
+<a class="sourceLine" id="cb13-43" title="43">        <span class="dt">allele.1 =</span> ref,</a>
+<a class="sourceLine" id="cb13-44" title="44">        <span class="dt">allele.2 =</span> alt</a>
+<a class="sourceLine" id="cb13-45" title="45">    )</a>
+<a class="sourceLine" id="cb13-46" title="46">})</a>
+<a class="sourceLine" id="cb13-47" title="47"><span class="co">#&gt; Writing FAM file to /tmp/RtmpMsCEXK/vignette-random-data-copy778e12960a6c.fam </span></a>
+<a class="sourceLine" id="cb13-48" title="48"><span class="co">#&gt; Writing extended MAP file to /tmp/RtmpMsCEXK/vignette-random-data-copy778e12960a6c.bim </span></a>
+<a class="sourceLine" id="cb13-49" title="49"><span class="co">#&gt; Writing BED file to /tmp/RtmpMsCEXK/vignette-random-data-copy778e12960a6c.bed (SNP-major mode)</span></a>
+<a class="sourceLine" id="cb13-50" title="50"></a>
+<a class="sourceLine" id="cb13-51" title="51"><span class="co"># remove the new file, no longer need it</span></a>
+<a class="sourceLine" id="cb13-52" title="52"><span class="kw">delete_files_plink</span>(file_plink_copy)</a></code></pre></div>
+</div>
+<div id="lfa" class="section level2">
+<h2>LFA</h2>
+<p>The <code>lfa</code> package also provides a minimal BED parser, ignoring the BIM and FAM files except to count loci and individuals. Its genotype matrix is exactly like <code>genio</code>’s: same class (R matrix) and orientation (loci along rows). The package does not provide file writers or other such utilities.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb14-1" title="1"><span class="kw">library</span>(lfa)</a>
+<a class="sourceLine" id="cb14-2" title="2"><span class="co"># Parse the genotype matrix</span></a>
+<a class="sourceLine" id="cb14-3" title="3">time_read_lfa &lt;-<span class="st"> </span><span class="kw">system.time</span>(</a>
+<a class="sourceLine" id="cb14-4" title="4">    X_lfa &lt;-<span class="st"> </span><span class="kw">read.bed</span>(file_plink)</a>
+<a class="sourceLine" id="cb14-5" title="5">)</a>
+<a class="sourceLine" id="cb14-6" title="6"><span class="co">#&gt; [1] &quot;reading in 1001 individuals&quot;</span></a>
+<a class="sourceLine" id="cb14-7" title="7"><span class="co">#&gt; [1] &quot;reading in 10001 snps&quot;</span></a>
+<a class="sourceLine" id="cb14-8" title="8"><span class="co">#&gt; [1] &quot;snp major mode&quot;</span></a>
+<a class="sourceLine" id="cb14-9" title="9">time_read_lfa</a>
+<a class="sourceLine" id="cb14-10" title="10"><span class="co">#&gt;    user  system elapsed </span></a>
+<a class="sourceLine" id="cb14-11" title="11"><span class="co">#&gt;   0.206   0.059   0.267</span></a>
+<a class="sourceLine" id="cb14-12" title="12"></a>
+<a class="sourceLine" id="cb14-13" title="13"><span class="co"># This genotype matrix does not have column or row names:</span></a>
+<a class="sourceLine" id="cb14-14" title="14">X_lfa[<span class="dv">1</span><span class="op">:</span><span class="dv">10</span>, <span class="dv">1</span><span class="op">:</span><span class="dv">10</span>]</a>
+<a class="sourceLine" id="cb14-15" title="15"><span class="co">#&gt;       [,1] [,2] [,3] [,4] [,5] [,6] [,7] [,8] [,9] [,10]</span></a>
+<a class="sourceLine" id="cb14-16" title="16"><span class="co">#&gt;  [1,]    2    1    0    2    2   NA    1    1   NA     1</span></a>
+<a class="sourceLine" id="cb14-17" title="17"><span class="co">#&gt;  [2,]   NA    2    0    1   NA    0    1    1    1     2</span></a>
+<a class="sourceLine" id="cb14-18" title="18"><span class="co">#&gt;  [3,]    1   NA    2    1    1    0    2   NA    1     1</span></a>
+<a class="sourceLine" id="cb14-19" title="19"><span class="co">#&gt;  [4,]    1    2    1    1    0    2    2    2    0    NA</span></a>
+<a class="sourceLine" id="cb14-20" title="20"><span class="co">#&gt;  [5,]    0    1    1   NA    2    0   NA    2    1     0</span></a>
+<a class="sourceLine" id="cb14-21" title="21"><span class="co">#&gt;  [6,]    2    1   NA    0    1    1    0    0    0     2</span></a>
+<a class="sourceLine" id="cb14-22" title="22"><span class="co">#&gt;  [7,]    1    2    2    0    1    1    0   NA    2     2</span></a>
+<a class="sourceLine" id="cb14-23" title="23"><span class="co">#&gt;  [8,]    1    1    1    1   NA   NA    2    2    0     1</span></a>
+<a class="sourceLine" id="cb14-24" title="24"><span class="co">#&gt;  [9,]    0    1    0   NA   NA    0    2    1    1     1</span></a>
+<a class="sourceLine" id="cb14-25" title="25"><span class="co">#&gt; [10,]    2   NA    1    1    1    1   NA    1    2    NA</span></a>
+<a class="sourceLine" id="cb14-26" title="26"></a>
+<a class="sourceLine" id="cb14-27" title="27"><span class="co"># Again verify that the matrices are identical</span></a>
+<a class="sourceLine" id="cb14-28" title="28"><span class="kw">stopifnot</span>( <span class="kw">all</span>( X <span class="op">==</span><span class="st"> </span>X_lfa, <span class="dt">na.rm =</span> <span class="ot">TRUE</span>) )</a></code></pre></div>
+</div>
+<div id="overall-time-comparisons" class="section level2">
+<h2>Overall time comparisons</h2>
+<p>Note that reading performance varies on different machines depending on the balance between hard drive access and processor speeds (where the relative bottleneck is). That being said, the <code>genio</code> reader is consistently the fastest, if not a close second (see below for tests on your machine), for several reasons. Genotypes are read very efficiently using <code>Rcpp</code> code, and stored directly into an R matrix, which is most efficient if that is the end goal. The annotation tables are also read most efficiently, using the <code>readr</code> package internally.</p>
+<p>The <code>BEDMatrix</code> reader is also written in <code>Rcpp</code>, but its main goal is to provide efficient random access to genotypes stored in a file, which makes obtaining an <code>R</code> matrix more awkward, though surprisingly without paying a time penalty for it. The annotation tables are read with <code>data.table</code>, which is <a href="https://csgillespie.github.io/efficientR/5-3-importing-data.html">actually the fastest</a>, though the difference in performance is small compared to <code>readr</code> for reasonably-sized files. However, <code>BEDMatrix</code> does not process or return full annotation tables, which gives it an unfair advantage compared to <code>genio</code>, as <code>BEDMatrix</code> takes shortcuts to only read the columns it needs. If the annotation tables are needed, reading them will incur an additional (and in some cases considerable) time penalty.</p>
+<p>The <code>snpStats</code> reader is written in <code>C</code>, so it is also very fast for its initial step, but converting the genotypes from the <code>snpStats</code> format into a native R matrix proves too expensive. The annotation tables are read with the base function <code>read.table</code>, which is also the slowest. In terms of completeness of output (full genotypes and annotations tables), only this package matches <code>genio</code>, which makes it the fairest comparison.</p>
+<p>The <code>lfa</code> reader is written in pure <code>R</code>, which explains why it is the slowest in this comparison. The annotation tables are read with <code>read.table</code>, as in <code>snpStats</code>, but are not returned at all.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb15-1" title="1"><span class="co"># Extract component 3 of each time object,</span></a>
+<a class="sourceLine" id="cb15-2" title="2"><span class="co"># which is is total time elapsed.</span></a>
+<a class="sourceLine" id="cb15-3" title="3"><span class="co"># Sum the two steps it takes for each of BEDMatrix and snpStats to obtain a native R matrix.</span></a>
+<a class="sourceLine" id="cb15-4" title="4">times_read &lt;-<span class="st"> </span><span class="kw">c</span>(</a>
+<a class="sourceLine" id="cb15-5" title="5">    time_read_genio[<span class="dv">3</span>],</a>
+<a class="sourceLine" id="cb15-6" title="6">    time_read_bedmatrix_<span class="dv">1</span>[<span class="dv">3</span>] <span class="op">+</span><span class="st"> </span>time_read_bedmatrix_<span class="dv">2</span>[<span class="dv">3</span>],</a>
+<a class="sourceLine" id="cb15-7" title="7">    time_read_snpStats_<span class="dv">1</span>[<span class="dv">3</span>] <span class="op">+</span><span class="st"> </span>time_read_snpStats_<span class="dv">2</span>[<span class="dv">3</span>],</a>
+<a class="sourceLine" id="cb15-8" title="8">    time_read_lfa[<span class="dv">3</span>]</a>
+<a class="sourceLine" id="cb15-9" title="9">)</a>
+<a class="sourceLine" id="cb15-10" title="10">names_read &lt;-<span class="st"> </span><span class="kw">c</span>(</a>
+<a class="sourceLine" id="cb15-11" title="11">    <span class="st">&#39;genio&#39;</span>,</a>
+<a class="sourceLine" id="cb15-12" title="12">    <span class="st">&#39;BEDMatrix&#39;</span>,</a>
+<a class="sourceLine" id="cb15-13" title="13">    <span class="st">&#39;snpStats&#39;</span>,</a>
+<a class="sourceLine" id="cb15-14" title="14">    <span class="st">&#39;lfa&#39;</span></a>
+<a class="sourceLine" id="cb15-15" title="15">)</a>
+<a class="sourceLine" id="cb15-16" title="16"><span class="co"># Create barplot</span></a>
+<a class="sourceLine" id="cb15-17" title="17"><span class="kw">barplot</span>(</a>
+<a class="sourceLine" id="cb15-18" title="18">    times_read,</a>
+<a class="sourceLine" id="cb15-19" title="19">    <span class="dt">names.arg =</span> names_read,</a>
+<a class="sourceLine" id="cb15-20" title="20">    <span class="dt">main =</span> <span class="st">&#39;BED reader runtimes&#39;</span>,</a>
+<a class="sourceLine" id="cb15-21" title="21">    <span class="dt">xlab =</span> <span class="st">&#39;packages&#39;</span>,</a>
+<a class="sourceLine" id="cb15-22" title="22">    <span class="dt">ylab =</span> <span class="st">&#39;runtime (s)&#39;</span></a>
+<a class="sourceLine" id="cb15-23" title="23">)</a></code></pre></div>
+<p><img src="data:image/png;base64,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" style="display: block; margin: auto;" /></p>
+<p>Now we compare the writers. Only <code>snpStats</code> and <code>genio</code> have a BED writer. Not only was the <code>genio</code> writer much easier to use, it is also considerably faster.</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb16-1" title="1">times_write &lt;-<span class="st"> </span><span class="kw">c</span>(</a>
+<a class="sourceLine" id="cb16-2" title="2">    time_write_genio[<span class="dv">3</span>],</a>
+<a class="sourceLine" id="cb16-3" title="3">    time_write_snpStats[<span class="dv">3</span>]</a>
+<a class="sourceLine" id="cb16-4" title="4">)</a>
+<a class="sourceLine" id="cb16-5" title="5">names_write &lt;-<span class="st"> </span><span class="kw">c</span>(</a>
+<a class="sourceLine" id="cb16-6" title="6">    <span class="st">&#39;genio&#39;</span>,</a>
+<a class="sourceLine" id="cb16-7" title="7">    <span class="st">&#39;snpStats&#39;</span></a>
+<a class="sourceLine" id="cb16-8" title="8">)</a>
+<a class="sourceLine" id="cb16-9" title="9"><span class="co"># Create barplot</span></a>
+<a class="sourceLine" id="cb16-10" title="10"><span class="kw">barplot</span>(</a>
+<a class="sourceLine" id="cb16-11" title="11">    times_write,</a>
+<a class="sourceLine" id="cb16-12" title="12">    <span class="dt">names.arg =</span> names_write,</a>
+<a class="sourceLine" id="cb16-13" title="13">    <span class="dt">main =</span> <span class="st">&#39;BED writer runtimes&#39;</span>,</a>
+<a class="sourceLine" id="cb16-14" title="14">    <span class="dt">xlab =</span> <span class="st">&#39;packages&#39;</span>,</a>
+<a class="sourceLine" id="cb16-15" title="15">    <span class="dt">ylab =</span> <span class="st">&#39;runtime (s)&#39;</span></a>
+<a class="sourceLine" id="cb16-16" title="16">)</a></code></pre></div>
+<p><img src="data:image/png;base64,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" style="display: block; margin: auto;" /></p>
+</div>
+<div id="memory-comparison" class="section level2">
+<h2>Memory comparison</h2>
+<p>High memory consumption is the main sacrifice for the ease of use of native R matrices, and in this respect <code>genio</code> consumes the most memory (second only to <code>lfa</code>).</p>
+<p>We use the <code>pryr</code> package to compare the memory usage of each native genotype object.</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb17-1" title="1"><span class="kw">library</span>(pryr)</a>
+<a class="sourceLine" id="cb17-2" title="2"><span class="co"># Store directly into a vector</span></a>
+<a class="sourceLine" id="cb17-3" title="3">sizes &lt;-<span class="st"> </span><span class="kw">c</span>(</a>
+<a class="sourceLine" id="cb17-4" title="4">    <span class="kw">object_size</span>( X ),</a>
+<a class="sourceLine" id="cb17-5" title="5">    <span class="kw">object_size</span>( data_genio<span class="op">$</span>X ),</a>
+<a class="sourceLine" id="cb17-6" title="6">    <span class="kw">object_size</span>( X_BEDMatrix ),</a>
+<a class="sourceLine" id="cb17-7" title="7">    <span class="kw">object_size</span>( data_snpStats<span class="op">$</span>genotypes ),</a>
+<a class="sourceLine" id="cb17-8" title="8">    <span class="kw">object_size</span>( X_lfa )</a>
+<a class="sourceLine" id="cb17-9" title="9">)</a>
+<a class="sourceLine" id="cb17-10" title="10">names_sizes &lt;-<span class="st"> </span><span class="kw">c</span>(</a>
+<a class="sourceLine" id="cb17-11" title="11">    <span class="st">&#39;original&#39;</span>,</a>
+<a class="sourceLine" id="cb17-12" title="12">    <span class="st">&#39;genio&#39;</span>,</a>
+<a class="sourceLine" id="cb17-13" title="13">    <span class="st">&#39;BEDMatrix&#39;</span>,</a>
+<a class="sourceLine" id="cb17-14" title="14">    <span class="st">&#39;snpStats&#39;</span>,</a>
+<a class="sourceLine" id="cb17-15" title="15">    <span class="st">&#39;lfa&#39;</span></a>
+<a class="sourceLine" id="cb17-16" title="16">)</a>
+<a class="sourceLine" id="cb17-17" title="17"><span class="co"># Create barplot</span></a>
+<a class="sourceLine" id="cb17-18" title="18"><span class="kw">barplot</span>(</a>
+<a class="sourceLine" id="cb17-19" title="19">    sizes,</a>
+<a class="sourceLine" id="cb17-20" title="20">    <span class="dt">names.arg =</span> names_sizes,</a>
+<a class="sourceLine" id="cb17-21" title="21">    <span class="dt">main =</span> <span class="st">&#39;Native genotype object sizes&#39;</span>,</a>
+<a class="sourceLine" id="cb17-22" title="22">    <span class="dt">xlab =</span> <span class="st">&#39;packages&#39;</span>,</a>
+<a class="sourceLine" id="cb17-23" title="23">    <span class="dt">ylab =</span> <span class="st">&#39;memory (bytes)&#39;</span></a>
+<a class="sourceLine" id="cb17-24" title="24">)</a></code></pre></div>
+<p><img src="data:image/png;base64,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" style="display: block; margin: auto;" /></p>
+<p>The <code>BEDMatrix</code> package is ideal for very large files, since data is loaded into memory only as needed. So the main object does not actually hold any genotypes in memory. It is up to the user to decide how much data to access at once to trade-off speed and memory consumption.</p>
+<p><code>snpStats</code> manages memory better than <code>genio</code>, but strictly by a factor of 4. Each genotype is encoded as an integer in <code>R</code> (in general) and <code>genio</code> (in particular), which uses 4 bytes (this is actually platform dependent). On the other hand, <code>snpStats</code> uses strictly one byte per genotype.</p>
+<p><code>lfa</code> uses 8 bytes per genotype because its genotype matrix treats is elements as doubles rather than integers, so it uses twice as much memory as <code>genio</code>.</p>
+<p>Overall, there is a narrow window in data sizes in which a genotype matrix is too large for a native R matrix but small enough for a <code>snpStats</code> object. That, and the much more complex interface of <code>snpStats</code>, makes it not very worthwhile in my opinion, unless there is need for functions provided only by that package. I prefer to use <code>BEDMatrix</code> for large datasets.</p>
+</div>
+</div>
+<div id="cleanup" class="section level1">
+<h1>Cleanup</h1>
+<p>This handy function removes the three BED/BIM/FAM files we generated at the beginning of this vignette.</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb18-1" title="1"><span class="kw">delete_files_plink</span>(file_plink)</a></code></pre></div>
+<p>Let’s close by showing the package versions used when this vignette was last built, as the implementations compared here could change in the future.</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><a class="sourceLine" id="cb19-1" title="1"><span class="kw">sessionInfo</span>()</a>
+<a class="sourceLine" id="cb19-2" title="2"><span class="co">#&gt; R version 3.6.1 (2019-07-05)</span></a>
+<a class="sourceLine" id="cb19-3" title="3"><span class="co">#&gt; Platform: x86_64-redhat-linux-gnu (64-bit)</span></a>
+<a class="sourceLine" id="cb19-4" title="4"><span class="co">#&gt; Running under: Fedora 30 (Workstation Edition)</span></a>
+<a class="sourceLine" id="cb19-5" title="5"><span class="co">#&gt; </span></a>
+<a class="sourceLine" id="cb19-6" title="6"><span class="co">#&gt; Matrix products: default</span></a>
+<a class="sourceLine" id="cb19-7" title="7"><span class="co">#&gt; BLAS/LAPACK: /usr/lib64/R/lib/libRblas.so</span></a>
+<a class="sourceLine" id="cb19-8" title="8"><span class="co">#&gt; </span></a>
+<a class="sourceLine" id="cb19-9" title="9"><span class="co">#&gt; locale:</span></a>
+<a class="sourceLine" id="cb19-10" title="10"><span class="co">#&gt;  [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C              </span></a>
+<a class="sourceLine" id="cb19-11" title="11"><span class="co">#&gt;  [3] LC_TIME=en_US.UTF-8        LC_COLLATE=C              </span></a>
+<a class="sourceLine" id="cb19-12" title="12"><span class="co">#&gt;  [5] LC_MONETARY=en_US.UTF-8    LC_MESSAGES=en_US.UTF-8   </span></a>
+<a class="sourceLine" id="cb19-13" title="13"><span class="co">#&gt;  [7] LC_PAPER=en_US.UTF-8       LC_NAME=C                 </span></a>
+<a class="sourceLine" id="cb19-14" title="14"><span class="co">#&gt;  [9] LC_ADDRESS=C               LC_TELEPHONE=C            </span></a>
+<a class="sourceLine" id="cb19-15" title="15"><span class="co">#&gt; [11] LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       </span></a>
+<a class="sourceLine" id="cb19-16" title="16"><span class="co">#&gt; </span></a>
+<a class="sourceLine" id="cb19-17" title="17"><span class="co">#&gt; attached base packages:</span></a>
+<a class="sourceLine" id="cb19-18" title="18"><span class="co">#&gt; [1] stats     graphics  grDevices utils     datasets  methods   base     </span></a>
+<a class="sourceLine" id="cb19-19" title="19"><span class="co">#&gt; </span></a>
+<a class="sourceLine" id="cb19-20" title="20"><span class="co">#&gt; other attached packages:</span></a>
+<a class="sourceLine" id="cb19-21" title="21"><span class="co">#&gt; [1] pryr_0.1.4        lfa_1.14.0        snpStats_1.34.0   Matrix_1.2-17    </span></a>
+<a class="sourceLine" id="cb19-22" title="22"><span class="co">#&gt; [5] survival_2.44-1.1 BEDMatrix_2.0.1   genio_1.0.12     </span></a>
+<a class="sourceLine" id="cb19-23" title="23"><span class="co">#&gt; </span></a>
+<a class="sourceLine" id="cb19-24" title="24"><span class="co">#&gt; loaded via a namespace (and not attached):</span></a>
+<a class="sourceLine" id="cb19-25" title="25"><span class="co">#&gt;  [1] Rcpp_1.0.3          compiler_3.6.1      pillar_1.4.2       </span></a>
+<a class="sourceLine" id="cb19-26" title="26"><span class="co">#&gt;  [4] tools_3.6.1         zlibbioc_1.30.0     crochet_2.2.0      </span></a>
+<a class="sourceLine" id="cb19-27" title="27"><span class="co">#&gt;  [7] zeallot_0.1.0       digest_0.6.23       evaluate_0.14      </span></a>
+<a class="sourceLine" id="cb19-28" title="28"><span class="co">#&gt; [10] tibble_2.1.3        lattice_0.20-38     pkgconfig_2.0.3    </span></a>
+<a class="sourceLine" id="cb19-29" title="29"><span class="co">#&gt; [13] rlang_0.4.2         cli_2.0.0           yaml_2.2.0         </span></a>
+<a class="sourceLine" id="cb19-30" title="30"><span class="co">#&gt; [16] parallel_3.6.1      xfun_0.11           stringr_1.4.0      </span></a>
+<a class="sourceLine" id="cb19-31" title="31"><span class="co">#&gt; [19] knitr_1.26          hms_0.5.2           vctrs_0.2.1        </span></a>
+<a class="sourceLine" id="cb19-32" title="32"><span class="co">#&gt; [22] grid_3.6.1          glue_1.3.1          R6_2.4.1           </span></a>
+<a class="sourceLine" id="cb19-33" title="33"><span class="co">#&gt; [25] fansi_0.4.0         rmarkdown_2.0       readr_1.3.1        </span></a>
+<a class="sourceLine" id="cb19-34" title="34"><span class="co">#&gt; [28] corpcor_1.6.9       magrittr_1.5        backports_1.1.5    </span></a>
+<a class="sourceLine" id="cb19-35" title="35"><span class="co">#&gt; [31] codetools_0.2-16    htmltools_0.4.0     splines_3.6.1      </span></a>
+<a class="sourceLine" id="cb19-36" title="36"><span class="co">#&gt; [34] BiocGenerics_0.30.0 assertthat_0.2.1    utf8_1.1.4         </span></a>
+<a class="sourceLine" id="cb19-37" title="37"><span class="co">#&gt; [37] stringi_1.4.3       crayon_1.3.4</span></a></code></pre></div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

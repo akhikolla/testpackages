@@ -1,0 +1,41 @@
+#' Available test statistics for symmetry tests
+#'
+#' The list of implemented test statistics and their functions
+#'
+#' Below is a list of the implemented test statistics in the package. Each
+#' statistic is listed by it's name, a code string (e.g. 'B1', CM','MOI') and
+#' the formula of the statistic which is evaluated. The code string is used as
+#' an argument to the \link{symmetry_test} function. Some statistics depend on a
+#' parameter 'k' which can be seen from the formulas and is also passed as an
+#' argument.
+#'
+#' Each statistic is implemented as a function with the same name as the code
+#' string, so the name of the function is passed as the argument "stat" to the
+#' \link{symmetry_test} function
+#'
+#' @section Test statistics:
+#' The list of available statitics in the format "code(s) : name (reference)"
+#'
+#' * MI : The Mira test statistic (see \insertCite{M}{symmetry})
+#' * CM : The Cabilio–Masaro test statistic (see \insertCite{CM}{symmetry})
+#' * MGG : The Miao, Gel and Gastwirth test statistic (see \insertCite{MGG}{symmetry})
+#' * B1 : The \eqn{\sqrt{b_1}} test statistic (see \insertCite{UNKcentre}{symmetry})
+#' * KS : The Kolmogorov--Smirnov test statistic (see \insertCite{UNKcentre}{symmetry})
+#' * SGN : The Sign test statistic (see \insertCite{UNKcentre}{symmetry})
+#' * KS : The Wilcoxon test statistic (see \insertCite{UNKcentre}{symmetry})
+#' * FM : The characterization based test statistic (see \insertCite{CH}{symmetry})
+#' * RW : The Rothman-Woodroofe test statistic (see \insertCite{RW}{symmetry})
+#' * BHI : The Litvinova test statistic (see \insertCite{BHI}{symmetry})
+#' * BHK : The Baringhaus and Henze supremum-type test statistic (see \insertCite{BHK}{symmetry})
+#' * BH2 : The Baringhaus-Henze test statistic (see \insertCite{BHK}{symmetry})
+#' * MOI and MOK : The Milošević and Obradović test statistics (see \insertCite{MOIMOK}{symmetry})
+#' * NAI and NAK : The Nikitin and Ahsanullah test statistics (see \insertCite{NAINAK}{symmetry})
+#' * K2 and K2U : The Božin, Milošević, Nikitin and Obradović Kolmogorov type statistics based on V- and U- statistics respectively (see \insertCite{K2K2U}{symmetry})
+#' * NAC1, NAC2, BHC1 and BHC2 : The Allison and Pretorius test statistics (see \insertCite{Allison}{symmetry})
+#' @param X the numeric vector for which to calculate the test statistic
+#' @param k the 'k' parameter in the formula (if applicable)
+#' @return The value of the test statistic.
+#' @references \insertAllCited{}
+#' @aliases TestStatistics
+#' @name TestStatistics
+NULL

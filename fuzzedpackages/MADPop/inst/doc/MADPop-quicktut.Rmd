@@ -1,0 +1,319 @@
+---
+title: "Bayesian Testing of Equal Genotype Proportions between
+Multiple Populations"
+author: "Martin Lysy, Wookjung P. Kim, Terin Robinson"
+date: "2017-01-15"
+output: html_vignette
+header-includes:
+- \usepackage{bm}
+link-citations: true
+references:
+- id: minka00
+  title: Estimating a Dirichlet Distribution
+  author:
+  - family: Minka
+    given: T.P.
+  container-title: Technical Report
+  publisher: Massachusetts Institute of Technology
+  URL: https://tminka.github.io/papers/dirichlet/minka-dirichlet.pdf
+  type: article-journal
+  issued:
+    year: 2000
+- id: rstan
+  title: "Rstan: the R interface to Stan"
+  author:
+  - family: "Stan Development Team"
+  URL: http://mc-stan.org
+  type: webpage
+  issued:
+    year: 2016
+
+
+vignette: >
+  %\VignetteIndexEntry{Bayesian Testing of Equal Genotype Proportions between Multiple Populations}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+\newcommand{\Y}{\boldsymbol Y}
+\newcommand{\rr}{\boldsymbol \rho}
+\newcommand{\RR}{\boldsymbol{\mathcal R}}
+\renewcommand{\aa}{\boldsymbol \alpha}
+\newcommand{\LL}{\mathcal L}
+\newcommand{\ind}{\stackrel{\textrm{ind}}{\sim}}
+\newcommand{\iid}{\stackrel{\textrm{iid}}{\sim}}
+\newcommand{\var}{\textrm{var}}
+\newcommand{\pv}{\textrm{p}_\textrm{v}}
+\newcommand{\pvb}{\textrm{p}_\textrm{v}^{\textrm{boot}}}
+\newcommand{\pvp}{\textrm{p}_\textrm{v}^{\textrm{post}}}
+
+```{r setup, echo = FALSE, include = FALSE}
+
+require(knitr)
+require(rmarkdown)
+knitr::opts_chunk$set(cache = FALSE, autodep = FALSE)
+if(FALSE) {
+  # compile
+  #rmarkdown::render(file.path("vignettes", "MADPop-quicktut.Rmd"))
+  rmarkdown::render("MADPop-quicktut.Rmd")
+}
+# view it by opening MADPop/vignettes/MADPop-tutorial.html
+
+```
+
+This tutorial shows how to use the **MADPop** package to test for
+genetic differences between two populations, of which the individuals of a same species contain a variable number of alleles.
+```{r madpop}
+require(MADPop)
+```
+
+
+## Pre-Processing
+
+```{r preproc, echo = FALSE}
+nObs <- nrow(fish215)
+nPop <- nlevels(fish215$Lake)
+nAlleles <- length(table(c(as.matrix(fish215[,-1])))) - 1
+```
+
+Our data consists of $N = `r nObs`$ recordings of Major Histocompatibility Complex (MHC) genotypes  of lake trout from $K = `r nPop`$ lakes in Ontario, Canada. For each of the fish, between 1-4 alleles in the MHC genotype are recorded.  This is partially because duplicate genes are undetectable by current instrumentation, and possibly because the fish possess a variable number of alleles of a given MHC gene.
+
+Our dataset `fish215` is included with **MADPop**.  A random sample from it looks like this:
+```{r fish215}
+head(fish215[sample(nObs),])
+```
+The first column is the lake name (or population ID) for each sample, the remaining four columns are for potentially recorded allele codes (`A1`-`A4`).  Here the code to identify a unique allele is a small letter followed by a number, but it could have been the sequence of integers $1, 2,\ldots, A$, which for the `fish215` data is $A = `r nAlleles`$ unique alleles.
+
+It is relatively straightforward to import a CSV file into the format above.  An example of this is given along with our raw data in the **extdata** directory of the local copy of the **MADPop** package.
+
+## Two-Population Comparisons
+
+```{r setup2, ref.label = "table2", echo = FALSE, results = "hide"}
+```
+
+Suppose that we wish to compare two lakes, say `r popId[1]` and `r popId[2]`.  The allele counts in these lakes are in the table below.  It is a subset of the full contingency table on all $K = `r nPop`$ lakes, which is produced by the **MADPop** function `UM.suff`:
+```{r table2}
+popId <- c("Dickey", "Simcoe")          # lakes to compare
+Xsuff <- UM.suff(fish215)             # summary statistics for dataset
+ctab <- Xsuff$tab[popId,]             # contingency table
+ctab <- ctab[,colSums(ctab) > 0] # remove alleles with no counts
+#ctab
+rbind(ctab, Total = colSums(ctab))
+```
+The unique allele identifiers are encoded as integers between $1$ and $A$ and separated by dots.  The original allele names are stored in `Xsuff$A`, such that the genotype of the first column ``r colnames(ctab)[1]`` is
+```{r gtype}
+gtype <- colnames(ctab)[1]
+gtype <- as.numeric(strsplit(gtype, "[.]")[[1]])
+gtype
+names(gtype) <- paste0("A", gtype)
+sapply(gtype, function(ii) Xsuff$A[ii])
+```
+There are $C = `r ncol(ctab)`$ genotype combinations observed in these two lakes, corresponding to each column of the table.
+
+### Multinomial Model
+
+In the two-population problem we have $K = 2$ lakes with $N_1$ and $N_2$ fish sampled from each.  Let $\Y_k = (Y_{k1}, \ldots Y_{kC})$ denote the counts for each genotype observed in lake $k$, such that $\sum_{i=1}^C Y_{ki} = N_k$.  The sampling model for these data is
+$$
+\Y_k \ind \textrm{Multinomial}(N_k, \rr_k), \quad k = 1,2,
+$$
+where $\rr_k = (\rho_{k1},...,\rho_{kC})$ are the population proportions of each genotype, and $\sum_{i=1}^C \rho_{ki} = 1$.
+
+### Hypothesis Testing
+
+Our objective is to test
+$$
+\begin{split}
+H_0 &: \textrm{The two populations have the same genotype proportions} \\
+& \phantom{: } \iff \rr_1 = \rr_2.
+\end{split}
+$$
+The classical test statistics for assessing $H_0$ are Pearson's Chi-Square statistic $\mathcal X$ and the Likelihood Ratio statistic $\Lambda$,
+$$
+\mathcal X = \sum_{k=1}^2 \sum_{i=1}^C \frac{(N_k\hat\rho_i - Y_{ki})^2}{N_k\hat\rho_i}, \qquad \Lambda = 2 \sum_{k=1}^2 \sum_{i=1}^C Y_{ki} \log\left(\frac{Y_{ki}}{N_k\hat\rho_i}\right), \qquad \hat \rho_i = \frac{Y_{1i} + Y_{2i}}{N_1 + N_2}.
+$$
+Under $H_0$, the asymptotic distribution of either of these test statistics $T = \mathcal X$ or $\Lambda$ is $\chi^2_{(C-1)}$, such that the $p$-value
+$$
+\pv = \textrm{Pr}(T > T_\textrm{obs} \mid H_0)
+$$
+for an observed value of $T_\textrm{obs}$ can be estimated as follows:
+```{r pvasy}
+# observed values of the test statistics
+chi2.obs <- chi2.stat(ctab) # Pearson's chi^2
+LRT.obs <- LRT.stat(ctab) # LR test statistic
+T.obs <- c(chi2 = chi2.obs, LRT = LRT.obs)
+# p-value with asymptotic calculation
+C <- ncol(ctab)
+pv.asy <- pchisq(q = T.obs, df = C-1, lower.tail = FALSE)
+signif(pv.asy, 2)
+```
+The Chi-Square and LR tests are asymptotically equivalent and so should give roughly the same $p$-values.  The huge discrepancy observed here indicates that the sample sizes are too small for asymptotics to kick in.  A more reliable $p$-value estimate can be obtained by the Bootstrap method, which in this case consists of simulating $M$ contigency tables with $\Y_k^{(m)} \ind \textrm{Multinomial}(N_k, \hat{\rr})$, $m = 1, \ldots, M$, where $\hat{\rr}$ is the estimate of the common probability vector $\rr_1 = \rr_2$ under $H_0$.  For each contingency table $(\Y_1^{(m)}, \Y_2^{(m)})$, we calculate the test statistic $T^{(m)}$, and the bootstrapped p-value is defined as
+$$
+\pvb = \frac 1 M \sum_{m=1}^M \delta(T^{(m)} \ge T_\textrm{obs}).
+$$
+$\pvb$ is calculated with **MADPop** as follows:
+```{r pvboot, cache = FALSE}
+N1 <- sum(ctab[1,])                     # size of first sample
+N2 <- sum(ctab[2,])                     # size of second sample
+rho.hat <- colSums(ctab)/(N1+N2)        # common probability vector
+# bootstrap distribution of the test statistics
+# set verbose = TRUE for progress output
+system.time({
+  T.boot <- UM.eqtest(N1 = N1, N2 = N2, p0 = rho.hat, nreps =1e4,
+                      verbose = FALSE)
+})
+# bootstrap p-value
+pv.boot <- rowMeans(t(T.boot) >= T.obs)
+signif(pv.boot, 2)
+```
+Note that the bootstrap $p$-values for both tests are roughly the same and decisively reject $H_0$, whereas the less reliable asymptotic $p$-values both failed to reject (at quite different significance levels).
+
+## Pairwise Comparisons between Multiple Populations
+
+Bootstrapping overcomes many deficiencies of the asymptotic $p$-value calculation.  However, bootstrapping has a tendency to reject $H_0$ when sample sizes are small.  To see why this is, consider all columns of `ctab` which have only one genotype count between the two lakes:
+```{r table3}
+itab1 <- colSums(ctab) == 1             # single count genotypes
+cbind(ctab[,itab1],
+      Other = rowSums(ctab[,!itab1]),
+      Total = rowSums(ctab))
+```
+```{r setup4, echo = FALSE}
+c1 <- sum(itab1) # number of single-count columns
+n1 <- sum(ctab[,itab1]) # number of single counts
+```
+There are $c_1 = `r c1`$ such columns, accounting for $\hat p_1 = `r n1/sum(ctab)`$ of the common genotype distribution under $H_0$, as estimated from the two-lake sample.  For each of these columns, observing counts in one lake but not the other provides evidence against $H_0$.  Moreover, under the estimated common distribution $\hat {\rr}$, it is very unlikely to have counts in only one of the lakes for each of these $c_1 = `r c1`$ genotypes.  Therefore, the data appear to provide very strong evidence against $H_0$.  However, it is not so unlikely to have $c_1 = `r c1`$ one-count genotypes if the true number of unique genotypes in these two lakes is much larger than the observed value of $C = `r C`$.  With $C = `r C`$ unique genotypes in only $N = N_1 + N_2 = `r N1 + N2`$ fish samples, it is quite plausible that a new sample of fish would yield several genotypes which are not present in the original two-lake sample ``ctab``.
+
+One way to obtain information about the unobserved genotypes in lakes `r popId[1]` and `r popId[2]` is to consider the genotypes in *all* $K = `r nPop`$ Ontario lakes for which we have collected data.  A natural way to do this is through a hierarchical model:
+$$
+\begin{split}
+\Y_k \mid \rr_k & \ind \textrm{Multinomial}(N_k, \rr_k), \quad k = 1,\ldots,K \\
+\rr_k & \iid \textrm{Dirichlet}(\aa), \qquad \aa = (\alpha_1, \ldots, \alpha_C).
+\end{split}
+$$
+That is, each population is allowed to have its own probability vector $\rr_k$.  However, these probability vectors are drawn from a common Dirichlet distribution.  The common distribution specifies that before any data is drawn, we have
+$$
+E[\rr] = \bar{\aa}, \qquad \var(\rho_i) = \frac{(\bar \alpha_i)(1-\bar \alpha_i)}{\alpha_0 + 1},
+$$
+where $\alpha_0 = \sum_{i=1}^C \alpha_i$ and $\bar{\aa} = \aa / \alpha_0$.  Moreover, the posterior distribution of $\rr_k$ given $\aa$ and the data is also Dirichlet:
+$$
+\rr_k \mid \Y \ind \textrm{Dirichlet}(\aa + \Y_k).
+$$
+In this sense, the posterior estimate of the proportion of genotype $i$ in population $k$, $\rho_{ki}$, can be non-zero even if $Y*{ki} = 0$.  In practice, $\aa$ is estimated from $\Y$, the data from all $K$ populations (details in the following section).  The extent to which the genotypes observed in one lake affect inference in the other lakes is determined by $\alpha*0$ (the larger this value, the larger the effect).
+
+### Parameter Estimation
+
+The likelihood function for this model corresponds to a Dirichlet-Multinomial distribution,
+$$
+\begin{split}
+\mathcal L(\aa \mid \Y) = \prod_{k=1}^K p(\Y_k \mid \aa) & = \prod_{k=1}^K \int p(\Y_k \mid \rr_k) p(\rr_k \mid \aa) \,\mathrm{d}\rr_k \\
+& = \prod_{k=1}^K \left[\frac{N_k!\cdot\Gamma(\alpha_0)}{\Gamma(N_k+\alpha_0)} \prod_{i=1}^C \frac{\Gamma(Y_{ki} + \alpha_i)}{Y_{ki}!\cdot\Gamma(\alpha_i)}\right],
+\end{split}
+$$
+from which $\aa$ can be estimated by maximum likelihood [@minka00].  Alternatively we estimate $\aa$ using a Bayesian approach, which is more readily extensible to more complex genotype models, for which $\mathcal L(\aa \mid \Y)$ has no closed form (see Future Work).
+
+First, we specify a prior distribution
+$$
+\pi(\alpha_0, \bar{\aa}) = \frac{1}{(1+ \alpha_0)^2},
+$$
+which is a uniform distribution on the prior probability vector $\bar{\aa}$, and a uniform distribution on the variance-like parameter $A = (1+\alpha_0)^{-1}$, in the sense that the prior mean and variance of a given genotype population probability are
+$$
+E[\rho_{kj}] = \tilde \alpha_j, \qquad \var(\rho_{kj}) = A \cdot \tilde \alpha_j(1-\tilde \alpha_j).
+$$
+Then, we sample from the posterior distribution $p(\aa \mid \Y) \propto \LL(\aa \mid \Y) \pi(\aa)$ using a Markov chain Monte Carlo (MCMC) algorithm provided by the **stan** programming language [@rstan], as detailed below.
+
+
+## Bayesian Hypothesis Testing
+
+Under the hierarchical model, the null hypothesis of equal genetic proportions between two populations, say $k = 1,2$, is $H_0: \rr_1 = \rr_2 = \rr_{12}$.  Our Bayesian hypothesis-testing strategy is implemented in two steps:
+
+1. Sample from the posterior distribution $p(\aa \mid \Y, H_0)$.
+2. Sample from the posterior distribution of either classical test statistic, $T = \mathcal X$ or $\Lambda$, thus obtaining a *posterior p-value*
+$$
+\pvp = \textrm{Pr}(T > T_\textrm{obs} \mid \Y, H_0).
+$$
+
+### MCMC Sampling from the Posterior Distribution
+
+In order to estimate $\aa$ under $H_0$, we apply the Dirichlet-Multinomial distribution to $K-1$ lakes, with the first two being collapsed into a common count vector $\Y_{12} = \Y_1 + \Y_2$ with sample size $N_{12} = N_1 + N_2$.  MCMC sampling is implemented via a Hybrid Monte Carlo (HMC) variant provided by the **R** package **rstan**.  In **MADPop**, sampling from $p(\aa \mid \Y, H_0)$ is accomplished with the function ``hUM.post``, where "hUM" stands for *hierarchical Unconstrained Multinomial* model.  We start by merging the two samples from equal distributions under $H_0$:
+```{r popId0}
+popId                                   # equal lakes under H0
+eqId0 <- paste0(popId, collapse = ".")  # merged lake name
+popId0 <- as.character(fish215$Lake)    # all lake names
+popId0[popId0 %in% popId] <- eqId0
+table(popId0, dnn = NULL)               # merged lake counts
+```
+Next, we sample from $p(\aa \mid \Y, H_0)$ using **rstan**:
+```{r stan, cache = TRUE}
+X0 <- cbind(Id = popId0, fish215[-1])  # allele data with merged lakes
+
+nsamples <- 1e4
+fit0 <- hUM.post(nsamples = nsamples, X = X0,
+                 rhoId = eqId0,     # output rho only for merged lakes
+                 chains = 1,  # next two arguments are passed to rstan
+                 warmup = min(1e4, floor(nsamples/10)),
+                 full.stan.out = FALSE)
+
+```
+``rstan`` typically throws a number of exceptions which are usually harmless.  The ``MADPop`` package lists ``rstan`` as a dependency, such that its sophisticated tuning mechanism is exposed.  Optionally, ``hUM.post`` returns the entire ``rstan`` output (``full.stan.output = TRUE``), which can be run through ``rstan``'s MCMC convergence diagnostics.
+
+```{r setup3, ref.label = "bxp", echo = FALSE, fig.keep = "none"}
+```
+
+By setting the ``rhoId`` argument of ``hUM.post``, the ``fit0`` object contains samples from $p(\aa, \rr_{12} \mid \Y, H_0)$.  Boxplots of the `r nbxp` highest posterior probability genotypes in the common distribution $\rr_{12}$ are displayed below:
+```{r bxp, fig.width = 7, fig.height = 3.5}
+rho.post <- fit0$rho[,1,]   # p(rho12 | Y)
+# sort genotype counts by decreasing order
+rho.count <- colSums(Xsuff$tab[popId,])
+rho.ord <- order(colMeans(rho.post), decreasing = TRUE)
+
+# plot
+nbxp <- 50            # number of genotypes for which to make boxplots
+clrs <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2",
+          "#D55E00", "#CC79A7")
+rho.ct <- rho.count[rho.ord[1:nbxp]]
+rho.lgd <- unique(sort(rho.ct))
+rho.box <- rho.post[,rho.ord[1:nbxp]]
+par(mar = c(5,4.5,.5,.5)+.1, cex.axis = .7)
+boxplot(x = rho.box,
+        las = 2, col = clrs[rho.ct+1], pch = 16, cex = .2)
+title(xlab = "Genotype", line = 4)
+title(ylab = expression(p(bold(rho)[(12)]*" | "*bold(Y))))
+legend("topright", legend = rev(rho.lgd), fill = rev(clrs[rho.lgd+1]),
+       title = "Counts", ncol = 2, cex = .8)
+```
+
+### Calculating the Posterior P-Value
+
+This is calculated analogously to the bootstrapped p-value, by generating $M$ contingency tables with $\Y_k^{(m)} \ind \textrm{Multinomial}(N_k, \rr_{12}^{(m)}$, $m = 1, \ldots, M$.  However, for each contingency table, the common probability vector $\rr_{12}^{(m)}$ is different, corresponding to a random draw from $p(\rr_{12} \mid \Y, H_0)$.  The test statistic $T^{(m)}$ is then calculated and we have
+$$
+\pvp = \frac 1 M \sum_{m=1}^M \delta(T^{(m)} \ge T_{\textrm{obs}}).
+$$
+$\pvp$ is calculated with **MADPop** as follows:
+```{r pvpost, cache = FALSE}
+system.time({
+  T.post <- UM.eqtest(N1 = N1, N2 = N2, p0 = rho.post, nreps = 1e4,
+                      verbose = FALSE)
+})
+# posterior p-value
+pv.post <- rowMeans(t(T.post) >= T.obs)
+```
+We can now compare the three types of p-values (asymptotic, bootstrapped, posterior) for each test statistic ($\mathcal X$ and $\Lambda$):
+```{r pvtable, echo = FALSE}
+pv.tab <- cbind(asy = pv.asy, boot = pv.boot, post = pv.post)
+pv.tab <- signif(pv.tab*100, 2)
+colnames(pv.tab) <- c("Asymptotic", "Bootstrap", "Posterior")
+rownames(pv.tab) <- c("$\\mathcal X$", "$\\Lambda$")
+kable(pv.tab, digits = 2, caption = "p-value ($\\times100\\%$)")
+```
+
+We see that $\pvp$ is much more conservative than $\pvb$.
+
+## Future Work
+
+Here we used a completely unconstrained Multinomial model for the genotype counts, in the sense that the only restriction on $\rr_k$ is that $\rho_{ki} \ge 0$ and $\sum_{i=1}^C \rho_{ki} = 1$.  However, it is possible to impose genetic constraints such as Hardy-Weinberg equilibrium, preferential mating, etc., which effectively reduce the degrees of freedom of $\rr_k$ below $C-1$.  In this case, the closed-form likelihood $\LL(\aa \mid \Y)$ is typically unavailable, but the **stan** code can easily be modified to sample from $p(\aa, \RR \mid \Y)$, where $\RR = (\rr_1, \ldots, \rr_K)$.  We hope to feature some of these extensions to the basic Dirichlet-Multinomial model in the next version of **MADPop**.
+
+
+<!-- ```{r, echo = FALSE} -->
+<!-- # kable(as.data.frame(as.list(count0)))   # counts in each lake -->
+<!-- ``` -->
+
+## References

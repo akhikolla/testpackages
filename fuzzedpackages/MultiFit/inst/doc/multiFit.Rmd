@@ -1,0 +1,333 @@
+---
+title: "MultiFIT: Multiscale Fisher's Independence Test for Multivariate Dependence"
+author: "S. Gorsky and L. Ma"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{MultiFit}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+The `MultiFit` package includes several functions, of which the most important are:
+<ol>
+<li>`MultiFit`: the function that runs the test of independence of two random vectors, the algorithm comprising of multiscale $2\times2$ univariate tests of discretized margins and multiple testing adjustments. At each resolution, recursively, tests whose p-values are below a pre-set threshold are chosen and smaller portions of the sample space that correspond to those are explored in higher resolutions. The function returns a list object that contains details of the performed tests, p-values corrected according to the selected multiple testing procedure for all tests, and global p-values for the null hypothesis that the two random vectors are independent.</li>
+<li>`multiSummary`: a function that returns and plots the most significant $2\times2$ univariate tests of discretized margins.</li>
+<li>`multiTree`: a function that generates a directed acyclic graph where nodes are $2\times2$ univariate tests of discretized margins. An edge from one test to another indicates the the latter test is performed on half the portion of the sample space on which the former was perofrmed.</li>
+</ol>
+
+## Examples
+
+### First Example:
+#### Generate Data:
+```{r, fig.show='hold'}
+set.seed(1)
+# Generate data for two random vectors, each of dimension 2, 300 observations:
+n=300
+x = matrix(0, ncol=2, nrow=n)
+y = matrix(0, ncol=2, nrow=n)
+
+# x1 and y1 are i.i.d Normal(0,1):
+x[,1]=rnorm(n)
+y[,1]=rnorm(n)
+    
+# x2 is a Uniform(0,1):  
+x[,2]=runif(n)
+
+# and y2 is depends on x2 as a noisy sine function:
+y[,2]=sin(5*pi*x[,2]) + 0.6*rnorm(n)
+
+plot(x[,1],y[,1], col="grey", pch="x", xlab="x1", ylab="y1")
+plot(x[,1],y[,2], col="grey", pch="x", xlab="x1", ylab="y2")
+plot(x[,2],y[,1], col="grey", pch="x", xlab="x2", ylab="y1")
+plot(x[,2],y[,2], col="grey", pch="x", xlab="x2", ylab="y2")
+```
+
+#### Run the Test:
+```{r}
+library(MultiFit)
+fit = multiFit(x=x, y=y)
+fit$p.values
+```
+
+In order to get a better sense of the workings of the function, choose `verbose=TRUE`:
+```{r}
+# Data may also be transferred to the function as a single list:
+xy = list(x=x,y=y)
+fit = multiFit(xy, verbose=TRUE)
+```
+
+The output details the number of tests performed at each resolution. The default testing method for the marginal $2\times2$ contingency tables is Fisher's exact test. Several global test statistics are reported:
+<ul>
+<li> Mean of $-log(\text{p-values})$
+<li> Mean of top 4 $-log(\text{p-values})$
+<li> Mean of $-log(\text{p-values with mid-p correction})$
+<li> Mean of top 4 $-log(\text{p-values with mid-p correction})$). 
+</ul>
+These are not associated with p-values until we genrate a permutation null distribution for them using `permNullTest`. The default multiple testing adjustments methods we use are Holm's method on the original p-values (`H`), Holm's method on the mid-p corrected p-values (`Hcorrected`) and a Modified Holm (`MH`)^[The latter is the most powerful and computationaly intense of the three]. The p-value for the global null hypothesis that $\mathbf{x}$ is independent of $\mathbf{y}$ is reported for each adjustment method.
+
+#### Summarize Results (1):
+In order to get a sense of the specific marginal tests that are significant at the `alpha=0.005` level, we may use the function `multiSummary`:
+```{r, fig.show='hold'}
+multiSummary(xy=xy, fit=fit, alpha=0.05)
+```
+
+In <span style="color: grey">grey</span> and <span style="color: orange">orange</span> are all data points outside the cuboid we are testing. In <span style="color: orange">orange</span> are the points that were in the cuboid if we were not to condition on the margins that are visible in the plot. In <span style="color: red">red</span> are the points that are inside the cuboid after we condition on all the margins, including those that are visible in a plot. The <span style="color: blue">blue lines</span> delineate the quadrants along which the discretization was performed: we count the number of red points in each quadrant, treat these four numbers as a $2\times2$ contingency table and perform a 1-degree of freedom test of independence on it (default test: Fisher's exact test).
+
+#### Summarize Results (2):
+We may also draw a directed acyclic graph where nodes represent tests as demonstrated above in the `multiSummary` output. An edge from one test to another indicates that the latter test is performed on half the portion of the sample space on which the former was performed. Larger nodes correspond to more extreme p-values for the test depicted in it (storing the output as a `pdf` file):
+```{r}
+# And plot a DAG representation of the ranked tests:
+library(png)
+library(qgraph)
+multiTree(xy=xy, fit=fit, filename="first_example")
+```
+
+We see that, in agreement with the output of the `multiSummary` function, nodes 32, 44 and 48 (which correspond to tests 32, 44 and 48) are the largest compared to the other nodes.
+
+#### Test More Cuboids:
+In the default setting, `p_star`, the fixed threshold for $p$-values of tests that will be further explored in higher resolutions, is set to $(D_x\cdot D_y\cdot \log_2(n))^{-1}$. We may choose, e.g., `p_star=0.1`, which takes longer. In this case the `MultiFit` identifies more tables with adjusted p-values that are below `alpha=0.005`. However, the global adjusted p-values are less extreme than when performing the `MultiFit` with fewer tests:
+```{r}
+fit1 = multiFit(xy, p_star = 0.1, verbose=TRUE)
+multiSummary(xy=xy, fit=fit1, alpha=0.005, plot.tests=FALSE)
+```
+
+In order to perform the test even more exhaustively, one may:
+```{r, eval=F}
+# 1. set p_star=Inf, running through all tables up to the maximal resolution
+# which by default is set to log2(n/100):
+ex1 = multiFit(xy, p_star = 1)
+
+# 2. set both p_star=1 and the maximal resolution R_max=Inf.
+# In this case, the algorithm will scan through higher and higher resolutions,
+# until there are no more tables that satisfy the minimum requirements for 
+# marginal totals: min.tbl.tot, min.row.tot and min.col.tot (whose default values 
+# are presented below):
+ex2 = multiFit(xy, p_star = 1, R_max=Inf,
+               min.tbl.tot = 25L, min.row.tot = 10L, min.col.tot = 10L)
+
+# 3. set smaller minimal marginal totals, that will result in testing 
+# even more tables in higher resolutions:
+ex3 = multiFit(xy, p_star = 1, R_max=Inf,
+               min.tbl.tot = 10L, min.row.tot = 4L, min.col.tot = 4L)
+```
+
+### A Local Signal:
+`MultiFit` excels in locating very localized signals.
+
+#### Generate a Local Signal:
+```{r, fig.show='hold'}
+# Generate data for two random vectors, each of dimension 2, 800 observations:
+n=800
+x = matrix(0, ncol=2, nrow=n)
+y = matrix(0, ncol=2, nrow=n)
+
+# x1, x2 and y1 are i.i.d Normal(0,1):
+x[,1]=rnorm(n)
+x[,2]=rnorm(n)
+y[,1]=rnorm(n)
+
+# y2 is i.i.d Normal(0,1) on most of the space:
+y[,2]=rnorm(n)
+# But is linearly dependent on x2 in a small portion of the space:
+w=rnorm(n)
+portion.of.space = x[,2]>0 & x[,2]<0.7 & y[,2]>0 & y[,2]<0.7
+y[portion.of.space,2] = x[portion.of.space,2]+(1/12)*w[portion.of.space]
+xy.local = list(x=x, y=y)
+```
+
+#### Search for It and Summarize the Results:
+Truly local signals may not be visible to our algorithm in resolutions that are lower than the one that the signal is embedded in. In order to cover all possible tests up to a given resolution (here: resolution 4), we use the parameter `R_star=4` (from resolution 5 onwards, only tables with $p$_values below `p_star` will be further tested):
+```{r, fig.show='hold'}
+fit.local = multiFit(xy=xy.local, R_star=4, verbose=TRUE)
+multiSummary(xy=xy.local, fit=fit.local, plot.margin=TRUE, pch="`")
+```
+
+### A Signal that is Spread Between More than 2 Margins:
+`MultiFit` also has the potential to identify complex conditional dependencies in multivariate signals.
+
+#### Generate Data and Examine Margins:
+Take $\mathbf{x}$ and $\mathbf{y}$ to be each of three dimensions, with 700 data points. We first generate a marginal circle dependency: $x_1$, $y_1$, $x_2$, and $y_2$ are all i.i.d standard normals. Take $x_3=\cos(\theta)+\epsilon$, $y_3=\sin(\theta)+\epsilon'$ where $\epsilon$ and $\epsilon'$ are i.i.d $\mathrm{N}(0,(1/10)^2)$ and $\theta\sim \mathrm{Uniform}(-\pi,\pi)$. I.e., the original dependency is between $x_3$ and $y_3$.
+
+```{r, fig.show='hold'}
+# Marginal signal:
+
+# Generate data for two random vectors, each of dimension 3, 800 observations:
+n=800
+x = matrix(0, ncol=3, nrow=n)
+y = matrix(0, ncol=3, nrow=n)
+
+# x1, x2, y1 and y2 are all i.i.d Normal(0,1)
+x[,1]=rnorm(n)
+x[,2]=rnorm(n)
+y[,1]=rnorm(n)
+y[,2]=rnorm(n)
+    
+# x3 and y3 form a noisy circle:
+theta = runif(n,-pi,pi)
+x[,3] = cos(theta) + 0.1*rnorm(n)
+y[,3] = sin(theta) + 0.1*rnorm(n)
+
+par(mfrow=c(3,3))
+par(mgp=c(0,0,0))
+par(mar=c(1.5,1.5,0,0))
+for (i in 1:3) {
+  for (j in 1:3) {
+    plot(x[,i],y[,j], col="black", pch=20, xlab=paste0("x",i), ylab=paste0("y",j),
+         xaxt="n", yaxt="n")
+  }
+}
+```
+
+Next, rotate the circle in $\pi/4$ degrees in the $x_2$-$x_3$-$y_3$ space by applying:
+
+$\left[\begin{matrix}\cos(\pi/4) & -sin(\pi/4) & 0\\\sin(\pi/4) & cos(\pi/4) & 0\\
+0 & 0 & 1\end{matrix}\right]\left[\begin{matrix}| & | & |\\X_2 & X_3 & Y_3\\| & | & |\end{matrix}\right]$
+
+I.e., once rotated the signal is 'spread' between $x_2$, $x_3$ and $y_3$, and harder to see through the marginal plots.
+```{r, fig.show='hold'}
+# And now rotate the circle:
+phi = pi/4
+rot.mat = matrix(c(cos(phi), -sin(phi),  0,
+                   sin(phi),  cos(phi),  0,
+                   0,         0,         1), nrow=3, ncol=3)
+xxy = t(rot.mat%*%t(cbind(x[,2],x[,3],y[,3])))
+
+x.rtt = matrix(0, ncol=3, nrow=n)
+y.rtt = matrix(0, ncol=3, nrow=n)
+
+x.rtt[,1] = x[,1]
+x.rtt[,2] = xxy[,1]
+x.rtt[,3] = xxy[,2]
+y.rtt[,1] = y[,1]
+y.rtt[,2] = y[,2]
+y.rtt[,3] = xxy[,3]
+
+par(mfrow = c(3,3))
+par(mgp = c(0,0,0))
+par(mar = c(1.5,1.5,0,0))
+for (i in 1:3) {
+  for (j in 1:3) {
+    plot(x.rtt[,i],y.rtt[,j], col = "black", pch = 20, xlab = paste0("x", i),
+         ylab = paste0("y", j), xaxt = "n", yaxt = "n")
+  }
+}
+
+xy.rtt.circ = list(x = x.rtt, y = y.rtt)
+```
+
+#### Run the Test and Summarize the Data:
+Choose `R_star` to be 2 to cover exhaustively all resolutions up to 2, and `rnd=FALSE` to consider all tests whose $p$-value is below `p_star`.
+```{r, fig.show='hold'}
+fit.rtt.circ = multiFit(xy = xy.rtt.circ, R_star = 2, verbose = TRUE)
+
+multiSummary(xy = xy.rtt.circ, fit = fit.rtt.circ, alpha = 0.001)
+```
+
+Notice how the signal is detected both in the $x_3$-$y_3$ plane and the $x_2$-$y_3$ plane. 
+
+### A Superimposed Signal:
+Here we examine `MultiFit`'s ability to 
+<ol>
+<li> detect a signal that is comprised of two sine waves in different frequencies 
+<li> given a third dimension that determines which data points belong to which wave, to see if our algorithm successfully identifies this relation. 
+</ol>
+
+We take $\mathbf{x}$ to be a two dimensional random variable and $\mathbf{y}$ to be one dimensional, all with 550 data points. Define $x_1\sim U(0,1)$, $x_2\sim Beta(0.3,0.3)$ independent of $x_1$, and define:
+
+$Y = \begin{cases}
+\sin(10\cdot x_1) + \epsilon, & \text{if }x_2 > 0.75\\
+\sin(40\cdot  x_1) + \epsilon, & \text{if }x_2\leq0.75
+\end{cases}$
+
+#### Generate the Signal:
+```{r, fig.show='hold'}
+n=600
+x=matrix(0,nrow=n,ncol=2)
+x[,1]=runif(n)
+x[,2]=rbeta(n,.3,.3)
+
+epsilon=rnorm(n,0,0.3)
+
+y=matrix(0,nrow=n,ncol=1)
+y[,1]=sin(10*x[,1])*(x[,2]>0.5)+sin(40*x[,1])*(x[,2]<=0.5)+epsilon
+
+par(mfrow=c(1,2))
+par(mgp=c(0,0,0))
+par(mar=c(1.5,1.5,0,0))
+plot(x[,1],y[,1], col="black", pch=20, xlab=paste0("x1"), ylab=paste0("y1"),
+         xaxt="n", yaxt="n")
+plot(x[,2],y[,1], col="black", pch=20, xlab=paste0("x2"), ylab=paste0("y1"),
+         xaxt="n", yaxt="n")
+```
+
+#### Test and Summarize:
+```{r, fig.show='hold'}
+fit.superimpose=multiFit(x=x, y=y)
+
+multiSummary(x=x, y=y, fit=fit.superimpose, alpha=0.0001)
+```
+
+Notice how the separate signals are identified in the 2$^{nd}$, 4$^{th}$, 6$^{th}$ and 7$^{th}$ ranking tests.
+
+### A Univariate Example:
+In the univariate case, Ma and Mao ([2017](https://arxiv.org/abs/1608.07885)) show that the p-values for Fisher's exact test are mutually independent under the null hypothesis of independence. Thus, we may also generate approximate and theoretical null distributions for the global test statistics that are much faster to compute, compared to the permutation null distribution.
+
+#### Generate Data:
+```{r, fig.show='hold'}
+n=300
+# y is a noisy quadratic function of x:
+x.uv = runif(n)
+y.uv = (x.uv-0.5)^2 + 0.2*rnorm(n)
+
+plot(x.uv,y.uv, col="grey", pch="x", xlab="x", ylab="y")
+
+xy.uv = list(x=x.uv, y=y.uv)
+```
+
+#### Test:
+```{r}
+# Apply the test and in addition compute approximate and theoretical null distributions for the global test statistics:
+fit.uv = multiFit(xy=xy.uv, uv.approx.null = TRUE, uv.exact.null = TRUE,
+                  uv.null.sim = 10000L, verbose=TRUE)
+```
+
+## Important Parameters for `MultiFit`:
+<ul>
+<li> `p_star`: A real number between 0 and 1, a fixed threshold. Only tests with p-value below `p_star` will be further halved and their descendants tested.
+<li> `R_max`: A positive integer (or Inf), the maximal number of
+resolutions to scan (algorithm will stop at a lower resolution if
+ all tables in it do not meet the criteria specified at `min.tbl.tot`,
+`min.row.tot` and `min.col.tot`. The default value for the `R_max` is $\lfloor\log_2(n/10)\rfloor$ where $n$ is the number of observations in the vectors.
+<li> `R_star`: A positive integer, if set to an integer between 0 and `R_max`, all tests up to and including resolution `R_star`
+will be performed (algorithm will stop at a lower resolution than requested if
+all tables in it do not meet the criteria specified at `min.tbl.tot`,
+`min.row.tot` and `min.col.tot`). For higher resolutions the children of tables with $p$-values more extreme than `p_star` will be selected.
+<li> `rank.transform`: Logical, if `TRUE`, marginal rank transform is
+performed on all margins of $\mathbf{x}$ and \mathbf{y}. If `FALSE`, all
+margins are scaled to 0-1 scale. When `FALSE`, the average and top
+statistics of the negative logarithm of the p-values are only computed
+for the univariate case.
+<li> `test.method`: String, choose "Fisher" for Fisher's exact test (slowest), "chi.sq" for $\chi^2$ test, "LR" for likelihood-ratio test and "norm.approx" for approximating the hypergeometric distribution with a normal distribution (fastest).
+<li> `correct`: Logical, if `TRUE` compute mid-p corrected p-values for
+Fisher's exact test, or Yates corrected p-values for the $\chi^2$ test,
+or Williams corrected p-values for the likelihood-ratio test.
+<li> `min.tbl.tot`: Non-negative integer, the minimal number of observations
+per table below which a p-value for a given table will not be computed.
+<li> `min.row.tot`: Non-negative integer, the minimal number of observations
+for row totals in the $2\times2$ contingency tables below which a
+contingency table will not be tested.
+<li> `min.col.tot`: Non-negative integer, the minimal number of observations
+for column totals in the $2\times2$ contingency tables below which a
+contingency table will not be tested.
+<li> `p.adjust.methods`: String, choose between `"H"` for Holm, `"Hcorrected"` for Holm with the correction as specified in `correct`, or `"MH"` for Modified-Holm (for Fisher's exact test only).
+<li> `compute.all.holm`: Logical, if `FALSE`, only global p-value is
+computed (may be faster, especially when Modified-Holm correction is used). If `TRUE` adjusted p-values are computed for all tests.
+<li> `cutoff`: Numerical between 0 and 1, an upper limit for the p-values that are to be adjusted (the lower the cutoff - the fewer computations are required for the Modified Holm method).
+<li> `top.max.ps`: Positive integer, report the mean of the top `top.max.ps` order statistics of the negative logarithm of all p-values.
+<li> `uv.approx.null`: Logical, in a univariate case, if `TRUE` and the testing method is either Fisher's exact test or the normal approximation of the hypergeometric distribution, an approximate null distribution for the global test statistics is simulated.
+<li> `uv.exact.null`: Logical, in a univariate case, if `TRUE` and the
+testing method is either Fisher's exact test or the normal approximation of
+the hypergeometric distribution, a theoretical null distribution for the global
+test statistics is simulated.
+<li> `uv.null.sim`: Positive integer, the number of simulated values to be computed in a univariate case when a theoretical or approximate null distribution is simulated.
+</ul>

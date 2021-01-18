@@ -1,0 +1,148 @@
+---
+title: "Introduction to fastpos"
+author: "Johannes Titz"
+date: "August, 2020"
+output: rmarkdown::html_vignette
+bibliography: "library.bib"
+csl: apa.csl
+vignette: >
+  %\VignetteIndexEntry{Introduction to fastpos}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  cache = TRUE
+)
+```
+The R package *fastpos* provides a fast algorithm to calculate the required sample size for a Pearson correlation to stabilize within a sequential framework [@schonbrodt2013;@schonbrodt2018]. Basically, one wants to find the sample size at which one can be sure that 1-α percent of many studies will fall into a specified corridor of stability around an assumed population correlation and stay inside that corridor if more participants are added to the study. For instance, find out *how many* participants per study are required so that, out of 100k studies, 90% would fall into the region between .4 to .6 (a Pearson correlation) and not leave this region again when more participants are added (under the assumption that the population correlation is .5). This sample size is also referred to as the *critical point of stability* for the specific parameters.
+
+This approach is related to the AO-method of sample size planning [e.g. @algina2003] and as such can be seen as an alternative to power analysis. Unlike AO, the concept of *stability* incorporates the idea of sequentially adding participants to a study. Although the approach is young, it has already attracted a lot of interest in the psychological research community, which is evident in over 800 citations of the original publication [@schonbrodt2013]. Still, to date, there exists no easy way to use the stability approach for individual sample size planning because there is no analytical solution to the problem and a simulation approach is computationally expensive with $\mathcal{O}(n^2)$. The presented package overcomes this limitation by speeding up the calculation of correlations and achieving $\mathcal{O}(n)$. For typical parameters, the theoretical speedup should be at least around a factor of 250. An empirical benchmark for a typical scenario even shows a speedup of about 400, paving the way for a wider usage of the *stability* approach (see https://github.com/johannes-titz/fastpos).
+
+## Using *fastpos*
+Since you have found this page, I assume you either want to (1) calculate the critical point of stability for your own study or (2) explore the method in general. If this is the case, read on and you should find what you are looking for. Let us first load the package and set a seed for reproducibility:
+
+```{r setup}
+library(fastpos)
+set.seed(19950521)
+```
+
+In most cases you will just need the function **find_critical_pos** which will  give you the critical point of stability for your specific parameters.
+
+Let us reproduce Schönbrodt and Perugini's quite famous and oft-cited table of the critical points of stability for a precision of 0.1. We reduce the number of studies to 10k so that it runs fairly quickly.
+
+```{r message=TRUE, warning=TRUE, paged.print=TRUE}
+find_critical_pos(rhos = seq(.1, .7, .1), sample_size_max = 1e3,
+                  n_studies = 10e3)
+```
+
+The results are very close to Schönbrodt and Perugini's table (see https://github.com/nicebread/corEvol). Note that a warning is shown, because in some simulations the corridor of stability was not reached. As long as this number is low, this should not affect the estimates much. But if you want to get more accurate estimates, then increase the maximum sample size.
+
+If you want to dig deeper, you can have a look at the functions that **find_critical_pos** builds upon. **simulate_pos** is the workhorse of the package. It calls a C++ function to calculate correlations sequentially and it does this pretty quickly (but you know that already, right?). A rawish approach would be to create a population with **create_pop** and pass it to **simulate_pos**:
+
+```{r fig.height=4.8, fig.width=6.4}
+pop <- create_pop(0.5, 1000000)
+pos <- simulate_pos(x_pop = pop[,1],
+                    y_pop = pop[,2],
+                    n_studies = 10000,
+                    sample_size_min = 20,
+                    sample_size_max = 1000,
+                    replace = T,
+                    lower_limit = 0.4,
+                    upper_limit = 0.6)
+hist(pos, xlim = c(0, 1000), xlab = c("Point of stability"),
+     main = "Histogram of points of stability for rho = .5+-.1")
+quantile(pos, c(.8, .9, .95), na.rm = T)
+```
+
+Note that no warning message appears if the corridor is not reached, but instead an NA value is returned. Pay careful attention if you work with this function, and adjust the maximum sample size as needed.
+
+**create_pop** creates the population matrix by using a method described on SO (https://stats.stackexchange.com/questions/15011/generate-a-random-variable-with-a-defined-correlation-to-an-existing-variables/15040#15040). This is a much simpler way than Schönbrodt and Perugini's approach, but the results do not seem to differ. If you are interested in how population parameters (e.g. skewness) affect the point of stability, you should instead refer to the population generating functions in Schönbrodt and Perugini's work.
+
+## Parallelization
+
+Since version 0.4.0 *fastpos* supports multiple cores. My first attempts to implement this were quite unsuccessful because of several reasons: (1) Higher-level parallelism in R makes it difficult to show progress in C++, which is where the important and time-demanding calculations happen (2) some parallelizing solutions do not work on all operating systems (e.g. mcpbapply) (3) overhead can be quite large, especially for a small number of simulation runs.
+
+I thought the best solution is is to directly parallelize in C++. I tried to do it with *RcppThread*, but in the end this was even slower than singlethreading. I assume that a more experienced C++ programmer could make it work but to me parallelizing in C++ feels a bit like torture.
+
+My final solution was quite simple and pragmatic: to use *futures*. I divide the number of studies by the available cores, then start n_cores - 1 futures with n_studies/n_cores simulations each in a multisession plan. Meanwhile the main R process also starts a simulation, wich shows a progress bar in C++. All simulations end at approximately the same time, the progress bar finishes and the futures resolve. The points of stability are combined and the rest of the program works as for the singlethreaded version.
+
+Speed benefits are non-existent for a small numbers of studies, since *fastpos* is already too fast:
+
+```{r parallel1, message=FALSE, warning=FALSE}
+onecore <- function() {find_critical_pos(0.5)}
+multicore <- function() {find_critical_pos(0.5, n_cores = future::availableCores())}
+microbenchmark::microbenchmark(onecore(), multicore(), times = 10)
+```
+
+When increasing the number of studies, the benefit becomes visible, but the difference is not gigantic:
+
+```{r parallel2, message=FALSE, warning=FALSE}
+onecore <- function() {find_critical_pos(0.5, n_studies = 1e5)}
+multicore <- function() {find_critical_pos(0.5, n_studies = 1e5,
+                                           n_cores = future::availableCores())}
+microbenchmark::microbenchmark(onecore(), multicore(),
+                               times = 10)
+```
+
+The test was done on my local computer with 4 cores.
+
+## How fast is *fastpos*?
+In the introduction I boldly claimed that *fastpos* is much faster than the original implementation of Schönbrodt and Perugini (*corEvol*). The theoretical argument goes as follows:
+
+*corEvol* calculates every correlation from scratch. If we take the sum formula for the correlation coefficient
+
+$$r_{xy} = \frac{n\sum x_i y_i - \sum x_i \sum y_i}
+{\sqrt{n\sum x_i^2-(\sum x_i)^2} 
+ \sqrt{n\sum y_i^2-(\sum y_i)^2}}$$
+
+we can see that several sums are calculated, each consisting of adding up $n$ (the sample size) terms. This has to be done for every sample size from the minimum to the maximum one. Thus, the total number of added terms for one sum is:
+
+$$\sum _{n_\mathrm{min}}^{n_\mathrm{max}}n = \sum_{n=1}^{n_\mathrm{max}}n - \sum_{n=1}^{n_\mathrm{min}-1}n = n_\mathrm{max}(n_\mathrm{max}+1)/2 -(n_\mathrm{min}-1)(n_\mathrm{min}-1+1)/2$$
+
+On the other hand, *fastpos* calculates the correlation for the maximum sample size first. This requires to add $n$ numbers for one sum. Then it subtracts one value from this sum to find the correlation for the sample size $n-1$, which happens repeatedly until the minimum sample size is reached. Overall the total number of terms for one sum amounts to:
+
+$$n_\mathrm{max}+n_\mathrm{max}-n_\mathrm{min}$$
+
+The ratio between the two approaches is:
+
+$$\frac{n_\mathrm{max}(n_\mathrm{max}+1)/2 -(n_\mathrm{min}-1)n_\mathrm{min}/2}{2n_\mathrm{max}-n_\mathrm{min}} $$
+```{r eval=FALSE, include=FALSE}
+speedup <- function(n_max, n_min){
+  (n_max*(n_max+1)/2-n_min*(n_min-1)/2)/(2*n_max-n_min)
+}
+speedup(1000, 20)
+speedup2 <- function(n_max, n_min, cpos){
+  (n_max*(n_max+1)/2-n_min*(n_min-1)/2)/(2*n_max-cpos)
+}
+speedup2(1000, 20, 119)
+# get the 50% quantile to estimate how long on average it takes for fastpos to stop.
+```
+
+For the typically used $n_\mathrm{max}$ of 1000 and $n_\mathrm{min}$ of 20, we can expect a speedup of about 250. This is only an approximation for several reasons. First, one can stop the process when the corridor is reached, which is done in *fastpos* but not in *corEvol*. Second, the main function of *fastpos* was written in C++ (via *Rcpp*), which is much faster than R. In a direct comparison between *fastpos* and *corEvol* we can expect *fastpos* to be at least 250 times faster. For a quick empirical benchmark see the README-file of the package on github: https://github.com/johannes-titz/fastpos
+
+## FAQ
+### What does *fastpos* do if the corridor of stability is not reached for a simulation study?
+
+In this case *fastpos* will return an NA value for the point of stability. When calculating the quantiles, *fastpos* will use the maximum sample size, which is a more reasonable estimate than ignoring the specific simulation study altogether.
+
+### Why does *fastpos* produce different estimates to *corEvol*?
+
+If the same parameters are used, the differences are rather small. In general, differences cannot be avoided entirely due to the random nature of the whole process. Even if the same algorithm is used, the estimates will vary slightly from run to run. The other more important aspect is how studies are treated where the point of stability is not reached: *corEvol* ignores them, while *fastpos* assumes that the corridor was reached at the maximum sample size. Thus, if the parameters are the same, *fastpos* will tend to produce larger estimates, which is more accurate (and more conservative). But note that if the corridor of stability is not reached, then you should increase the maximum sample size. Previously, this was not feasible due to the computational demands, but with *fastpos* it usually can be done.
+
+## Issues and Support
+If you find any bugs, please use the issue tracker at:
+
+https://github.com/johannes-titz/fastpos/issues
+
+If you need answers on how to use the package, drop me an e-mail at johannes at titz.science or johannes.titz at gmail.com
+
+## Contributing
+Comments and feedback of any kind are very welcome! I will thoroughly consider every suggestion on how to improve the code, the documentation, and the presented examples. Even minor things, such as suggestions for better wording or improving grammar in any part of the package, are more than welcome.
+
+If you want to make a pull request, please check that you can still build the package without any errors, warnings, or notes. Overall, simply stick to the R packages book: https://r-pkgs.org/
+
+## References

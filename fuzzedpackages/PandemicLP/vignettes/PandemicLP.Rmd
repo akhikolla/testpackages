@@ -1,0 +1,88 @@
+---
+title: "PandemicLP"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{PandemicLP}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(PandemicLP)
+```
+
+In this vignette, we present the main functionality of the PandemicLP package. The package uses the theory presented in http://est.ufmg.br/covidlp/home/pt/. As the model evolves, new versions of the package are released. This vignette, however, aims to only show the five basic functions of the package.
+
+## Loading data
+
+Function `load_covid()` loads Covid-19 data from online repositories. The first argument is a string with the country's name. Use `country_list()` for a complete list of possibilities. The second argument is another string with the state's name *if* the country is "Brazil". Use `state_list()` for a similar list. Finally, you can use the last_date argument if you don't want to use all the data and compare the predictions with updated data. After loading the data using `load_covid()`, it can be plotted using the `plot` generic function.
+
+```{r, fig.asp=2/(sqrt(5)+1), fig.width=8, fig.align='center', warnings = FALSE}
+MGdata = load_covid("Brazil","MG")
+plot(MGdata)$new
+```
+
+External data can also be loaded and estimated using the package. For that purpose, it needs to be put in an adequate format. Please read `help("covid19BH")` for an example of using external data to fit and predict one of the package models.
+
+## Estimating model
+
+The model is estimated with function `pandemic_model`. It currently uses [rstan](https://github.com/stan-dev/rstan) to draw samples from the posterior distribution. The first argument can be either the output of the `load_covid()` function or a list with the proper elements. Customized control of the stan algorithm can be also set in this function. You can choose to fit the 'confirmed' or 'deaths' series. Use the option `covidLPconfig = TRUE` to use the same configuration of the app in https://dest-ufmg.shinyapps.io/app_COVID19/.
+
+```{r}
+# Commenting to reduce vignette runtime
+# MGestimated = pandemic_model(MGdata, case_type = "deaths", covidLPconfig = TRUE)
+# Load precomputed MCMC
+download.file("http://github.com/CovidLP/PandemicLP/raw/master/temp/PandemicLP.rda","./PandemicLP.rda")
+load("./PandemicLP.rda")
+```
+
+By calling the output of the function, a small summary of the estimation is given.
+
+```{r}
+MGestimated
+```
+
+Convergence diagnostics can be used on the 'fit' element of the output. In particular, the relevant parameters are 'a', 'b', 'c' and 'f'.
+
+```{r, fig.asp=2/(sqrt(5)+1), fig.align='center', fig.width=4}
+traceplot(MGestimated)+theme(legend.position = "")
+density(MGestimated)
+```
+
+Note: `traceplot` can be used directly on the output, without a reference to the 'fit' element nor the parameters.
+
+## Prediction
+
+In order to make the predictions using the model fitted from `pandemic_model`, use the `rstantools::posterior_predict` generic function. Also, set custom prediction horizons with options `horizonLong` and `horizonShort`. The difference is that the long term prediction uses daily predictions and the short term uses accumulated predictions.
+
+```{r}
+MGpredicted = posterior_predict(MGestimated,horizonLong=200)
+MGpredicted
+```
+
+The output can also be printed for a small summary. Note that the full predictive distribution sample is returned in this function.
+
+## Useful statistics
+
+Some useful statistics from the [CovidLP](http://est.ufmg.br/covidlp/home/pt/) app have been programmed into a function. Use this function to obtain short and long term predictions, predicted total number of cases, predicted peak date and the date when the pandemic is predicted to end.
+
+```{r}
+pandemic_stats(MGpredicted)
+```
+
+## Plotting
+
+Generic function `plot` can be used on the prediction to plot the predictions using the `plotly` package, whose figure is interactive. Up to two plots are outputted, which can be stored for later use.
+
+```{r, fig.asp=2/(sqrt(5)+1), fig.width=8, fig.align='center', warnings = FALSE}
+MGplots = plot(MGpredicted,term="both")
+MGplots$long
+MGplots$short
+```

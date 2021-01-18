@@ -1,0 +1,949 @@
+%\VignetteEngine{knitr::knitr_notangle}
+%\VignetteIndexEntry{Guide for using ISOpureR}
+
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage[sc]{mathpazo}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+\setcounter{secnumdepth}{2}
+\setcounter{tocdepth}{2}
+\usepackage{amsmath}
+\usepackage{url}
+\usepackage{color}
+\usepackage{tikz}
+%\usetikzlibrary{bayesnet}
+%\usetikzlibrary{arrows,shapes,calc}
+\usepackage[unicode=true,pdfusetitle,
+bookmarks=true,bookmarksnumbered=true,bookmarksopen=true,bookmarksopenlevel=2,
+breaklinks=false,pdfborder={0 0 1},backref=false,colorlinks=false]
+{hyperref}
+\hypersetup{
+pdfstartview={XYZ null null 1}}
+
+\begin{document}
+
+<<include=FALSE>>=
+library(knitr)
+opts_chunk$set(
+concordance=TRUE
+)
+@
+
+
+<<include=FALSE>>=
+library(knitr)
+opts_chunk$set(
+concordance=TRUE
+)
+@
+
+<<setup, include=FALSE, cache=FALSE>>=
+library(knitr)
+# set global chunk options
+opts_chunk$set(fig.path='figure/minimal-', fig.align='center', fig.show='hold')
+options(formatR.arrow=TRUE,width=90)
+@
+\title{A guide to using \emph{ISOpureR}}
+\author{Catalina V. Anghel}
+\maketitle
+
+\tableofcontents
+
+\newpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Background}
+ISOpure is a statistical model for deconvolution of mRNA microarray profiles of mixed tumor samples into the constituent normal and cancer profiles, as well as estimating the proportion of cancer content.  The model was developed by Quon et al. in \cite{Quon-ISOpure} and first implemented in MATLAB. The R package \emph{ISOpureR} keeps as close to the MATLAB implementation as possible. We will use `ISOpure' to refer to the algorithm in general and \emph{ISOpureR} to refer to the R package.  
+
+The full description of the model details (inputs, outputs, computation) is in \cite{Quon-ISOpure}. A summary of the changes made for the R implementation is given in \cite{Anghel-ISOpureR}. In particular, \emph{ISOpureR} is not yet tested to be back-compatible with ISOLATE \cite{Quon-ISOLATE}, the precursor to ISOpure.   
+
+\subsection{Statistical model}
+
+The motivating equation for the ISOpure model is the decomposition of a mixed tumor profile, specific to a particular patient $n$, into its healthy and cancer components.  By `profile', we mean an mRNA abundance profile, obtained using microarrays or RNA sequencing.  Therefore, given a tumor profile $\mathbf{t}_n$, we assume
+\[
+\mathbf{t}_n = \alpha_n \mathbf{c}_n + (1-\alpha_n) \mathbf{h}_n + \mathbf{e}_n, 
+\]
+where $\mathbf{c}_n$ is the personalized mRNA profile of the cancer, $\mathbf{h}_n$ is the profile of healthy tissue, $\alpha_n$ is the fraction of cancer, and $\mathbf{e}_n$ is the reconstruction error.  At this point we know only $\mathbf{t}_n$ for patients 1 to $N$, making the system underdetermined.
+
+Since patients do not necessarily have a matched tumor-normal sample, and the normal sample itself may contain noise or have a different composition from the healthy component inside the tumor sample, $\mathbf{h}_n$ is estimated from a known set of $R$ reference normal samples $\left\{\mathbf{b}_r\right\}_1^R$.  In general, $R < N$, where $N$ is the total number of patients. The equation now becomes
+\[
+\mathbf{t}_n = \alpha_n \mathbf{c}_n + \sum_{r=1}^{R} \theta_{n,r} \mathbf{b}_r + \, \mathbf{e}_n
+\]
+with the constraint that
+\[
+\alpha_n + \sum_{r=1}^R \theta_{n,r} = 1.
+\]
+Note that $0 < \alpha_n < 1$ and $0 < \theta_{n,r} <1$.
+
+However, instead of considering $\mathbf{c}_n$ and $\mathbf{b}_r$ as profiles, we will normalize them into probability distributions.  That is, divide each entry of  $\mathbf{b}_r$ by the sum of its elements.  Then the $g$th entry of $\mathbf{b}_r$  represents the probability of observing the transcript from gene $g$ if draw a random transcript from the $r$th healthy cell sample.  Repeat the procedure for $\mathbf{c}_n$.  The probability vector 
+\begin{equation}
+\hat{\mathbf{x}}_n = \alpha_n \mathbf{c}_n + \sum_{r=1}^R {\theta_{n,r} \mathbf{b}_r}
+\label{eqn:prob-distribution}
+\end{equation}
+gives the probability of observing a certain transcript from the mixed tumor sample of patient $n$. Thus, ISOpure represents the tumor profile as a sample from a multinomial distribution.  The discretized tumor profile $\mathbf{x}_n$ (obtained from rounding $\mathbf{t}_n$) represents a count vector from the corresponding multinomial distribution (with probability vector $\hat{\mathbf{x}}_n$) for that patient.  
+
+Finally, two regularization assumptions are used to avoid overfitting.  
+\begin{itemize}
+\item{The first, already noted, is that the healthy profile for a particular patient, $\mathbf{h}_n$, is assumed to be a convex combination of the reference healthy profiles $\left\{\mathbf{b}_r\right\}$.}
+\item{The second assumption is that the cancer profiles $\mathbf{c}_1, \mathbf{c}_2, \ldots, \mathbf{c}_N$ cluster together around a reference, or average cancer profile $\mathbf{m}$, an assumption that is more accurate when the cancer profiles are of the same sub-type.}
+\end{itemize}
+
+The full ISOpure model is defined as follows.  To simplify notation, the the vector $\boldsymbol{\theta}_n$ is of length $R+1$ containing the entries $\theta_{n,1}, \theta_{n,2}, \ldots, \theta_{n,R},  \alpha_n$.  
+
+\begin{align}
+\mathbf{B} &= [\mathbf{b}_1, \ldots, \mathbf{b}_R] \label{eqn:normal-vectors}\\ 
+\hat{\mathbf{x}} &= [\mathbf{B} \, \mathbf{c}_n] \boldsymbol{\theta}_n \label{eqn:prob-distribution-2}\\ 
+&& \nonumber \\
+p\left(\mathbf{x}_n|\mathbf{B}, \boldsymbol{\theta}_n, \mathbf{c}_n \right) &= \text{Multinomial}(\mathbf{x}_n|\hat{\mathbf{x}}_n) \label{eqn:multinomial}\\ 
+&& \nonumber \\
+p\left(\boldsymbol{\theta}_n| \boldsymbol{\nu} \right) &= \text{Dirichlet}\left(\boldsymbol{\theta}_n|\boldsymbol{\nu} \right) \label{eqn:theta-prior}\\
+p\left(\mathbf{c}_n|k_n,\mathbf{m} \right) &= \text{Dirichlet}\left(\mathbf{c}_n|k_n\mathbf{m} \right) \label{eqn:cancer-prior}\\
+p\left(\mathbf{m}|k', \mathbf{B}, \boldsymbol{\omega} \right) &= \text{Dirichlet}\left(\mathbf{m}|k'\mathbf{B} \boldsymbol{\omega} \right) \label{eqn:avg-cancer-prior}
+\end{align}
+
+Equation (\ref{eqn:normal-vectors}) represents the reference healthy profiles in matrix form, and equation (\ref{eqn:prob-distribution-2}) is simply (\ref{eqn:prob-distribution}) in matrix form.   
+
+In equations (\ref{eqn:theta-prior} - \ref{eqn:avg-cancer-prior}), the Dirichlet distribution is used for $\boldsymbol{\theta}_n$, $\mathbf{m}$, and $\mathbf{c}_n$, as they are all discrete probability distributions.  The hyper-parameters $\boldsymbol{\nu}_n$, $k_n\mathbf{m}$, and $k'\mathbf{B}\boldsymbol{\omega}$, determine both the mean of the distribution and the strength or concentration (how peaked the distribution is near the mean).  
+\begin{itemize}
+\item The easiest equation to understand is (\ref{eqn:cancer-prior}) where $\mathbf{m}$ is the mean of the distribution of $\mathbf{c}_n$'s, and $k_n$ is an estimated parameter determining the strength of the distribution (and how likely it is that a particular $\mathbf{c}_n$ will be very close to the mean $\mathbf{m}$).
+\item Equation (\ref{eqn:avg-cancer-prior}) forces the average/reference profile $\mathbf{m}$ to be close to a linear combination of normal profiles, as the cancer is likely to have a similar profile to the tissue of origin. 
+\item For equation  (\ref{eqn:theta-prior}), the hyper-parameter $\boldsymbol{\nu}$ gives weights to the coefficients of the healthy and cancer profiles.  The initialized coefficients give the healthy profile coefficients similar weight and a higher weight to the cancer fraction, $\alpha_n$ (the last entry of $\boldsymbol{\theta}_n$).  However, ten additional grid searches are performed at each iteration step, adjusting these values if necessary. 
+
+\end{itemize}
+ 
+The Bayesian network diagram is given in Figure \ref{fig:bayesian-network}.
+
+The goal of the algorithm is to maximize the complete likelihood function of this model:
+\[
+\mathbb{L} = p\left(\mathbf{m}|k', \mathbf{B}, \boldsymbol{\omega} \right) \prod_{n=1}^{N}{p\left(\mathbf{c}_n|k_n,\mathbf{m} \right)p\left(\boldsymbol{\theta}_n| \boldsymbol{\nu} \right) p\left(\mathbf{x}_n|\mathbf{B}, \boldsymbol{\theta}_n, \mathbf{c}_n \right)}.
+\]
+The two-step method is described in the next section. 
+
+\begin{figure}[!h]	
+	\centering
+		\includegraphics[width = 0.35\textwidth]{Figures/network-model.jpg}
+      \caption{{\bf{Bayesian network model of ISOpure.}} The graph represents the relationships between the variables in the ISOpure model, where the conditional probability of a given variable is only dependent on its parents in the graphs.  The shaded circles, $\boldsymbol{x}_n$ and $\boldsymbol{b}_r$, represent the observed variables. The estimated model parameters (unshaded circles) are conditioned on the estimated model hyperparameters (also unshaded).  The $N$ and $R$ in the corners of the plates (rectangles) indicate that the variables inside are repeated $N$ and $R$ times, once for each patient and healthy profile, respectively. \cite{Quon-ISOpure}}
+      \label{fig:bayesian-network}
+\end{figure}
+
+\subsection{Algorithm}
+
+The inputs to ISOpure are as follows:
+
+\begin{itemize}
+\item {\emph{Tumour matrix:}} A matrix where the columns $\mathbf{t}_1, \mathbf{t}_2, \ldots, \mathbf{t}_N$ represent the tumor microarray profiles of $N$ patients, where the preprocessing of the data is described in  \cite{Quon-ISOpure} and in Section \ref{section:tumor-microarray}. In particular, the intensities should \emph{not} be log-transformed.  The size of the matrix is $G \times N$ where $G$ is number of transcripts/features and $N$ is the number of patients. 
+\item  {\emph{Normal matrix:}} A matrix where the columns $\mathbf{b}_1, \mathbf{b}_2, \ldots, \mathbf{b}_R$ represent the microarray profiles from $R$ normal, healthy tissue samples.  The size of the matrix will be $G \times R$, where $R$ is expected to be less than $N$.
+\end{itemize}
+
+The ISOpure algorithm runs in two steps, which are summarized in Figure \ref{fig:isopure}.  Step 1, which we will refer to as the {\emph{Cancer Profile Estimation (CPE)}} step, Figure \ref{fig:CPE-flowchart}, estimates the average cancer profile $\mathbf{m}$, as well as the cancer fraction for each patient, $\alpha_n$.  Since we assume that $\mathbf{c}_n = \mathbf{m}$ for all cancer profiles, the CPE step maximizes 
+\[
+\mathbb{L} = p\left(\mathbf{m}|k', \mathbf{B}, \boldsymbol{\omega} \right) \prod_{n=1}^{N}p\left(\boldsymbol{\theta}_n| \boldsymbol{\nu} \right) p\left(\mathbf{x}_n|\mathbf{B}, \boldsymbol{\theta}_n, \mathbf{m} \right).
+\]
+Both steps perform a block coordinate descent using a conjugate gradient algorithm. The idea is to fix all variables except for one (or for a `block' of similar variables) and minimize the negative of the log likelihood only with respect to that one (or few) variables. 
+
+In the second {\emph{Patient Profile Estimation (PPE)}} step, Figure \ref{fig:PPE-flowchart}, the $\mathbf{c}_n$ are estimated, while  $\mathbf{m}$ and $\alpha_n$ are kept constant to the values from the CPE step.  The PPE step maximizes
+\[
+\mathbb{L} = \prod_{n=1}^{N}{p\left(\mathbf{c}_n|k_n, \mathbf{m} \right)p\left(\boldsymbol{\theta}_n| \boldsymbol{\nu} \right) p\left(\mathbf{x}_n|\mathbf{B}, \boldsymbol{\theta}_n, \mathbf{c}_n \right)}.
+\]
+
+\begin{figure}[!h]
+	\centering
+		\includegraphics[width = 0.8\textwidth]{Figures/isopure.jpg}
+		\caption{{\bf{ISOpure algorithm.}} {\bf{(A)}} The inputs to the algorithm are the tumor profiles of the patients $\left\{\mathbf{t}_n \right\}_1^N$ and healthy tissue profiles $\left\{\mathbf{b}_r \right\}_1^R$, where the $R < N$. {\bf{(B)}} The {\emph{Cancer Profile Estimation (CPE)}} step of ISOpure estimates the average cancer profile $\mathbf{m}$, as well as the cancer fraction for each patient, $\alpha_n$. {\bf{(C)}} The {\emph{Patient Profile Estimation (PPE)}} step estimates the personalized cancer profile $\mathbf{c}_n$ for each patient.  The values of $\alpha_n$ and $\mathbf{m}$ remain fixed in this step.  The healthy profiles, determined by the estimation of the coefficients $\theta_{n,r}$ are estimated in the CPE step, but are re-estimated in the the PPE step. \cite{Quon-ISOpure}} 
+		\label{fig:isopure}
+\end{figure}
+
+
+\tikzstyle{startstop} = [rectangle, rounded corners, text centered, text width=0.6\textwidth, minimum width=5cm, minimum height=1cm,text centered, draw=black, fill=red!30]
+\tikzstyle{process} = [rectangle, rounded corners, text centered, text width=0.75\textwidth, minimum height=1cm, text centered, draw=black, fill=blue!30]
+%\tikzstyle{process} = [rectangle, minimum width=3cm, minimum height=1cm, text centered, draw=black, fill=orange!30]
+\tikzstyle{decision} = [rectangle, rounded corners, minimum width=5cm, minimum height=1cm,  text centered, text width=0.6\textwidth, draw=black, fill=green!30]
+\tikzstyle{arrow} = [thick,->,>=stealth]
+\tikzstyle{line} = [ draw, -latex']  
+
+\begin{figure}[!ht]
+\centering
+\begin{tikzpicture}[node distance=1.5cm]
+
+% Nodes are all the steps of Cancer Prediction Step
+\node (start) [startstop] {Input $\left\{\mathbf{x}_n\right\}_1^N$, $\left\{\mathbf{b}_r\right\}_1^R$, Initialize model};
+\node (pro1) [process, below of=start] {\emph{Optimize $\mathbf{m}$:} \\ 
+        Minimize: $- \log p\left(\mathbf{m}|k', \mathbf{B}, \boldsymbol{\omega} \right)- \sum_{n=1}^{N} \log p\left(\mathbf{x}_n|\mathbf{B}, \boldsymbol{\theta}_n, \mathbf{m} \right)$ with respect to $\mathbf{m}$};
+\node (pro2) [process, below of=pro1] {\emph{Optimize $\boldsymbol{\theta}_n$:} \\ 
+        Minimize: $- \log p\left(\boldsymbol{\theta}_n| \boldsymbol{\nu} \right) - \log p\left(\mathbf{x}_n|\mathbf{B}, \boldsymbol{\theta}_n, \mathbf{m} \right)$.};
+\node (pro3) [process, below of=pro2] {\emph{Optimize $\boldsymbol{\nu}$:} \\ 
+        Minimize: $- \sum_{n=1}^{N} \log p\left(\boldsymbol{\theta}_n| \boldsymbol{\nu} \right) $.};
+\node (pro4) [process, below of=pro3] {\emph{Optimize $k'$:} \\ 
+        Minimize: $- \log p\left(\mathbf{m}|k', \mathbf{B}, \boldsymbol{\omega} \right)$.};
+\node (pro5) [process, below of=pro4] {\emph{Optimize $\boldsymbol{\omega}$:} \\ 
+        Minimize: $- \log p\left(\mathbf{m}|k', \mathbf{B}, \boldsymbol{\omega} \right)$.};
+\node (dec1) [decision, below of=pro5, yshift=-0.5cm] {Run at least 35 iterations.  Check if the change in log likelihood, \\
+$\mathbb{L} = p\left(\mathbf{m}|k', \mathbf{B}, \boldsymbol{\omega} \right) \prod_{n=1}^{N}p\left(\boldsymbol{\theta}_n| \boldsymbol{\nu} \right) p\left(\mathbf{x}_n|\mathbf{B}, \boldsymbol{\theta}_n, \mathbf{m} \right),$
+\\
+is smaller than a threshold; repeat up to 100 iterations otherwise.};
+
+% Arrows between the steps
+\draw [arrow] (start) -- (pro1);
+\draw [arrow] (pro1) -- (pro2);
+\draw [arrow] (pro2) -- (pro3);
+\draw [arrow] (pro3) -- (pro4);
+\draw [arrow] (pro4) -- (pro5);
+%\filldraw [gray] (9,-20) circle (2pt);
+%\filldraw [gray] (9,-30) circle (2pt);
+%\draw [arrow] (pro2.south east) .. controls (6,4) and (6,2).. (pro2.north east);
+\draw [arrow] (pro2.south east) to [out=-10,in=0] node[auto,swap]{\small $1 \le n \le N$} (pro2.north east);
+\draw [arrow] (pro5) -- (dec1);
+%\draw [arrow] (dec1)  (pro1);
+\draw [arrow] (dec1.west) |- ([xshift=-0.5cm,yshift=-1.5cm]pro5.south west) |- (pro1);
+%\path (pro2.east) edge[loop right] ();
+\end{tikzpicture}
+\caption{{\bf{Cancer Profile Estimation (CPE) step.}} The flowchart illustrates the algorithm for the CPE step of ISOpure.  At each step, the Polak-Ribi\`{e}re conjugate gradient method with Wolfe-Powell stopping criteria is used to estimate variables of the same type.  Each variable is estimated once during each iteration. }
+\label{fig:CPE-flowchart}
+\end{figure}
+
+\begin{figure}[!ht]
+\centering
+\begin{tikzpicture}[node distance=1.5cm]
+
+% Nodes are all the steps of Patient Profile Estimation Step
+\node (start) [startstop] {Input model from CPE step};
+\node (pro1) [process, below of=start] {\emph{Optimize $\mathbf{c}_n$:} \\ 
+        Minimize: $- p\left(\mathbf{c}_n|k_n, \mathbf{m} \right) - \log p\left(\mathbf{x}_n|\mathbf{B}, \boldsymbol{\theta}_n, \mathbf{c}_n \right)$};
+\node (pro2) [process, below of=pro1] {\emph{Optimize $\boldsymbol{\theta}_n$:} \\ 
+        Minimize: $- \log p\left(\boldsymbol{\theta}_n| \boldsymbol{\nu} \right) - \log p\left(\mathbf{x}_n|\mathbf{B}, \boldsymbol{\theta}_n, \mathbf{c}_n \right)$.};
+\node (pro3) [process, below of=pro2] {\emph{Optimize $\boldsymbol{\nu}$:} \\ 
+        Minimize: $- \sum_{n=1}^{N} \log p\left(\boldsymbol{\theta}_n| \boldsymbol{\nu} \right) $.};
+\node (pro4) [process, below of=pro3] {\emph{Optimize $\mathbf{k}$:} \\ 
+        Minimize: $- \sum_{n=1}^{N} \log p\left(\mathbf{c}_n|k_n , \mathbf{m} \right)$.};
+\node (dec1) [decision, below of=pro4, yshift=-0.5cm] {Run at least 35 iterations.  Check if the change in complete log likelihood, \\
+$\mathbb{L} = \prod_{n=1}^{N}{p\left(\mathbf{c}_n|k_n, \mathbf{m} \right)p\left(\boldsymbol{\theta}_n| \boldsymbol{\nu} \right) p\left(\mathbf{x}_n|\mathbf{B}, \boldsymbol{\theta}_n, \mathbf{c}_n \right)}$,
+\\
+is smaller than a threshold; repeat up to 100 iterations otherwise.};
+
+% Arrows between the steps
+\draw [arrow] (start) -- (pro1);
+\draw [arrow] (pro1) -- (pro2);
+\draw [arrow] (pro2) -- (pro3);
+\draw [arrow] (pro3) -- (pro4);
+\draw [arrow] (pro1.south east) to [out=-10,in=0] node[auto,swap]{\small $1 \le n \le N$} (pro1.north east);
+\draw [arrow] (pro2.south east) to [out=-10,in=0] node[auto,swap]{\small $1 \le n \le N$} (pro2.north east);
+\draw [arrow] (pro4) -- (dec1);
+\draw [arrow] (dec1.west) |- ([xshift=-0.5cm,yshift=-1.5cm]pro4.south west) |- (pro1);
+\end{tikzpicture}
+\caption{{\bf{Patient Profile Estimation (PPE) step.}} The flowchart illustrates the algorithm for the PPE step of ISOpure. The same minimization method is used as in the CPE step.  The values of $\alpha_n$ (the last entry of the vector $\boldsymbol{\theta}_n$) and $\mathbf{m}$ remain constant during this step.}
+\label{fig:PPE-flowchart}
+\end{figure}
+
+The outputs of \emph{ISOpureR} at each step are lists that we have called \texttt{ISOpureS1model} and \texttt{ISOpureS2model}, respectively.  They contain all the intermediate and hyper-parameters estimated by the models as well as the desired outputs.  The most important entries are the following:
+
+\begin{itemize}
+\item The tumor `purity' estimates, \texttt{ISOpureS1model\$alphapurities} and \texttt{ISOpureS2model\$alphapurities}. (The $\alpha$'s are estimated in the Cancer Profile Estimation step; the values of \texttt{alphapurities} from the CPE step are transferred to the model in the Patient Profile Estimation, so that \texttt{ISOpureS1model\$alphapurities} and \texttt{ISOpureS2model\$alphapurities} will be identical.) These are numerical vectors containing $N$ entries, $\alpha_1, \alpha_2, \ldots, \alpha_N$, of the estimated proportion of RNA in the tumor sample that was contributed by the cancer cells, for each patient. 
+\item  A matrix \texttt{ISOpureS2model\$cc\_cancerprofiles} where the columns $\mathbf{c}_1, \mathbf{c}_2, \ldots, \mathbf{c}_N$ represent the purified cancer profiles corresponding to each mixed tumor profile.  The size of the matrix will be $G \times N$, as for the tumor profiles.
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Preprocessing steps for raw microarray data}
+
+This section will cover the processing needed to transform raw microarray data (saved as .CEL files) into the format required by \emph{ISOpureR}.  The dataset used as an example is from the Bhattacharjee et al. lung adenocarcinoma study \cite{Bhattacharjee}, as the data is available online at \url{http://www.broadinstitute.org/mpr/lung/} (accessed January 20, 2015).
+
+\subsection{Load necessary libraries}
+
+The microarray assays for the Bhattacharjee dataset were performed using the Affimetrix platform.  To access methods for the Affymetrix oligonucleotide arrays, the "affy" package of Bioconductor is required, and must be loaded.  The details of the exact array (Affymetrix HGU95A v2) are listed in the methods of \cite{Bhattacharjee}; the corresponding Chip Definition File (CDF) library must also be loaded. The CDF file maps Probes (positions) into ProbeSets. 
+
+<<load-affy-1, eval=FALSE>>=
+# Install the affy library from bioconductor, if needed
+# source("http://bioconductor.org/biocLite.R");
+# biocLite("affy");
+
+# Load the library
+library("affy");
+
+# Install the R CDF package for the microarray that was used for the Bhattacharjee 
+# dataset, the Affymetrix HG-U95A v2 platform.
+# The library used is specific to the dataset analysed.
+# This library also maps the probes to the Entrez Gene ID's.
+library("hgu95av2hsentrezgcdf");
+
+# Save the name of the CDF (used later)
+cdf <- "hgu95av2hsentrezgcdf";
+@ 
+
+\subsection{Process .CEL files}
+\label{section:microarray}
+
+The tumor and normal .CEL files are located in a single directory, and will be processed together.  Thus, we have downloaded the Bhattacharjee lung adenocarcinoma and normal sample .CEL files, as well as the "Array-to-sample-mapping.txt" which has information on the sample names associated to tumor/normal.  
+
+<<process-microarray, eval=FALSE>>=
+# All .CEL files should be in one directory
+path.to.cel.files <- file.path("~", "Datasets", "LungCancer", "Bhattacharjee", 
+	"raw", "CEL");
+
+# List of all .CEL files in the directory
+affy.files <- dir(
+	path = path.to.cel.files,
+	# match all files that begin with "CL" 
+	# the .CEL filenames for the Bhattacharjee dataset begin with this string
+	pattern = "^CL",
+	# return only names of visible files
+	all.files=FALSE,
+	# return only file names, not relative file paths
+	full.names=FALSE,
+	# assume all are in given directory, not in any subdirectories
+	recursive=FALSE,
+	ignore.case=TRUE
+	)
+@
+
+Now we can return the expression values for those files.  However, the {\texttt{exprs}} function returns $\log_2$ mRNA abundance values.  For ISOpure, we need the normalized count of the number of copies of each transcript present in the sample, so the values are exponentiated. 
+
+<<process-microarray-2, eval=FALSE>>=
+# Change to directory where affy files are located, as it will be easier to run
+# justRMA thete
+setwd(path.to.cel.files);
+
+# Read .CEL files into an expression set
+rma.results <- justRMA(
+	filenames = affy.files,
+	cdfname = cdf
+	);
+
+# Return to working directory
+setwd(base.dir);
+
+# Return just the expression values
+# This will give you the log2 mRNA abundance dataset
+all.expression.data.log <- exprs(rma.results);
+
+# non-log-transformed data
+all.expression.data <- 2^(all.expression.data.log);
+@ 
+
+\subsection{Obtain tumor and normal expression data}
+
+Now, we just need to separate the data into the tumour and normal expression profiles. First use the array-to-sample mapping file to select the normal sample names. 
+
+<<separate-tumor-normal, eval=FALSE>>=
+path.to.sample.info <- file.path("~", "Datasets", "LungCancer", "Bhattacharjee", 
+	"raw", "Array-to-sample-mapping.txt");
+
+# read in array-to-sample info into a dataframe
+sample.info <- read.table(
+	file = path.to.sample.info,
+	sep = "\t",
+	header = TRUE,
+	as.is = TRUE
+	);
+
+# find which sample names correspond to normal samples and tumor samples
+normal.sample.names <- sample.info$scan[which("NORMAL"==sample.info$CLASS)];
+@
+
+Finally, separate the expression data.
+
+<<separate-tumor-normal-2, eval=FALSE>>=
+# select only the columns from all the expression data with filenames for 
+# the normal samples -- had to concatenate .CEL to the end
+normal.expression.data <- all.expression.data[ , paste0(normal.sample.names, '.CEL')];
+
+# omit all the columns with sample names from normal samples, to obtain
+# all tumour samples
+tumor.expression.data <- all.expression.data[, 
+	!(colnames(all.expression.data) %in% paste0(normal.sample.names, '.CEL'))];
+@
+
+\subsection{Further processing}
+
+The Bhattacharjee dataset has several replicates per patient (see the key to scan names in the online data) and for the data used in \cite{Quon-ISOpure} and \cite{Anghel-ISOpureR}, these were averaged.   There may be further processing required for a given dataset; more information on the Affymetrix oligonucleotide arrays can be found in the Bioconductor \texttt{affy} package \cite{affy}.  To simplify the example, we will apply \emph{ISOpureR} to all the replicates after the computation the RMA expression values and exponentiation performed in the code above, in Section \ref{section:microarray}.
+
+\subsection{Save expression data}
+\label{save-data}
+
+To save the expression data to file, use the \texttt{write.table} function in R, as below. 
+
+<<save-to-file-1, eval=FALSE>>=
+path.to.expression.dir <- file.path("~", "Datasets", "LungCancer", "Bhattacharjee", 
+	"expression");
+
+print("Writing tumor expression matrix...");
+write.table(
+	x = tumor.expression.data,
+	file = file.path(path.to.expression.dir, "Bhattacharjee_tumor_mRNA_abundance.txt"),
+	sep = "\t"
+	);
+
+print("Writing tumor expression matrix...");
+write.table(
+	x = normal.expression.data,
+	file = file.path(path.to.expression.dir, "Bhattacharjee_normal_mRNA_abundance.txt"),
+	sep = "\t"
+	);
+@
+
+\subsection{Run \emph{ISOpureR} on the expression data}
+
+The following section will outline the functions that run the \emph{ISOpureR} model on the data processed above.  This example takes a long time to run.  Section \ref{small-example} describes a smaller example applied to data included in the \emph{ISOpureR} library, with a shorter running time.   
+
+If we have just performed the microarray preprocessing, we can begin by loading the library and checking that both the tumor and normal expression data is in matrix form before running \emph{ISOpureR}.
+
+<<data-option, eval=FALSE>>=
+# Load ISOpureR library
+library(ISOpureR);
+
+# Check that data is in matrix form
+is.matrix(tumor.expression.data);
+# [1] TRUE
+is.matrix(normal.expression.data);
+# [1] TRUE
+@
+
+To run {\emph{ISOpureR}} from saved data, the only additional steps are to load the data from the file created in Section \ref{save-data}, which will result in two dataframes, and change these to matrices.
+
+<<load-data-option, eval=FALSE>>=
+# Load ISOpureR library
+library(ISOpureR);
+
+# Define path to the expression data
+path.to.expression.dir <- file.path("~", "Datasets", "LungCancer", "Bhattacharjee", 
+	"expression");
+
+# Load normal and tumor expression data
+normal.expression.data <- read.table(
+	file.path(path.to.expression.dir, "Bhattacharjee_normal_mRNA_abundance.txt"), 
+	header=TRUE, 
+	sep = "\t"
+	);
+
+tumor.expression.data <- read.table(
+	file.path(path.to.expression.dir, "Bhattacharjee_tumor_mRNA_abundance.txt"), 
+	header=TRUE, 
+	sep = "\t"
+	);
+
+# Make sure that data is in matrix form, since 
+# read.table() will load the data as dataframe
+normal.expression.data <- as.matrix(normal.expression.data);
+tumor.expression.data <- as.matrix(tumor.expression.data);
+@
+
+Now, in either case, we can run the two functions for the Cancer Profile Estimation and the Patient Profile Estimation of \emph{ISOpureR}. More details about these functions are given in Section \ref{small-example}.
+Aside from checking that the expression levels are all greater than 1, you may also want to check that the sum of the elements is similar across all profiles.  Finally, the tumour profiles should also be discretized 
+according to the statistical model, but the likelihood calculation should work without this step.
+
+<<run-isopure-now, eval=FALSE>>=
+# Check that expression levels are all greater than 1
+# As well, the minimum should not return NA or NaN
+min(normal.expression.data);
+min(tumor.expression.data);
+
+# For reproducible results, set the random seed
+set.seed(123);
+# Run ISOpureR Step 1 - Cancer Profile Estimation
+ISOpureS1model <- ISOpure.step1.CPE(
+	tumor.expression.data, 
+	normal.expression.data
+	);
+
+# For reproducible results, set the random seed
+set.seed(456);
+# Run ISOpureR Step 2 - Patient Profile Estimation
+ISOpureS2model <- ISOpure.step2.PPE(
+	tumor.expression.data, 
+	normal.expression.data,
+	ISOpureS1model
+	);
+@
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Applying {\emph{ISOpureR}} to a small example}
+\label{small-example}
+
+We will show how to use \emph{ISOpureR} with a small part of the lung adenocarcinoma expression data from Beer et al. \cite{Beer}, which is included with the package. Although the full dataset contains measured expression levels of 5151 transcripts in 86 patients, only data from 1000 transcripts and 30 patients is included with \emph{ISOpureR} to reduce the file size. The dataset also contains 10 reference healthy samples. 
+
+\subsection{Load and format data}
+
+The first step is to load the data and make sure that both the tumor data and the normal data are in matrix form, with the required dimensions.  
+
+<<load-data>>=
+# Load the library and the data included with the package
+# Data is not the full Beer dataset due to memory constraints
+library(ISOpureR);
+path.to.data <- paste0(file.path(system.file(package = "ISOpureR"), 'extdata', 'Beer'));  
+load(file.path(path.to.data , 'beer.normaldata.250.transcripts.RData'));
+load(file.path(path.to.data , 'beer.tumordata.250.transcripts.30.patients.RData'));
+
+# Check what the data looks like
+# The tumor data is rather large, so just look at the normal data for this example
+str(beer.normaldata);
+
+# Make sure that everything is in matrix form
+beer.normaldata <- as.matrix(beer.normaldata);
+beer.tumordata <- as.matrix(beer.tumordata);
+
+# Check that the minimum values are greater than 1, not NA, NaN
+min(beer.normaldata);
+min(beer.tumordata);
+
+# You may also want to check that the sums of the entries are similar
+apply(beer.normaldata, 2, sum);
+apply(beer.tumordata, 2, sum);
+
+# Check what the data looks like
+str(beer.normaldata);
+str(beer.tumordata);
+@
+
+\subsection{Run the Cancer Profile Estimation}
+
+The ISOpure model runs in two steps. To perform the first step of ISOpure, which will estimate the proportion of cancer cells, $\alpha_n$, for each patient, as well as an average cancer profile, type the following:
+
+<<run-step-1, eval=FALSE>>=
+# For reproducible results, set the random seed
+set.seed(123);
+# Run ISOpureR Step 1  - Cancer Profile Estimation
+ISOpureS1model <- ISOpure.step1.CPE(beer.tumordata, beer.normaldata);
+@ 
+
+ Note that the function names of these steps have changed from the MATLAB implementation, and from earlier versions of \emph{ISOpureR} (before v.1.0.14). The run time for both steps is about 20-30 minutes for the small dataset (but can take several days for large datasets).  The output to the screen will look something like this:
+
+<<output-step-1, eval=FALSE>>=
+# INFO [2015-07-17 18:45:07] Initializing model...
+# INFO [2015-07-17 18:45:07] MIN_KAPPA set to 9571.36859512808
+# INFO [2015-07-17 18:45:07] Running ISOpure step 1: CPE - Cancer Profile Estimation Step
+# INFO [2015-07-17 18:45:07] --- optimizing mm...
+# INFO [2015-07-17 18:45:11] --- optimizing theta...
+# INFO [2015-07-17 18:45:19] --- optimizing vv...
+# INFO [2015-07-17 18:45:19] --- optimizing kappa...
+# INFO [2015-07-17 18:45:19] --- optimizing omega...
+# INFO [2015-07-17 18:45:19] Total log likelihood: -213825284.681581
+# INFO [2015-07-17 18:45:19] iter: 1/35, loglikelihood: -213825284.681581,
+# INFO [2015-07-17 18:45:19]        change: Inf
+# INFO [2015-07-17 18:45:19] --- optimizing mm...
+# INFO [2015-07-17 18:45:23] --- optimizing theta...
+# INFO [2015-07-17 18:45:30] --- optimizing vv...
+# INFO [2015-07-17 18:45:30] --- optimizing kappa...
+# INFO [2015-07-17 18:45:30] --- optimizing omega...
+# INFO [2015-07-17 18:45:30] Total log likelihood: -213802936.615107
+# INFO [2015-07-17 18:45:30] iter: 2/35, loglikelihood: -213802936.615107,
+# INFO [2015-07-17 18:45:30]        change: 0.000104526471096462
+# INFO [2015-07-17 18:45:30] --- optimizing mm...
+# INFO [2015-07-17 18:45:34] --- optimizing theta...
+# INFO [2015-07-17 18:45:41] --- optimizing vv...
+# INFO [2015-07-17 18:45:41] --- optimizing kappa...
+# INFO [2015-07-17 18:45:41] --- optimizing omega...
+# INFO [2015-07-17 18:45:41] Total log likelihood: -213796857.989424
+# INFO [2015-07-17 18:45:41] iter: 3/35, loglikelihood: -213796857.989424,
+# INFO [2015-07-17 18:45:41]        change: 2.84317821142625e-05
+
+@
+
+The optimization of the loglikelihood will run for at least 35 iterations, and if the change in loglikelihood is greater than $10^{-7}$, up to 100 iterations.  At the end of this process  you may see warnings as below.
+
+<<warnings-step-1, eval=FALSE>>=
+warnings()
+# Warning messages:
+# 1: In sqrt(B * B - A * d1 * (x2 - x1)) : NaNs produced
+# 2: In sqrt(B * B - A * d1 * (x2 - x1)) : NaNs produced
+# 3: In sqrt(B * B - A * d1 * (x2 - x1)) : NaNs produced
+@
+
+These are nothing to worry about.  They are part of the optimization calculations, and when a \texttt{NaN} is produced, the algorithm detects that it has not converged and simply adjusts the step size. 
+
+The list \texttt{ISOpureS1model} which is returned will contain all the information on parameters estimated from the first step.   If you would like to see what the list looks like without performing all the calculations, you can load the saved result of the Cancer Profile Estimation from the data folder.  The most important list entry is the vector of estimated fractions of cancer content, \texttt{alphapurities}.  
+
+<<ISOpureS1model-structure>>=
+# Load the saved ISOpureS1model for this example, if time is an issue
+load(file.path(path.to.data , 'beer.ISOpureS1model.250.transcripts.30.patients.RData'));
+ls();
+
+# Check that what ISOpureS1model looks like
+str(ISOpureS1model);
+
+# Look at the alphapurities vector in particular
+ISOpureS1model$alphapurities;
+@
+
+\subsection{Customizing output to screen}
+
+The package \texttt{futile.logger} is used for logging information \cite{futile-logger}.  If you would prefer not to see the \texttt{"INFO"} output, the logging threshold can be changed to \texttt{"WARN"} (showing only warnings) or \texttt{"FATAL"} (showing only fatal errors) by changing the \texttt{logging.level} argument passed to the function as shown in the example below.  
+
+<<run-step-1-warn, eval=FALSE>>=
+bad.normaldata <- beer.normaldata;
+bad.normaldata[5,2] <- 0;
+# Run ISOpureR Step 1 - default logging level
+ISOpureS1model <- ISOpure.step1.CPE(beer.tumordata, bad.normaldata);
+# WARN [2015-07-17 18:58:39] Minimum element in input matrix BB is 0 -- 
+#      setting all zeros to smallest non-zero element, 123.063834982327
+# WARN [2015-07-17 18:58:39] Minimum element in input matrix PP is 0 -- 
+#      setting all zeros to smallest non-zero element, 123.063834982327
+# INFO [2015-07-17 18:58:39] Initializing model...
+# INFO [2015-07-17 18:58:39] MIN_KAPPA set to 9571.36859512808
+# INFO [2015-07-17 18:58:39] Running ISOpure step 1: CPE - Cancer Profile Estimation Step
+# INFO [2015-07-17 18:58:39] --- optimizing mm...
+# INFO [2015-07-17 18:58:44] --- optimizing theta..
+# (etc.)
+					
+# Run ISOpureR Step 1 - logging level set to "WARN"
+ISOpureS1model <- ISOpure.step1.CPE(beer.tumordata, bad.normaldata, logging.level="WARN");
+# WARN [2015-07-17 18:59:16] Minimum element in input matrix BB is 0 -- 
+#    setting all zeros to smallest non-zero element, 123.063834982327
+# WARN [2015-07-17 18:59:16] Minimum element in input matrix PP is 0 -- 
+#    setting all zeros to smallest non-zero element, 123.063834982327
+# (etc.)			
+@
+
+Also, if you are using the library \texttt{futile.logger}, the logging threshold (as well as other options, such as where to redirect the output) can be specified for the whole package, and will over-ride the options for a particular function.
+
+<<futile-logger-info, eval=FALSE>>=
+# load the library
+library("futile.logger")
+
+# this will not affect the ISOpureR package
+flog.threshold("WARN")
+# this will make all functions in ISOpureR output only warnings,
+# regardless of the argument logging.level
+flog.threshold("WARN", name='ISOpureR')
+# reset threshold to INFO
+flog.threshold("INFO", name='ISOpureR')
+
+# send the output to a file, saved to current directory
+flog.appender(appender.file('ISOpureR-testing.log'), name='ISOpureR')
+# reset appender to output to screen
+flog.appender(appender.console(), name='ISOpureR')
+@
+
+\subsection{Run the Patient Profile Estimation}
+
+Once the Cancer Profile Estimation is complete, to perform the second step of ISOpure, which will estimate the patient-specific cancer mRNA expression profiles, call the following function:
+
+<<run-step-2, eval=FALSE>>=
+# For reproducible results, set the random seed
+set.seed(456);
+
+# Run ISOpureR Step 2 - Patient Profile Estimation
+ISOpureS2model <- ISOpure.step2.PPE(
+					beer.tumordata, 
+					beer.normaldata, 
+					ISOpureS1model
+					);
+@ 
+
+The screen output will look very similar to the output in the previous step.  Again, the \texttt{logging.level} argument can be changed to adjust the output.
+
+<<output-step-2, eval=FALSE>>=
+# INFO [2015-07-17 18:55:21] Initializing model ...
+# INFO [2015-07-17 18:55:21] MIN_KAPPA set to 669612.15072434
+# INFO [2015-07-17 18:55:21] Running ISOpure step 2: PPE - Patient Profile Estimation Step
+# INFO [2015-07-17 18:55:21] --- optimizing cc...
+# INFO [2015-07-17 18:55:29] --- optimizing theta...
+# INFO [2015-07-17 18:55:37] --- optimizing vv...
+# INFO [2015-07-17 18:55:37] --- optimizing kappa...
+# INFO [2015-07-17 18:55:38] Total log likelihood: -213314739.637299
+# INFO [2015-07-17 18:55:38] iter: 1/35, loglikelihood: -213314739.637299,
+# INFO [2015-07-17 18:55:38]        change: Inf
+# INFO [2015-07-17 18:55:38] --- optimizing cc...
+# INFO [2015-07-17 18:55:45] --- optimizing theta...
+# INFO [2015-07-17 18:55:53] --- optimizing vv...
+# INFO [2015-07-17 18:55:53] --- optimizing kappa...
+# INFO [2015-07-17 18:55:55] Total log likelihood: -212880711.000007
+# INFO [2015-07-17 18:55:55] iter: 2/35, loglikelihood: -212880711.000007,
+# INFO [2015-07-17 18:55:55]        change: 0.00203883496655811
+@ 
+
+Again, \texttt{ISOpureS2model} which is returned by the function \texttt{ISOpure.step2.PPE} will contain all the information on parameters estimated in the Patient Profile Estimation step.  The matrix \texttt{ISOpureS2model\$cc\_cancerprofiles} will contain the patient-specific cancer profiles and is of the same dimension as the \texttt{tumordata} matrix.  It is also of the same scale, (\emph{i.e.} although ISOpureS2 treats purified cancer profiles as parameters of a multinomial distribution, we re-scale them to be on the same scale as the input tumor profiles).  The $n$-th column corresponds to the profile for the $n$-th patient.
+
+<<ISOpureS2model-structure>>=
+# Load the saved ISOpureS2model for this example, if time is an issue
+# Note that the data has been rounded to 5 decimals (for CRAN memory requirements)
+load(file.path(
+		path.to.data,
+		'beer.ISOpureS2model.250.transcripts.30.patients.RData'
+		)
+	);
+
+# Check that what ISOpureS2model looks like
+str(ISOpureS2model);
+
+# Check what the cancer profiles look like
+str(ISOpureS2model$cc_cancerprofiles);
+
+# Look at the first entries in the cancer profile for a particular patient, 
+# say patient 3
+head(ISOpureS2model$cc_cancerprofiles[ ,3]);
+@
+
+\subsection{Run the Patient Profile Estimation}
+
+After cancer profile estimation is complete and patient-specific cancer mRNA expression profiles are determined, tumour adjacent cell mRNA expression can be determined by calling the following function:
+
+@
+tacdata <- ISOpure.calculate.tac(beer.tumordata,ISOpureS2model$cc_cancerprofiles,ISOpureS2model$alphapurities)
+@
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Visualize results from small example}
+\label{visualization}
+
+This section gives simple examples for visualizing the output from \emph{ISOpureR}, using base R plotting functions.  The dataset included in the package is incomplete; thus the figures are for illustrative purposes only, and the choice of plotting functions will be directed by the analysis required for a specific project.  In particular, the main use of \emph{ISOpureR} has been to generate purified profiles which can be used for prognostic biomarkers, summarized in Section \ref{gene-signatures}. Before starting, we must load the data.
+
+<<load-data-for-figures>>=
+# Load data
+library(ISOpureR);
+
+path.to.data <- paste0(file.path(system.file(package = "ISOpureR"), 'extdata', 'Beer'));
+load(file.path(path.to.data , 'beer.tumordata.250.transcripts.30.patients.RData'));
+load(file.path(path.to.data , 'beer.normaldata.250.transcripts.RData'));
+load(file.path(path.to.data , 'beer.ISOpureS2model.250.transcripts.30.patients.RData'));
+@ 
+
+\subsection{Proportion of cancer}
+
+The first graph is a histogram of the cancer proportions in the patients' tumors, estimated using ISOpure.
+
+<<"figuresetup", cache=FALSE, include=FALSE>>=
+require("knitr")
+opts_chunk$set(fig.path='Examples/', dev='png', warning=FALSE, dpi=80, fig.align='center')
+@
+
+<<cellularity-histogram, include=TRUE, fig.height=4, fig.width=4>>=
+beer.cellularity <- ISOpureS2model$alphapurities;
+
+# Histogram of the estimated proportions of cancer in the samples
+hist(
+	x = beer.cellularity,
+	main = "Tumour cellularity histogram",
+	xlab = "Proportion of cancer",
+	);
+@
+
+If estimates of the tumor cellularity are available from pathologists, it may be useful to compare the estimates from the pathologists with the estimated proportions from ISOpureR.  Since for the Beer dataset we do not have pathologist estimates of cancer fraction, we compare instead the fractions estimated by the algorithm using the full Beer dataset to the smaller dataset included in the \emph{ISOpureR} package.
+
+<<cellularity-comparison-plot, include=TRUE, fig.height=4, fig.width=3.75>>=
+# Load estimated proportions from full dataset
+alphapurities.full.dataset <- read.table(
+	file=file.path(path.to.data, "alphapurities_full_dataset.txt"),
+ 	sep="\t",
+ 	header = TRUE
+ 	);
+
+# Plot comparison of proportions estimated with package dataset versus 
+# 'real' proportions estimated with full Beer dataset, both using ISOpureR.
+# If pathologist estimates exist for the dataset, use those as the 'real' values.
+
+# Make title smaller
+par(cex.main = 1);
+plot(
+	x = alphapurities.full.dataset$alphapurities,
+	y = ISOpureS2model$alphapurities,
+	asp = 1,
+	xlab = expression(paste(alpha, ", full Beer dataset")),
+	ylab = expression(paste(alpha, ", ISOpureR package dataset")),
+	main = "Comparison of estimates with ISOpureR"
+	);
+@
+	
+\subsection{Tumor and cancer profiles}
+
+The following two figures are of heatmaps of the tumor profiles (\emph{i.e.} pre-purification) and of the cancer profiles (\emph{i.e.} post-purification).  Even with 1000 probes, the heatmaps are cluttered, thus the log intensity for only the first 100 probes is shown for each. 
+
+<<tumordata-heatmap, include=TRUE, fig.height=5, fig.width=5, fig.cap='Tumor mRNA abundance profiles. Only 100 probes are shown, the log intensity is used as input, and the data is automatically scaled by the heatmap function.'>>=
+# Define nicer heatmap colours
+heatmapcol <- topo.colors(100);
+
+# Choose just the first 100 probes, as there are too many to plot all
+beer.tumordata.subset <- beer.tumordata[1:100, ];
+
+# Plot heatmap of tumor profiles
+heatmap(
+	x = log2(beer.tumordata.subset),
+	margins = c(3,5),
+	col = heatmapcol,
+	xlab = "Patient ID",
+	ylab = "Probes",
+	cexRow = 0.5
+	);
+@
+
+The code for generating the heatmap for the cancer profiles is very similar. 
+
+<<cancerdata-heatmap, include=TRUE, fig.height=5, fig.width=5, fig.cap='Cancer mRNA abundance profiles.  Only 100 probes are shown, the log intensity is used as input, and the data is automatically scaled by the heatmap function.'>>=
+# Look at just the cancer profiles from the data produced by the Patient Profile 
+# Estimation step
+beer.cancerdata <- ISOpureS2model$cc_cancerprofiles;
+colnames(beer.cancerdata) <- 1:30;
+
+probeset.names <- read.table(
+	file.path(path.to.data, "probeset_names.txt"),
+	header = FALSE,
+	col.names=c("probe"),
+	as.is = TRUE
+	);
+rownames(beer.cancerdata) <- probeset.names$probe;
+
+# Choose just the first 100 probes, as there are too many to plot all
+beer.cancerdata.subset <- beer.cancerdata[1:100, ];
+
+# Plot heatmap of cancer profiles
+heatmap(
+	x = log2(beer.cancerdata.subset),
+	margins = c(3,5),
+	col = heatmapcol,
+	xlab = "Patient ID",
+	ylab = "Probes",
+	cexRow = 0.5
+	);
+@
+
+The previous heatmaps are not very useful for interpreting the data; including all probesets prevents the probeset names from being distinguishable on the graph, and it is difficult to quantify the differences between the tumor and cancer heatmaps.  
+
+One possible example of an analysis is to look at the genes differentially expressed between the tumor and the normal profiles, and again at those differentially expressed between the ISOpure-purified cancer profiles and the normal profiles. The following code runs though this analysis, using the limma package \cite{limma} and inspired from \cite{heatmap-website}.  However, recall that this is simply a toy example, as we are using the small dataset included in the package.
+
+<<tumor-normal-heatmap, eval=FALSE>>=
+# Install the limma package from bioconductor, if needed
+source("http://bioconductor.org/biocLite.R");
+biocLite("limma");
+
+# Load the library
+library("limma");
+
+# Concatenate tumor and normal data into a large expression matrix
+expr.data <- log2(cbind(beer.tumordata, beer.normaldata));
+
+# First 30 profiles correspond to tumour, last 10 to normal
+pheno.data <- data.frame(
+	Tumor = factor(c(rep("Yes", 30), rep("No", 10)))
+	);
+
+# Create design matrix
+design   <- model.matrix(~ -1 + Tumor, pheno.data);
+contrast <- makeContrasts(TumorYes-TumorNo, levels = design);
+
+# Fit the linear model
+fit1 <-lmFit(expr.data, design);
+fit2 <- contrasts.fit(fit1, contrast);
+fit3 <- eBayes(fit2);	
+
+# Select only genes that are differentially expressed between tumor 
+# and normal, default using the Holm method
+selected  <- p.adjust(fit3$p.value) < 0.05;
+expr.selected <- expr.data[selected, ];
+
+# Add an color bar indicating whether the sample is tumor or normal	
+color.map <- function(tumor.status) { if (tumor.status=="Yes") "#FF0000" else "#0000FF" };
+patientcolors <- unlist(lapply(pheno.data$Tumor, color.map));
+
+# Draw heatmap
+heatmap(
+	x = expr.selected,
+	margins = c(3,4.5),
+	col = heatmapcol,
+	xlab = "Patient ID",
+	ylab = "Probes",
+	cexRow = 0.5,
+	ColSideColors=patientcolors
+	);	
+@
+
+\begin{figure}[!h]
+	\centering
+		\includegraphics[width = 0.7\textwidth]{Figures/tumor-normal-comparison-heatmap.png}
+		\caption{A heatmap comparing differential expression between tumour samples (red columns) and normal samples (blue columns).  Only 85 transcript levels are differentially expressed between cancer and normal, Holm-adjusted p-value of 0.05.} 
+		\label{fig:tumor-normal}
+\end{figure}
+
+The code for comparing differential expression between purified cancer profiles and normal profiles is similar. 
+
+<<cancer-normal-heatmap, eval=FALSE>>=
+# Concatenate cancer and normal data into a large expression matrix
+expr.data <- log2(cbind(beer.cancerdata, beer.normaldata));
+pheno.data <- data.frame(
+	Tumor = factor(c(rep("Yes", 30), rep("No", 10)))
+	);
+
+# Fit the linear model
+design   <- model.matrix(~ -1 + Tumor, pheno.data);
+contrast <- makeContrasts(TumorYes-TumorNo, levels = design);
+
+fit1 <-lmFit(expr.data, design);
+fit2 <- contrasts.fit(fit1, contrast);
+fit3 <- eBayes(fit2);
+
+# More genes are differentially expressed, so decrease the threshold
+selected  <- p.adjust(fit3$p.value) < 0.01;
+expr.selected <- expr.data[selected, ];
+
+# Draw heatmap
+heatmap(
+	x = expr.selected,
+	margins = c(3,2),
+	col = heatmapcol,
+	xlab = "Patient ID",
+	ylab = "Probes",
+	# too many genes to show
+	labRow = "", 
+	ColSideColors=patientcolors
+	);	
+@
+
+\begin{figure}[!h]
+	\centering
+		\includegraphics[width = 0.7\textwidth]{Figures/cancer-normal-comparison-heatmap.png}
+		\caption{A heatmap comparing differential expression between cancer samples purified using \emph{ISOpureR} (red columns) and normal samples (blue columns).  In this case, 496 transcript levels are differentially expressed between cancer and normal, Holm-adjusted p-value of 0.01.}
+		\label{fig:tumor-normal}
+\end{figure}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Generating gene signatures}
+\label{gene-signatures}
+
+Purified cancer profiles have been shown to generate better prognostic  gene signatures compared to mixed tumor profiles \cite{Quon-ISOpure}. The purified cancer profiles $\mathbf{c}_n$ (rather than the mixed tumor profiles $\mathbf{t}_n$) were used to train a Cox proportional hazards (CPH) model to predict survival data for each patient.  To test, another dataset of samples were purified using ISOpure and then used to compute the risk for each patient, using the CPH model parameters learned on the training set. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{thebibliography}{1}
+
+\bibitem{Quon-ISOpure}
+Quon, G., Haider, S., Deshwar, A.G., Cui, A., Boutros, P.C., Morris, Q., Computational purification of individual tumor gene expression profiles leads to significant improvements in prognostic prediction. Genome Medicine, 5:29 (2013).
+\url{http://www.ncbi.nlm.nih.gov/pubmed/23537167}.
+
+\bibitem{Quon-ISOLATE}
+Quon, G., Morris, Q., ISOLATE: A computational strategy for identifying the primary origin of
+cancers using high-throughput sequencing. Bioinformatics, 25:2882-2889 (2009)
+\url{http://www.ncbi.nlm.nih.gov/pmc/articles/PMC2781747}
+
+\bibitem{Anghel-ISOpureR}
+(submitted) Anghel C.V., Quon, G.  Haider S., Nguyen F., Deshwar A.G., 
+Morris Q.D., Boutros P.C., ISOpureR: an R implementation of a
+computational purification algorithm of mixed tumor profiles.  BMC Bioinformatics. (2015)
+
+\bibitem{Bhattacharjee}
+Bhattacharjee, A.  and Richards, W. G.  and Staunton, J.  and Li, C.  and Monti, S.  and Vasa, P.  and Ladd, C.  and Beheshti, J.  and Bueno, R.  and Gillette, M.  and Loda, M.  and Weber, G.  and Mark, E. J.  and Lander, E. S.  and Wong, W.  and Johnson, B. E.  and Golub, T. R.  and Sugarbaker, D. J.  and Meyerson, M., Classification of human lung carcinomas by m{R}{N}{A} expression profiling reveals distinct adenocarcinoma subclasses. Proc. Natl. Acad. Sci. U.S.A. 98(24) 13790--13795 (2001) \url{http://www.pnas.org/content/98/24/13790.full}
+
+\bibitem{affy}
+Gautier, L.  and Cope, L.  and Bolstad, B. M.  and Irizarry, R. A., affy--analysis of {A}ffymetrix {G}ene{C}hip data at the probe level. Bioinformatics. 20(3), 307-315 (2004)
+\url{http://www.ncbi.nlm.nih.gov/pubmed/12118244}
+
+\bibitem{Beer}
+Beer, D.G., Kardia, S.L., Huang, C.C., Giordano, T.J., Levin, A.M., Misek, D.E., Lin, L., Chen, G., Gharib, T.G., Thomas, D.G., Lizyness, M.L., Kuick, R., Hayasaka, S., Taylor, J.M., Iannettoni, M.D., Orringer, M.B., Hanash, S., Gene-expression profiles predict survival of patients with lung adenocarcinoma. Nat. Med. 8(8), 816-824 (2002)
+\url{http://www.ncbi.nlm.nih.gov/pubmed/12118244}
+
+\bibitem{futile-logger}
+	Rowe, B.L.Y. futile.logger: A Logging Utility for R. (2015), R package version 1.4.1,
+    \url{http://CRAN.R-project.org/package=futile.logger}
+
+\bibitem{limma}
+Ritchie, M.E., Phipson, B., Wu, D., Hu Y., Law C.W., Shi W. and Smyth G.K. limma powers differential expression analyses for RNA-sequencing and microarray studies. Nucleic Acids Research, 43 (2015) doi: 10.1093/nar/gkv007.
+
+\bibitem{heatmap-website}
+Cock, P. Molecular Organisation and Assembly in Cells (Using R to draw a Heatmap from Microarray Data)
+\url{http://www2.warwick.ac.uk/fac/sci/moac/people/students/peter_cock/r/heatmap/} (accessed 2015-03-19)
+
+\end{thebibliography}
+\end{document}

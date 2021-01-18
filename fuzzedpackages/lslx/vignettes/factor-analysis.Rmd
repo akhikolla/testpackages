@@ -1,0 +1,155 @@
+---
+title: "Semi-Confirmatory Factor Analysis"
+author: "Po-Hsien Huang"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Semi-Confirmatory Factor Analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+```{r comment = "", message = FALSE, setup, include=FALSE}
+options(digits = 3)
+options(width = 100)
+```
+
+In this example, we will show how to use `lslx` to conduct semi-confirmatory factor analysis.
+The example uses data `HolzingerSwineford1939` in the package `lavaan`.
+Hence, `lavaan` must be installed.
+
+## Model Specification
+In the following specification, `x1` - `x9` is assumed to be measurements of 3 latent factors: `visual`, `textual`, and `speed`.
+```{r comment = "", message = FALSE}
+model_fa <- "visual  :=> x1 + x2 + x3
+             textual :=> x4 + x5 + x6
+             speed   :=> x7 + x8 + x9
+             visual  :~> x4 + x5 + x6 + x7 + x8 + x9
+             textual :~> x1 + x2 + x3 + x7 + x8 + x9
+             speed   :~> x1 + x2 + x3 + x4 + x5 + x6
+             visual  <=> fix(1)* visual
+             textual <=> fix(1)* textual
+             speed   <=> fix(1)* speed"
+```
+The operator `:=>` means that the LHS latent factors is defined by the RHS observed variables.
+In particular, the loadings are freely estimated.
+The operator `:~>` also means that the LHS latent factors is defined by the RHS observed variables, but these loadings are set as penalized coefficients.
+In this model, `visual` is mainly measured by `x1` - `x3`, `textual` is mainly measured by `x4` - `x6`, and `speed` is mainly measured by `x7` - `x9`.
+However, the inclusion of the penalized loadings indicates that each measurement may not be only influenced by one latent factor. 
+The operator `<=>` means that the LHS and RHS variables/factors are covaried.
+If the LHS and RHS variable/factor are the same, `<=>` specifies the variance of that variable/factor.
+For scale setting, `visual <=> fix(1) * visual` makes the variance of `visual` to be zero.
+Details of model syntax can be found in the section of Model Syntax via `?lslx`.
+
+
+## Object Initialization
+`lslx` is written as an `R6` class.
+Every time we conduct analysis with `lslx`, an `lslx` object must be initialized.
+The following code initializes an `lslx` object named `lslx_fa`.
+```{r comment = "", message = FALSE}
+library(lslx)
+lslx_fa <- lslx$new(model = model_fa, data = lavaan::HolzingerSwineford1939)
+```
+Here, `lslx` is the object generator for `lslx` object and `$new()` is the build-in method of `lslx` to generate a new `lslx` object.
+The initialization of `lslx` requires users to specify a model for model specification (argument `model`) and a data to be fitted (argument `sample_data`).
+The data set must contain all the observed variables specified in the given model.
+In is also possible to initialize an `lslx` object via sample moments (see `vignette("structural-equation-modeling")`).
+
+To see the model specification, we may use the `$extract_specification()` method.
+```{r comment = "", message = FALSE}
+lslx_fa$extract_specification()
+```
+The row names show the coefficient names. 
+The most two relevant columns are `type` which shows the type of the coefficient and `start` which gives the starting value.
+In `lslx`, many `extract` related methods are defined. 
+`extract` related methods can be used to extract quantities stored in `lslx` object.
+For details, please see the section of Extract-Related Methods via `?lslx`.
+
+## Model Fitting
+After an `lslx` object is initialized, method `$fit()` can be used to fit the specified model to the given data.
+```{r comment = "", message = FALSE}
+lslx_fa$fit(penalty_method = "mcp", 
+            lambda_grid = seq(.01, .60, .01), 
+            delta_grid = c(1.5, 3.0, Inf))
+```
+The fitting process requires users to specify the penalty method (argument `penalty_method`) and the considered penalty levels (argument `lambda_grid` and `delta_grid`).
+In this example, the `mcp` penalty is implemented on the lambda grid `seq(.01, .60, .01)` and delta grid `c(1.5, 3, Inf)`.
+Note that in this example `lambda = 0` is not considered because it may result in unidentified model.
+All the fitting result will be stored in the `fitting` field of `lslx_fa`.
+
+
+## Model Summarizing
+Unlike traditional SEM analysis, `lslx` fits the model into data under all the penalty levels considered.
+To summarize the fitting result, a selector to determine an optimal penalty level must be specified.
+Available selectors can be found in the section of Penalty Level Selection via `?lslx`.
+The following code summarize the fitting result under the penalty level selected by Bayesian information criterion (BIC).
+```{r comment = "", message = FALSE, fig.width = 24, fig.height = 14}
+lslx_fa$summarize(selector = "bic")
+```
+In this example, we can see that most penalized coefficients are estimated as zero under the selected penalty level except for `x9<-visual`, which shows the benefit of using the semi-confirmatory approach.
+The `summarize` method also shows the result of significance tests for the coefficients.
+In `lslx`, the default standard errors are calculated based on sandwich formula whenever raw data is available.
+It is generally valid even when the model is misspecified and the data is not normal.
+However, it may not be valid after selecting an optimal penalty level.
+
+
+## Visualization
+`lslx` provides four methods for visualizing the fitting results.
+The method `$plot_numerical_condition()` shows the numerical condition under all the penalty levels.
+The following code plots the values of `n_iter_out` (number of iterations in outer loop), `objective_gradient_abs_max` (maximum of absolute value of gradient of objective function), and `objective_hessian_convexity` (minimum of univariate approximate hessian).
+The plot can be used to evaluate the quality of numerical optimization.
+```{r comment = "", message = FALSE, fig.width = 8, fig.height = 4, dpi=200, out.width=600, out.height=300}
+lslx_fa$plot_numerical_condition()
+```
+
+
+The method `$plot_information_criterion()` shows the values of information criteria under all the penalty levels.
+```{r comment = "", message = FALSE, fig.width = 8, fig.height = 4, dpi=200, out.width=600, out.height=300}
+lslx_fa$plot_information_criterion()
+```
+
+The method `$plot_fit_index()` shows the values of fit indices under all the penalty levels.
+```{r comment = "", message = FALSE, fig.width = 8, fig.height = 4, dpi=200, out.width=600, out.height=300}
+lslx_fa$plot_fit_index()
+```
+
+
+The method `$plot_coefficient()` shows the solution path of coefficients in the given block.
+The following code plots the solution paths of all coefficients in the block `y<-f`, which contains all the regression coefficients from latent factors to observed variables (i.e., factor loadings).
+```{r comment = "", message = FALSE, fig.width = 8, fig.height = 4, dpi=200, out.width=600, out.height=300}
+lslx_fa$plot_coefficient(block = "y<-f")
+```
+
+## Objects Extraction
+In `lslx`, many quantities related to SEM can be extracted by extract-related method.
+For example, the loading matrix can be obtained by
+```{r comment = "", message = FALSE, fig.width = 8, fig.height = 4, dpi=300, out.width=600, out.height=300}
+lslx_fa$extract_coefficient_matrix(selector = "bic", block = "y<-f")
+```
+The model-implied covariance matrix and residual matrix can be obtained by 
+```{r comment = "", message = FALSE, fig.width = 8, fig.height = 4, dpi=300, out.width=600, out.height=300}
+lslx_fa$extract_implied_cov(selector = "bic")
+```
+```{r comment = "", message = FALSE, fig.width = 8, fig.height = 4, dpi=300, out.width=600, out.height=300}
+lslx_fa$extract_residual_cov(selector = "bic")
+```
+
+## Wrapper Function `plsem()` and `S3` Methods 
+After version 0.6.3, the previous analysis can be equivalently conducted by `plsem()` with `lavaan` style model syntax.
+```{r comment = "", message = FALSE}
+model_fa <- "visual  =~ x1 + x2 + x3
+             textual =~ x4 + x5 + x6
+             speed   =~ x7 + x8 + x9
+             pen() * visual  =~ x4 + x5 + x6 + x7 + x8 + x9
+             pen() * textual =~ x1 + x2 + x3 + x7 + x8 + x9
+             pen() * speed   =~ x1 + x2 + x3 + x4 + x5 + x6
+             visual  ~~ 1 * visual
+             textual ~~ 1 * textual
+             speed   ~~ 1 * speed"
+             
+lslx_fa <- plsem(model = model_fa, 
+                 data = lavaan::HolzingerSwineford1939,
+                 penalty_method = "mcp", 
+                 lambda_grid = seq(.01, .60, .01), 
+                 delta_grid = c(1.5, 3.0, Inf))
+
+summary(lslx_fa, selector = "bic")
+```

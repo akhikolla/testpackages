@@ -1,0 +1,327 @@
+---
+title: "The high-level (symbol) interface"
+author: "Mikkel Meyer Andersen and Søren Højsgaard"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{The high-level (symbol) interface}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE}
+library(Ryacas)
+```
+
+A short summary of often-used `yacas` commands are found in the section "`yacas` reference" in the "Getting started" vignette.
+A short summary of `Ryacas`'s high-level functions are found in the section "`Ryacas` high-level reference" at the end of this document.
+
+# Introduction
+
+Start with a base symbol what can either be:
+
+* A `yacas` command, e.g. `x`, `2*a` or something similar
+* An `R` matrix or vector.
+
+Here, we keep it simple. 
+
+```{r}
+x <- ysym("x")
+2*x^2 - 5
+c(-2, 5)*x
+c(2*x, -x^3)
+as_r(c(-2, 5)*x) # or yac_expr(c(-2, 5)*x)
+```
+
+Then consider an `R` matrix and vector:
+
+```{r}
+A <- outer(0:3, 1:4, "-") + diag(2:5)
+a <- 1:4
+A
+a
+```
+
+They are now considered `yacas`-enabled:
+
+```{r}
+B <- ysym(A)
+B
+as_r(B)
+b <- ysym(a)
+b
+as_r(b)
+```
+
+Notice how they are printed using `yacas`'s syntax.
+
+We can apply `yacas` functions using `y_fn()`:
+
+```{r}
+y_fn(B, "Transpose")
+y_fn(B, "Inverse")
+y_fn(B, "Trace")
+```
+
+Standard `R` commands are available (see the section "`Ryacas` high-level reference" at the end of this document):
+
+```{r}
+A %*% a
+B %*% b
+t(A)
+t(B)
+exp(B)
+as_r(exp(B))
+A[, 2:3]
+B[, 2:3]
+A[upper.tri(A)] <- 1
+B[upper.tri(B)] <- 1
+A
+B
+2*A - A
+2*B - B
+A %*% solve(A)
+B %*% solve(B)
+solve(A %*% t(A))
+solve(B %*% t(B))
+solve(A, a)
+solve(B, b)
+```
+
+We can also assign a `yacas` variable, but remember that this may be difficult to distinguish:
+
+```{r}
+yac_str("W") # Get variable W if exists, or else just a symbol
+yac_str("Variables()") # ...or list variables
+B
+yac_assign(B, "W") # assign B in R to W in yacas
+yac_str("W") # Get variable W if exists, or else just a symbol
+yac_str("Variables()") # ...or list variables
+yac_silent("Clear(W)")
+yac_str("Variables()") # List variables
+yac_str("W") # Get variable W if exists, or else just a symbol
+```
+
+
+# Simplify and output to TeX
+
+There are additional functions available:
+
+* `simplify()`
+* `tex()`
+
+To demonstrate these and some additional benefit, we exploit `yacas`'s symbolic availabilities.
+
+```{r}
+D <- diag(4) %>% ysym()
+D
+D <- D/2
+D
+D[2:3, 1] <- "d"
+D[3, 4] <- "2*d + 2"
+D
+D %>% solve()
+D %>% solve() %>% simplify()
+D %>% solve() %>% simplify() %>% tex()
+```
+
+\[
+`r D %>% solve() %>% simplify() %>% tex()`
+\]
+
+`yacas` has a `Simplify()` function. This is made available via a `simplify()` function that also includes a time-out that prevents `yacas` in making the `R` session hang, but it requires that the `unix` package is available.
+The default `timeout` value used when `unix` is available is `2` seconds.
+
+# Derivatives
+
+We illustrate using the example in <https://mikl.dk/post/2019-pizza-frozen-yogurt-goebner/>:
+
+```{r}
+L <- ysym("x^2 * (y/4) - a*(3*x + 3*y/2 - 45)")
+L
+```
+
+We can consider one variable only:
+
+```{r}
+deriv(L, "x")
+Hessian(L, "x")
+```
+
+Or multiple variables:
+
+```{r}
+deriv(L, c("x", "y", "a"))
+H <- Hessian(L, c("x", "y", "a"))
+H
+as_r(H)
+eval(as_r(H), list(x = 2, y = 2, a = 2))
+```
+
+The Jacobian is taken on a vector function denoted by many functions:
+
+```{r}
+L2 <- ysym(c("x^2 * (y/4) - a*(3*x + 3*y/2 - 45)", 
+                   "x^3 + 4*a^2")) # just some function
+L2
+Jacobian(L2, "x")
+Jacobian(L2, c("x", "y", "a"))
+```
+
+
+# Solving equations
+
+Say we want to find roots of a polynomial. We use the generic `solve(a, b, ...)` function. 
+
+Note the conventions are as follows:
+
+* Linear system of equations (works as `R`'s `solve()` as demonstrated above):
+  + When `a` is a matrix and `b` not provided, this finds the inverse of `a`.
+  + When `a` is a matrix and a vector `b` is provided, the linear system of equations is solved.
+* Else:
+  + `solve(a, b)`: find roots of `a` for variable `b`, i.e. yacas `Solve(a == 0, b)`
+  + `solve(a, b, v)`: find solutions to `a == b` for variable `v`, i.e. yacas `Solve(a == b, v)`
+
+```{r}
+xs <- ysym("x")
+poly <- xs^2 - xs - 6
+poly
+zeroes <- solve(poly, "x") # Solve(x^2 - x - 6 == 0, x)
+zeroes
+tex(zeroes)
+zeroes %>% y_rmvars()
+```
+
+We can also find values of `x` where the polynomial equals another constant. 
+If we were working with strings via the low-level interface it would be easy via `paste()`, but as we are working with `ysym()`'s we use the `solve()` function directly:
+
+```{r}
+solve(poly, 3, "x") # Solve(x^2 - x - 6 == 3, x)
+solve(poly, 3, "x") %>% tex()
+```
+
+\[
+`r solve(poly, 3, "x") %>% tex()`
+\]
+
+## Solving a system of equations
+
+```{r}
+x <- ysym("x")
+y <- ysym("y")
+lhs <- c(3*x*y - y, x)
+rhs <- c(-5*x, y+4)
+```
+
+$$\begin{align}
+`r tex(lhs[[1]])` &= `r tex(rhs[[1]])` \\
+`r tex(lhs[[2]])` &= `r tex(rhs[[2]])`
+\end{align}$$
+
+
+```{r}
+sol <- solve(lhs, rhs, c("x", "y"))
+sol
+sol_vals <- lapply(seq_len(nrow(sol)), function(sol_no) {
+  y_rmvars(sol[sol_no, ])
+})
+sol_vals
+sol_envir <- lapply(sol_vals, function(l) {
+  list(x = as_r(l[1]), y = as_r(l[2]))
+})
+sol_envir
+do.call(rbind, lapply(seq_along(sol_envir), function(sol_no) {
+  sol_val <- sol_envir[[sol_no]]
+  data.frame(sol_no = sol_no,
+             eq_no = seq_along(sol_val),
+             lhs = eval(as_r(lhs), sol_val),
+             rhs = eval(as_r(rhs), sol_val))
+}))
+```
+
+
+<!---
+# Making `yac_symbol`s more easily
+
+Say you want to define multiple `yac_symbol`s, e.g. `v1`, `v2` and `v3`. 
+Instead of having three expressions `v1 <- ysym("v1")` etc. 
+you can do:
+
+---
+ysym_make(c("v1", "v2", "v3"))
+ysym_ls()
+v1
+---
+
+Sometimes you want the variables to have a specific value. 
+This can be done with a named vector:
+
+---
+ysym_make(c("w1" = "1", "w2" = "2", "w3" = "3"))
+ysym_ls()
+w1
+w3
+---
+--->
+
+
+
+# `Ryacas` high-level reference
+
+Principle:
+
+* `ysym(x)` converts `x` to a `yac_symbol` that automatically runs `yacas` when needed. `x` can both be a text string with `yacas` commands or an `R` vector/matrix.
+* `as_r(x)`: Is used to convert the `yac_symbol` back to an `R` representation.
+* `y_fn(x, fn, ...)`: Apply a `yacas` function `fn` to the `yac_symbol` `x`, i.e. `fn(x, ...)`; note that this is evaluated immediately when `x` is a `yac_symbol` as opposed to when `x` is a string
+
+Reference:
+
+The following functions work with `yac_symbol`s.
+
+* `ysym()`: Create `yac_symbol`
+  + `ysym_make()`: Make a vector of `yac_symbol`s
+  + `ysym_ls()`: List declared `yac_symbol`s
+* `yac_*()` functions (see the "Getting started" vignette)
+  + `yac_str()`: Return `yacas` string
+  + `yac_expr()`: Return `R` expression
+  + `yac_silent()`: Do something silently
+  + `yac_assign()`: Assign a variable
+* Other
+  + `simplify(x, timeout = 2)`: Try `yacas`'s `Simplify()` function. When the `unix` package is available, the `timeout` (in seconds), stops trying after that amount of time to avoid making the `R` process hang.
+  + `tex()`: Convert 
+  + `y_fn(x, fn, ...)`: Apply a `yacas` function `fn` to the `yac_symbol` `x`, i.e. `fn(x, ...)`
+  + `y_rmvars(x)`: Remove variable names in `x`
+  + Derivatives:
+    - `deriv(expr, vars)`: takes derivative of `yac_symbol` `expr` with respect to `vars`
+    - `Jacobian(expr, vars)`: finds Jacobian of `yac_symbol` `expr` (usually a vector of expressions) with respect to `vars`
+    - `Hessian(expr, vars)`: finds Hessian matrix of `yac_symbol` `expr` with respect to `vars`
+  + Other
+    - `lim()`
+* Standard `R` that has been implemented for `yac_symbol`s:
+  + `print()`
+  + `c()`
+  + `dim()`
+  + `cbind()`
+  + `rbind()`
+  + `[` getter
+  + `[<-` setter
+  + `[[` getter
+  + `%*%` matrix/vector multiplication
+  + `diag()` getter
+  + `diag<-()` setter
+  + `upper.tri()` getter
+  + `lower.tri()` getter
+  + `t()`
+  + `solve()` (see above and in help page)
+  + `integrate()`
+  + `sum()`
+  + `prod()`
+  + Ops: `+`, `-`, `*`, `/`, `^`
+  + Math functions: `sin()`, `cos()`, `tan()`, 
+                    `asin()`, `acos()`, `atan()`, 
+                    `asinh()`, `acosh()`, `atanh()`, 
+                    `exp()`, `log()`, `sqrt()`

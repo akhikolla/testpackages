@@ -1,0 +1,166 @@
+---
+title: "SequenceSpikeSlab-vignette"
+author: "Tim van Erven, Steven de Rooij, Botond Szabo"
+output: rmarkdown::html_vignette
+bibliography: sss.bib
+vignette: >
+  %\VignetteIndexEntry{SequenceSpikeSlab-vignette}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(SequenceSpikeSlab)
+```
+
+# Introduction
+
+This package provides fast algorithms for exact Bayesian inference in the
+sparse normal sequence model. It implements the methods described in
+[@VanErvenSzabo2018]. Special care has been taken to make the methods scale
+to large data sets, and to minimize numerical errors (which arise in all
+software because floating point numbers are represented with finite precision).
+
+## The Sparse Normal Sequence Model
+
+In the sparse normal sequence model we get a sequence of noisy observations
+$X = (X_1,\ldots,X_n)$ such that
+$$
+X_i = \theta_i + \epsilon_i, \qquad i=1,\ldots,n,
+$$
+where the noise variables $\epsilon_i$ are assumed to be independent with
+distribution $\mathcal{N}(0,\sigma)$. We are interested in the underlying
+means $\theta = (\theta_1,\ldots,\theta_n)$, which are assumed to be *sparse*.
+This means that only $s$ of the components in $\theta$ are non-zero, with $s$
+relatively small compared to $n$.
+
+## The Bayesian Prior
+
+We consider a Bayesian model for the data, with a hierarchical prior on
+$\theta$ of the following form:
+
+1. First, a sparsity level $s \in \{0,1,\ldots,n\}$ is chosen according to a
+prior $\pi_n(s)$.
+2. Then, given $s$, a subset of non-zero coordinates
+$\mathcal{S} \subset \{0,1,\ldots,n\}$ of size $|\mathcal{S}|=s$ is chosen
+uniformly at random.
+3. Finally, given $s$ and $\mathcal{S}$, each non-zero mean $\theta_i$ with
+$i \in \mathcal{S}$ is chosen independently according to a slab prior $G$, and
+all other means $\theta_i$ with $i \not \in \mathcal{S}$ are assumed to be $0$.
+
+Given this structure of prior, it thus remains to choose a prior $\pi_n$ on
+the sparsity level and a slab prior $G$. We assume that $G$ has a density $g$.
+Out of the box, the package supports two choices of slab prior:
+$$
+g_\lambda(\theta_i) = \frac{\lambda}{2} e^{-\lambda |\theta_i|} \qquad \text{(Laplace)}
+$$
+$$
+g_\gamma(\theta_i) =  \frac{1}{\gamma \pi (1 + (\frac{\theta_i}{\gamma})^2)} \qquad \text{(Cauchy)}
+$$
+Advanced users may also specify their own slab priors.
+
+Theoretically motivated choices for $\pi_n$ [@castillo2012] include
+$$
+\pi_n(s) \propto e^{-\kappa s \log(3n/s)}
+$$
+$$
+\pi_n(s) \propto \binom{2n-s}{n}^\kappa
+$$
+for e.g. $\kappa = 0.1$ or $\kappa = 1$.
+
+### Spike-and-Slab Priors
+
+A special case of the general class of priors described above are so-called
+spike-and-slab priors. Under these priors, there is a mixing hyper-parameter
+$\alpha \in [0,1]$ and
+$$
+\theta_i | \alpha \sim (1-\alpha) \delta_0 + \alpha G, \qquad i=1,\ldots,n,
+$$
+
+$$
+\alpha \sim \Lambda_n.
+$$
+This means that we need to specify a prior $\Lambda_n$ on $\alpha$. Then,
+conditional on $\alpha$, the $\theta_i$ are independently distributed. They are
+$0$ with probability $1-\alpha$ and they are sampled from the slab distribution
+$G$ with probability $\alpha$.
+
+Spike-and-slab priors are a special case of the general hierarchical prior
+with
+$$
+\pi_n(s) = \binom{n}{s} \int_0^1 \alpha^s (1-\alpha)^{n-s} d \Lambda_n(\alpha).
+$$
+
+# Package Functionality
+
+This package provides fast algorithms to calculate the marginal posterior
+probabilities of data points having a non-zero mean:
+$$
+\pi_n(\theta_i \neq 0 \mid X), \qquad i=1,\ldots,n.
+$$
+Given these, it is easy to calculate the posterior mean, which is also provided:
+$$
+  \mathbb{E}[\theta | X] = (\mathbb{E}[\theta_i | X], \ldots, \mathbb{E}[\theta_n | X])
+$$
+
+## Main Methods
+
+There are two main methods: *general_sequence_model* and *fast_spike_slab_beta*.
+
+### general_sequence_model
+
+This method can handle the general hierarchical prior described above. This
+means it requires the user to provide a choice for $\pi_n$ as input, and to
+specify whether the slab prior $G$ should be a Laplace or a Cauchy distribution.
+
+The run time of this method scales as $O(n^2)$ in the sample size $n$. It has
+been used to handle sample sizes up to $20\,000$ within half an hour of
+computation time.
+
+### fast_spike_slab_beta
+
+This method is a faster special-purpose method for the spike-and-slab prior with
+$$
+\Lambda_n = \text{Beta}(\kappa,\lambda)
+$$
+This corresponds to the *beta-binomial* prior
+$$
+\pi_n(s) \propto \frac{\Gamma(\kappa + s) \Gamma(\lambda + n - s)}{s! (n-s)!}
+$$
+in the general hierarchical prior. This method further requires specifying
+whether the slab prior $G$ should be a Laplace or a Cauchy distribution.
+
+The run time of this method scales as $O(m n^{3/2})$, where $m$ is a
+user-supplied parameter that controls the precision of the method. Larger
+values of $m$ give more precision but slow down the algorithm. The default
+value of $m=20$ has been seen to provide sufficient precision for
+data sets of different sizes. The method has been used to handle sample sizes
+up to $100\,000$ within half and our of computation time.
+
+## Advanced Usage
+
+The package is organized as a set of supporting functions in R, which wrap around two C++ functions
+that implement the main algorithms. The C++ function corresponding to general_sequence_model is
+accessible directly via *SSS_hierarchical_prior* and *SSS_hierarchical_prior_binomial*. The C++ function
+corresponding to fast_spike_slab_beta can be accessed via *SSS_discrete_spike_slab*. There are further supporting functions whose name starts with 'SSS_'.
+
+### Implementing Custom Slab Distributions
+
+The C++ functions do not take the data $X$ directly as input. Instead, they require two vectors $\Phi = (\Phi_1,\ldots,\Phi_n)$ and $\Psi = (\Psi_1, \ldots, \Psi_n)$ that specify the densities of the data points $X_1,\dots,X_n$ conditional on $\theta_i$ being $0$ or $\theta_i$ being distributed according to $G$, respectively:
+$$
+\Phi_i = \phi_\sigma(X_i)
+$$
+$$
+\Psi_i = \int_{-\infty}^\infty \phi_\sigma(X_i - \theta_i) d G(\theta_i),
+$$
+where $\phi_\sigma(X_i)$ is the density of a Gaussian with mean $0$ and standard deviation $\sigma$.
+Advanced users may implement their own slab distributions $G$ by calculating the $\Psi$ vector themselves. Custom values for $\Phi$ and $\Psi$ may also be used to model non-Gaussian noise or to incorporate into $\Phi$ a shrinkage prior rather than a point-mass at zero.
+
+# References

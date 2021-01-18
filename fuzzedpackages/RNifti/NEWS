@@ -1,0 +1,430 @@
+Significant changes to the RNifti package are laid out below for each release.
+
+===============================================================================
+
+VERSION 1.3.0
+
+R interface
+
+- There are new functions for working with NIfTI extensions, either wholesale
+  or one by one. These allow extended metadata to be stored within a NIfTI-1 or
+  NIfTI-2 format file, but are weakly specified. Their "native" representation
+  in R is a raw byte stream, but the package performs some conversion to/from
+  other atomic vector types for convenience. See `?extensions` for details.
+
+API changes
+
+- There is a new inner class, `NiftiImage::Extension`, which represents a NIfTI
+  extension. New methods to `NiftiImage` can be used to add, remove and replace
+  extensions for a given image.
+
+===============================================================================
+
+VERSION 1.2.3
+
+- Compiler warnings from some API functions have been resolved.
+
+===============================================================================
+
+VERSION 1.2.2
+
+- The distinction between `NaN` and `NA` double values is now preserved more
+  reliably when copying voxel data from one blob to another. (Reported by John
+  Muschelli, issue #21.)
+- It is now possible to use the `initFromDims()` C++ method in non-R API
+  clients, which was previously unavailable because of an oversight. (Patch
+  from Tom Wilkinson, PR #20.)
+- `niftiVersion()` should once again return -1 for missing and invalid files,
+  as documented. There are now also regression tests for this behaviour.
+- Image xforms created from `MriImage` objects will no longer be implicitly
+  transposed in the process.
+- The special treatment of character-mode arguments to `analyzeHeader()` has
+  been reinstated, but is now more careful to avoid misinterpreting internal
+  images. More details of its behaviour may be found in the documentation.
+- A header required on some platforms was not previously included, which could
+  lead to API client packages failing to compile. This has been corrected.
+
+===============================================================================
+
+VERSION 1.2.1
+
+- A type inconsistency that could lead to segmentation faults in client
+  packages on certain platforms has been resolved.
+- Other compiler and sanitiser warnings have been resolved.
+
+===============================================================================
+
+VERSION 1.2.0
+
+With this release, `RNifti`'s core code moves over to the NIfTI-2 library.
+Reading and writing NIfTI-2 format files is therefore supported. API clients
+may use either version of the NIfTI library.
+
+R interface
+
+- The `asNifti()` function is now S3 generic, with the default method handling
+  all objects that the package has supported to date. Packages can therefore
+  define additional methods for their objects.
+- The `writeNifti()` function gains a version argument, which allows NIfTI-2 to
+  be used as the output file format if required. (NIfTI-1 remains the default.)
+- A new `writeAnalyze()` function has been added, for writing to the legacy
+  ANALYZE-7.5 format (although this is not recommended, except where needed for
+  compatibility). A corresponding `readAnalyze()` function has also been added
+  for symmetry, but this is just an alias for `readNifti()`.
+
+API changes
+
+- The NIfTI-2 library is now included with the package, and available through
+  the API. A number of patches have been made to this version of the library
+  to ensure that it can generate valid NIfTI-2 format files upon request (see
+  <https://github.com/NIFTI-Imaging/nifti_clib/pull/124> for details of the
+  upstream pull request).
+- The package goes to some lengths to allow the mutually incompatible NIfTI-1
+  and NIfTI-2 libraries to coexist. The library version that API clients will
+  see depends on the value of the `RNIFTI_NIFTILIB_VERSION` compile-time
+  constant (default 1), which should be set before including `RNifti.h`.
+  See the comments in that header file for fuller documentation. Stub clients
+  using each version of the `niftilib` library are included in the `clients`
+  subdirectory for illustration (and for testing).
+- The API now makes the full set of public `niftilib` functions available to
+  clients. Previously only a group of the most commonly used were included.
+- C++ classes `Vector` and `SquareMatrix` have been created to provide an
+  object-oriented wrapper around some of the `niftilib` matrix functions, and
+  to abstract away the type width differences between the two versions of the
+  library.
+- Type aliases which handle the differences between `niftilib` versions, such
+  as `NiftiImage::dim_t` and `NiftiImage::pixdim_t`, are now used in various
+  places in the API.
+- An `Xform` inner class within `NiftiImage` now encapsulates an xform, and
+  provides a number of conveniences. The `xform()` method of `NiftiImage` now
+  returns this type rather than a `niftilib`-native type (although `Xform` can
+  be implicitly converted and hence treated as before), and new `sform()` and
+  `qform()` methods have been added, which allow the image sform/qform to be
+  specifically obtained or replaced.
+- The static `xformToRotation()` and `xformToString()` methods of `NiftiImage`
+  have been removed and replaced by methods of `NiftiImage::Xform`.
+- The `headerToList()` method of `NiftiImage` has been removed, since its
+  functionality was rather specific to the `RNifti` R package.
+
+Bug fixes
+
+- The `niftiHeader()` and `analyzeHeader()` functions will now return `NULL`
+  for `NULL` input, rather than potentially segfaulting.
+- The `analyzeHeader()` R function no longer misinterprets internal image
+  objects as file paths.
+- `Rcpp` no longer throws an exception when an invalid image pointer is seen,
+  which prevented `RNifti` from handling this scenario in its own way.
+
+===============================================================================
+
+VERSION 1.1.0
+
+- An alternative info panel for showing time series data (`timeSeriesPanel`) is
+  now available for use with suitable 4D images.
+- The info panel no longer prompts to leave interactive mode when that mode is
+  not in use. The info panel may now also be suppressed entirely by specifying
+  `NULL` instead of a panel function.
+- The viewer will now display 3D vector fields (specifically, 5D images with
+  fifth dimension equal to 3 and intent code equal to 1007) as a series of line
+  segments, colour-coded by orientation.
+- The `lyr()` function gains a mask argument, which masks the zero-valued
+  pixels in the mask out of that layer by setting their values to `NA`.
+- The `rgbArray()` function now always sets the `dim` attribute of its return
+  value, using the length of its first argument if it has no `dim` attribute
+  of its own (and the `dim` argument is not specified).
+
+===============================================================================
+
+VERSION 1.0.1
+
+- The package no longer has an undeclared requirement for C++11 support.
+  (Reported by John Muschelli, issue #16.)
+- String manipulation performed within the `view()` function is now compatible
+  with versions of R older than 3.6.0.
+
+===============================================================================
+
+VERSION 1.0.0
+
+R interface
+
+- A basic image viewer with optional interactivity has been added to the
+  package, and is accessible through the new `view()` function.
+- The package now supports complex and RGB NIfTI datatypes. Complex values
+  are transformed to the built in complex R type, while RGB values are
+  represented in a byte-packed integer form, with new functions to convert to
+  and from this form. See `?rgbArray` for details.
+- The `retrieveNifti()` and `updateNifti()` functions have been soft-deprecated
+  in favour of the new `asNifti()`, which does the work of both of them.
+- Standard (non-internal) images no longer retain a copy of their data
+  internally as well as in the R-visible array, to save memory. This is safe
+  because the latter always overrides the former anyway. (Inspired by issue
+  #14.)
+- The list returned by `niftiHeader()` now includes attributes describing the
+  meanings of metadata codes such as xform codes, and these are now shown by
+  the `print` method for these objects.
+- The `xform()` function now attaches a `code` attribute to its return value.
+- `writeNifti()` now return the final header and image paths written,
+  invisibly. (Suggested by John Muschelli, PR #15.)
+- The R path expansion API is now used in the C++ code, so tilde expansion (for
+  example) should now be universally supported.
+
+API changes
+
+- Complex and RGB datatype support is now available through the API. As a
+  result, the `isComplex()` and `isRgb()` methods of the `NiftiImageData` class
+  no longer always return `false`.
+- A basic `NiftiImage` constructor that initialises an image from a vector of
+  dimensions and a datatype has been added.
+- New `nChannels()` (for number of colour channels; 1 except for RGB/RGBA
+  images) and `nVoxels()` methods have been added to the `NiftiImage` class.
+- The `toFile()` methods now return a pair of strings giving the final header
+  and image file names, rather than nothing.
+
+===============================================================================
+
+VERSION 0.11.1
+
+- Attempting to update image header fields with values of the wrong length
+  (e.g. through `updateNifti`) now results in a warning or error. See the
+  documentation for that R function for further details.
+
+===============================================================================
+
+VERSION 0.11.0
+
+R interface
+
+- It is now possible to index directly into objects of class `internalImage`,
+  meaning that individual elements or arbitrary blocks may be converted to R
+  vectors or arrays, without needing to convert everything. This can save
+  significant amounts of memory for large images.
+
+API changes
+
+- This release introduces the `NiftiImageData` C++ class as the main way to
+  encapsulate the data in a NIfTI image. This class handles datatypes and data
+  scaling, and provides indexing, iterators and other niceties. The doxygen
+  documentation has full details.
+- As a result of this new introduction, the templated `getData()` method within
+  `NiftiImage` is deprecated in favour of `data()`, which returns a (constant
+  or mutable) object of class `NiftiImageData` rather than a standard `vector`.
+
+Bug fixes
+
+- The slope and intercept fields in `nifti` objects (from the `oro.nifti`
+  package) are now ignored, since that package does its own scaling. (Reported
+  by John Muschelli, issue #13.)
+
+===============================================================================
+
+VERSION 0.10.0
+
+R interface
+
+- Objects of class `niftiHeader`, created by the function of the same name,
+  now also have core attributes such as `pixdim` and `pixunits`.
+- Passing objects without a `dim` or `class` attribute to functions expecting
+  an image will now produce a more informative error message.
+
+API changes
+
+- The `NiftiImage` class now uses a reference counting scheme, rather than
+  relying on a simple persistence flag. (See the doxygen documentation for more
+  details.) The `isPersistent` and `setPersistence` methods are therefore
+  deprecated, with the former replaced by `isShared`.
+- Images are no longer internally duplicated when being passed back to R. This
+  improves the package's memory footprint, but performing an explicit copy may
+  now be necessary in some circumstances, e.g., if the image's memory will be
+  freed elsewhere.
+- The `RNIFTI_VERSION` constant is now defined, as 100 * (major version) +
+  (minor version). Its current value is therefore 10.
+- The `niftilib` function `nifti_strdup` is now part of the package API.
+
+Bug fixes
+
+- The `pixdim()` and `pixunits()` functions will now work properly for path
+  strings and other objects acceptable to `niftiHeader()`. (Reported by John
+  Muschelli.)
+- Other, smaller memory leaks have been resolved.
+
+===============================================================================
+
+VERSION 0.9.0
+
+- When writing an image using an integer datatype, the scale and slope fields
+  will now be set if the original values are outside the representable range of
+  that datatype. This ensures that the voxel values are accurate when read back
+  from the file (although some precision may, necessarily, be lost). This makes
+  the datatype argument to writeNifti() more generally useful for file size
+  reduction.
+- The dumpNifti() function has been soft-deprecated in favour of niftiHeader(),
+  which works the same way. There is also a new analyzeHeader() function, which
+  returns a list giving the header elements when interpreted according to the
+  ANALYZE-7.5 format. Both functions now return a default header when given no
+  argument.
+- The $ operator can now be used on "niftiImage" objects as a shorthand way to
+  get or set individual header fields.
+- The qform and sform replacement functions now work on lists of class
+  "niftiHeader".
+- The new rotation() function extracts just a pure 3x3 rotation matrix from an
+  image xform or general affine.
+- Functions such as origin() and orientation() now also work directly on xform-
+  like numeric matrices.
+- The offset part of an image's xform matrix (the fourth column) is now
+  properly updated when the image is reoriented. Reorientation should also now
+  work correctly for all possible permutations.
+- NA and NaN values are no longer removed from images on reading.
+- The pixdim attribute should now always contain the absolute values of the
+  pixdim for each dimension.
+
+===============================================================================
+
+VERSION 0.8.1
+
+- A C-level namespace clash on certain platforms has been corrected.
+
+===============================================================================
+
+VERSION 0.8.0
+
+- The new niftiVersion() function identifies the NIfTI format variant used by
+  files on disk.
+- The readNifti() function gains an option which allows only certain volumes
+  to be read from disk.
+- The updateNifti() function gains an option to set the internal datatype, for
+  advanced usage only (issue #8).
+- Calling updateNifti() with a list containing only a few fields could
+  previously reset the remaining metadata to the defaults. This has been
+  corrected.
+- It is now possible to change the cal_min and cal_max fields with the
+  updateNifti() function (issue #9). The scl_slope and scl_inter fields cannot
+  be changed, but this is now documented.
+- R packages using the RNifti API must now ensure that the USING_R symbol is
+  defined (which it is by the main R header, R.h). Conversely, standalone use
+  of RNifti as a C++ library no longer requires _NO_R__ to be defined.
+
+===============================================================================
+
+VERSION 0.7.1
+
+- The package is now more careful about handling NaNs when converting to
+  integer types.
+- Usage of the R API has been updated for forwards compatibility.
+
+===============================================================================
+
+VERSION 0.7.0
+
+- The new orientation() function can be used to identify the approximate
+  storage orientation of an image. A replacement version allows the image
+  data and metadata dimensions to be permuted and/or reversed.
+- Image reorientation is similarly available through the C++ API.
+- The sform and qform replacement methods should now follow R's usual
+  semantics, and no longer modify the object in place if it is referred to by
+  more than one name.
+- The NiftiImage class is now suitable for use in standalone C++ projects.
+  (Thanks to Matt Hall.)
+
+===============================================================================
+
+VERSION 0.6.0
+
+- Slope and intercept values in a NIfTI-1 header are now applied to the image
+  data when converting it to an R array (which will in this case always be of
+  mode double), or a C++ vector.
+- The slope and intercept will be reset to zero when updating the data in an
+  internal image object.
+
+===============================================================================
+
+VERSION 0.5.1
+
+- A potential crash and/or memory leak in the C++ NiftiImage copy assignment
+  methods has been fixed.
+
+===============================================================================
+
+VERSION 0.5.0
+
+- The NiftiImage class gains methods to drop or replace the image data, and to
+  mutate its datatype in-place. A datatype no longer needs to be specified when
+  writing an image to file using the toFile() C++ method.
+- The niftilib functions nifti_image_unload() and nifti_mat44_to_orientation()
+  are now exposed through the RNifti API.
+- Some minor compiler warnings that would affect packages linking to RNifti
+  have been resolved.
+- Additional tests have been added, to exercise the package more thoroughly.
+
+===============================================================================
+
+VERSION 0.4.0
+
+- Additional public methods have been added to the NiftiImage C++ class. Please
+  see the API documentation at <http://doxygen.flakery.org/RNifti/> for
+  details.
+- The new origin() R function is a convenience wrapper for worldToVoxel(),
+  which returns the voxel coordinates of the image origin.
+- The package now produces an error when passed an "anlz" class object (from
+  package "oro.nifti"), rather than mishandling it.
+
+===============================================================================
+
+VERSION 0.3.0
+
+- C++ API change: the NiftiImage class is now defined within an RNifti
+  namespace. This will break existing uses of the class, but compatibility with
+  older versions of the package can be preserved if desired, by checking for
+  the compile-time constant HAVE_RNIFTI_NAMESPACE, which will be defined from
+  now on.
+- Additional niftilib functions for calculating matrix norms and byte swapping
+  are now exposed through the RNifti API.
+- Calling the C/C++ function niftilib_register_all() more than once should no
+  longer result in repeated re-registration of functions.
+
+===============================================================================
+
+VERSION 0.2.2
+
+- The voxelToWorld() and worldToVoxel() functions now handle 2D points, rather
+  than producing an error. (Reported by Takeo Katsuki.)
+
+===============================================================================
+
+VERSION 0.2.1
+
+- Examples have been added to the R-level documentation.
+- Image pixel dimensions are now used to return a more sensible xform matrix in
+  the case where the NIfTI-1 sform and qform are both marked unknown.
+
+===============================================================================
+
+VERSION 0.2.0
+
+- The writeNifti() function now performs path expansion on its argument,
+  matching the behaviour of readNifti(). (Reported by John Muschelli.)
+- Calling as.array() on an internal image containing no data now returns an
+  array full of NAs (with a warning), rather than crashing R. (Reported by Tim
+  Tierney.)
+- The package should now work correctly with sparse MriImage objects, from
+  first-party package "tractor.base".
+- Images with invalid internal pointers are now handled (with a warning) by
+  attempting to reconstruct the missing data structure. This should not happen
+  in regular use, but can occur when external pointers are handed back to the
+  main thread by worker threads when working in parallel. (Reported by Takeo
+  Katsuki.)
+- Calling the RNifti API from within OpenMP threads could previously lead to a
+  stack imbalance. This is now guarded against, and a new C function,
+  niftilib_register_all(), has been added as the recommended way to preregister
+  all NIfTI-1 library functions wrapped by RNifti, particularly in threaded
+  applications.
+- Doxygen comments have been added to the C++ code to document the low-level
+  API. A Doxyfile has also been added to the package root directory.
+
+===============================================================================
+
+VERSION 0.1.0
+
+- First public release. Package code has been split off from "RNiftyReg".
+
+===============================================================================

@@ -1,0 +1,292 @@
+---
+title: "SCPME Tutorial"
+#author: "Matt Galloway"
+#date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+bibliography: lib.bib
+vignette: >
+  %\VignetteIndexEntry{SCPME Tutorial}
+  %\VignetteEngine{knitr::knitr}
+  %\usepackage[UTF-8]{inputenc}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+
+## Introduction
+
+In many statistical applications, estimating the covariance for a set of random variables is a critical task. Unfortunately, estimating $\Sigma$ well is often expensive and, in a few settings, extremely challenging. For this reason, emphasis in the literature and elsewhere has been placed on estimating the inverse of $\Sigma$ which we like to denote as $\Omega \equiv \Sigma^{-1}$.
+
+If we have data that is normally distributed with mean $\mu$ and variance $\Sigma$ (that is, $X_{i} \sim N_{p}\left(\mu, \Sigma \right)$), the optimal estimator for $\Omega$ with respect to the log-likelihood is of the form
+
+\[ \hat{\Omega}_{MLE} = \arg\min_{\Omega \in S_{+}^{p}}\left\{ tr\left(S\Omega\right) - \log\left|\Omega\right| \right\} \]
+
+where $S$ denotes the usual sample estimator ($S = \sum_{i = 1}^{n}\left(X_{i} - \bar{X} \right)\left(X_{i} - \bar{X} \right)^{T})$). As in regression settings, we can construct *penalized* log-likelihood estimators by adding a penalty term, $P\left(\Omega\right)$, to the log-likelihood so that
+
+\[ \hat{\Omega} = \arg\min_{\Omega \in S_{+}^{p}}\left\{ tr\left(S\Omega\right) - \log\left|\Omega \right| + P\left( \Omega \right) \right\} \]
+
+$P\left( \Omega \right)$ is often of the form $P\left(\Omega \right) = \lambda\|\Omega \|_{F}^{2}/2$ or $P\left(\Omega \right) = \|\Omega\|_{1}$ where $\lambda > 0$, $\left\|\cdot \right\|_{F}^{2}$ is the Frobenius norm and we define $\left\|A \right\|_{1} = \sum_{i, j} \left| A_{ij} \right|$. These penalties are the ridge and lasso, respectively. The penalty proposed in @molstad2017shrinking, however, is of the form $P\left(\Omega\right) = \left\|A\Omega B - C\right\|_{1}$ so that the general optimization problem is
+
+\begin{align}
+  \hat{\Omega} = \arg\min_{\Omega \in \mathbb{S}_{+}^{p}}\left\{ tr(S\Omega) - \log\left| \Omega \right| + \lambda\left\| A\Omega B - C \right\|_{1} \right\}
+\end{align}
+
+`SCPME` is an implementation of the proposed augmented ADMM algorithm in @molstad2017shrinking for solving the previous optimization problem. In addition, this package places a big emphasis on flexibility that allows for rapid experimentation for the end user.
+
+We will illustrate this with a short simulation and show some of the new and interesting estimators for $\Omega$ that are a result of this penalty.
+
+<br>\vspace{0.5cm}
+
+## Simulation
+
+Let us generate some data. For this example, we will assume
+
+\[ Y_{i} = \mu_{y} + \beta^{T}\left(X_{i} - \mu_{x}\right) + E_{i} \]
+
+where $E_{i} \sim N_{r}\left( 0, \Omega_{y | x}^{-1} \right)$, $X_{i} \sim N_{p}\left( \mu_{x}, \Omega^{-1} \right)$ and we are interested in estimating the marginal precision matrix of $X$ (denoted $\Omega$).
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+library(SCPME)
+set.seed(123)
+
+# generate data from a sparse oracle precision matrix.
+# we can use the built-in `data_gen` function
+
+# generate 100 x 5 X data matrix and 100 x 1 Y data matrix
+data = data_gen(p = 5, n = 100, r = 1)
+
+# the default regression coefficients are sparse
+data$betas
+
+# default oracle precision matrix is also sparse
+round(qr.solve(data$SigmaX), 5)
+
+# snap shot of X data matrix
+head(data$X)
+
+# snap shot of Y data matrix
+head(data$Y)
+
+```
+<br>\vspace{0.5cm}
+
+We have generated 100 samples of the random variable $X \in \mathbb{R}^{5}$ and 100 samples of the random variable $Y \in \mathbb{R}$. It turns out that this particular oracle covariance matrix for $X$ (tapered matrix) has an inverse that is sparse (tri-diagonal). That is, the precision matrix has many zeros.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# print oracle covariance matrix
+data$SigmaX
+
+# print inverse covariance matrix (omega)
+round(qr.solve(data$SigmaX), 5)
+
+```
+<br>\vspace{0.5cm}
+
+In this particular setting, we could estimate $\Omega$ by taking the inverse of the sample covariance matrix $\hat{S} = \sum_{i = 1}^{n}(X_{i} - \bar{X})(X_{i} - \bar{X})^{T}/n$:
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# print inverse of sample precision matrix (perhaps a bad estimate)
+round(qr.solve(cov(data$X)*(nrow(data$X) - 1)/nrow(data$X)), 5)
+
+```
+<br>\vspace{0.5cm}
+
+However, because $\Omega$ is sparse, this estimator will likely perform very poorly. Notice the number of zeros in our oracle precision matrix compared to the inverse of the sample covariance matrix. Instead, we will use `SCPME` to estimate $\Omega$.
+
+By default, `SCPME` will estimate $\Omega$ using a lasso penalty ($A = I_{p}, B = I_{p}, \mbox{ and } C = 0$) and choose the optimal `lam` tuning parameter that minimizes the mean squared prediction error for the regression of the variable $Y$ on $X$.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# lasso penalty
+shrink(X = data$X, Y = data$Y)
+
+```
+<br>\vspace{0.5cm}
+
+However, we could also select the optimal tuning parameter based on other criteria, such as log-likelihood. Other options include: AIC, BIC, and penalized log-likelihood (`penloglik`).
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# lasso penalty with crit.cv = loglik
+shrink(X = data$X, Y = data$Y, crit.cv = "loglik")
+
+```
+<br>\vspace{0.5cm}
+
+`SCPME` also has the capability to provide plots for the cross validation errors. In the heatmap plot below, the more bright (white) areas of the heat map correspond to a better tuning parameter selection.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# produce CV heat map
+shrink = shrink(X = data$X, nlam = 50, crit.cv = "BIC")
+plot(shrink, type = "heatmap")
+
+```
+<br>\vspace{0.5cm}
+
+Note that in the previous plot, it is not necessary to provide the $Y$ data matrix because neither the penalty nor the cross validation criteria depends on the values of $Y$.
+
+We can also produce a line graph of the cross validation errors:
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# produce line graph
+plot(shrink, type = "line")
+
+```
+<br>\vspace{0.5cm}
+
+We also have the option to print *all* of the estimated precision matrices for each tuning parameter using the `path` option. This option should be used with *extreme* care when the dimension and sample size is large -- you may run into memory issues.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# keep all estimates using path
+shrink = shrink(X = data$X, crit.cv = "loglik", path = TRUE)
+
+# print only first three objects
+shrink$Path[,,1:3]
+
+```
+<br>\vspace{0.5cm}
+
+Recall that all of the estimators so far have used a lasso penalty that penalizes the sum of the absolute value of all the entries in $\Omega$. In effect, this penalty embeds an assumption in our estimate that the true $\Omega$ is sparse.
+
+The flexibility of the penalty described in @molstad2017shrinking allows us to make other assumptions as well. For instance, in the penalty we could set $A = I_{p}, B = \Sigma_{xy}$ where $\Sigma_{xy}$ is the covariance matrix of $X$ and $Y$, and $C = 0$. In which case
+
+\[P_{\lambda}\left(\Omega \right) = \lambda\left\| A\Omega B - C \right\|_{1} = \lambda\left\| \Omega\Sigma_{xy} \right\|_{1} = \lambda\left\| \beta \right\|_{1} \]
+
+This objective function estimates an $\Omega$ via the marginal log-likelihood of $X$ under the assumption that the forward regression coefficient $\beta$ is sparse (recall that $\beta \equiv \Omega\Sigma_{xy}$). Of course, we do not know the true covariance matrix $\Sigma_{xy}$ but we could use the sample estimate instead.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# assume sparsity in beta
+lam_max = max(abs(crossprod(data$X, data$Y)))
+(shrink = shrink(X = data$X, Y = data$Y, B = cov(data$X, data$Y), lam.max = lam_max, nlam = 20))
+
+# plot CV errors
+plot(shrink)
+
+```
+<br>\vspace{0.5cm}
+
+Note that we specified the maximum `lam` value in the previous function to expand the tuning parameter grid.
+
+Conveniently, with these settings, the augmented ADMM algorithm also solves for the estimated $\beta$ coefficient matrix simultaneously:
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# print estimated beta matrix
+shrink$Z
+
+```
+<br>\vspace{0.5cm}
+
+Another possible penalty is to set $B = \left[ \Sigma_{xy}, I_{p} \right]$ so that the identity matrix (dimension $p$) is appended to the covariance matrix of $X$ and $Y$.
+
+\[ P_{\lambda}\left(\Omega \right) = \lambda\left\| A\Omega B - C \right\|_{1} = \lambda\left\| \Omega\left[\Sigma_{xy}, I_{p}\right] \right\|_{1} = \lambda\left\| \beta \right\|_{1} + \lambda\left\| \Omega \right\|_{1} \]
+
+In this case, not only are we assuming that $\beta$ is sparse, but we are also assuming sparsity in $\Omega$.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE}
+
+# assume sparsity in beta AND omega
+(shrink = shrink(X = data$X, Y = data$Y, B = cbind(cov(data$X, data$Y), diag(ncol(data$X))), lam.max = 10, lam.min.ratio = 1e-4, nlam = 20))
+
+# print estimated beta
+shrink$Z[, 1, drop = FALSE]
+
+# plot CV errors
+plot(shrink)
+
+```
+<br>\vspace{0.5cm}
+
+## More advanced options
+
+A huge issue in precision matrix estimation is the computational complexity when the sample size and dimension of our data is particularly large. There are a number of built-in options in `SCPME` that can be used to improve computation speed:
+
+ - Reduce the number of `lam` values during cross validation. The default number is 10.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE, eval = FALSE}
+
+# reduce number of lam to 5
+shrink = shrink(X = data$X, Y = data$Y, nlam = 5)
+
+```
+<br>\vspace{0.5cm}
+
+ - Reduce the number of `K` folds during cross validation. The default number is 5.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE, eval = FALSE}
+
+# reduce number of folds to 3
+shrink = shrink(X = data$X, Y = data$Y, K = 3)
+
+```
+<br>\vspace{0.5cm}
+
+ - Relax the convergence critera for the ADMM algorithm using the `tol.abs` and `tol.rel` options. The default for each is 1e-4.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE, eval = FALSE}
+
+# relax convergence criteria
+shrink = shrink(X = data$X, Y = data$Y, tol.abs = 1e-3, tol.rel = 1e-3)
+
+```
+<br>\vspace{0.5cm}
+
+ - Adjust the maximum number of iterations. The default is 1e4.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE, eval = FALSE}
+
+# adjust maximum number of iterations
+shrink = shrink(X = data$X, Y = data$Y, maxit = 1e3)
+
+```
+<br>\vspace{0.5cm}
+
+ - Adjust `adjmaxit`. This allows the user to adjust the maximum number of iterations *after* the first `lam` tuning parameter has fully converged during cross validation. This allows for *one-step estimators* and can greatly reduce the time required for the cross validation procedure while still choosing near-optimal tuning parameters.
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE, eval = FALSE}
+
+# adjust adjmaxit
+shrink = shrink(X = data$X, Y = data$Y, adjmaxit = 2)
+
+```
+<br>\vspace{0.5cm}
+
+ - We can also opt to run our cross validation procedure in parallel. The user should check how many cores are on their system before using this option
+
+<br>\vspace{0.5cm}
+```{r, message = FALSE, echo = TRUE, eval = FALSE}
+
+# parallel CV
+shrink = shrink(X = data$X, Y = data$Y, cores = 2)
+
+```
+<br>\vspace{0.5cm}
+
+
+<br><br>\newpage
+
+## References

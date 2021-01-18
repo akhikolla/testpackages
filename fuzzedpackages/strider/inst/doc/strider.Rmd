@@ -1,0 +1,535 @@
+---
+title: "The Strider Package"
+author: "Timothy H. Keitt"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{The Strider Package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r echo=FALSE}
+if (!require("BH", quietly = TRUE)) {
+   message("This vignette needs BH; since it is not installed, code will not be executed.")
+   knitr::opts_chunk$set(eval = FALSE)
+}
+```
+
+"I don't think he knows about second breakfast" - Meriadoc 'Merry' Brandybuck
+
+```{r include=FALSE}
+header_code = '
+#include <Rcpp.h>
+using Rcpp::stop;
+using Rcpp::IntegerVector;
+using Rcpp::NumericVector;
+using Rcpp::NumericMatrix;
+using Rcpp::Dimension;
+using Rcpp::Rcout;
+using Rcpp::Fast;
+using Rcpp::wrap;
+
+#include <strider.h>
+using strider::make_strided_range;
+using strider::make_strided;
+
+#include <algorithm>
+using std::accumulate;
+using std::transform;
+using std::for_each;
+using std::begin;
+using std::plus;
+using std::end;
+
+#include <vector>
+using std::vector;
+'
+
+header_file = "vignette.h"
+cat(header_code, file = file.path(tempdir(), header_file))
+pkg_cppflags = Sys.getenv("PKG_CPPFLAGS")
+pkg_cppflags = paste(pkg_cppflags, paste0("-I\"", tempdir(), "\""))
+Sys.setenv(PKG_CPPFLAGS = pkg_cppflags)
+```
+
+## Introduction
+
+The [C++ standard library](http://en.cppreference.com/w/) introduced generic algorithms that operate on a sequences defined by begin-end iterator-pairs. These generic algorithms can be used to replace C-style for-loops over indices. They are thought to reduce common code bugs resulting from off-by-n indexing errors that can result in buffer overruns and other illogical behavior. Some have even suggested ["no raw loops"](https://channel9.msdn.com/Events/GoingNative/2013/Cpp-Seasoning) as a rule. Applying the standard library algorithms is often straightforward for simple sequences bounded by iterators. When working with multidimensional data like matrices however, many authors revert to computing indices, either because it is more explicit and therefor easier to implement or because the multidimensional data structures do not offer pre-defined iterators.
+
+The difficulty applying the standard library algorithms to multidimensional data stems from the fact that successive dimensions must follow leading dimensions and this necessitates skips when iterating. Solving this requires a strided iterator that skips over intermediate memory locations when incrementing or decrementing. Having myself often reverted to indices when implementing algorithms on multidimensional data, while simultaneously wishing for more consistency with the standard library, I decided to implement a strided pointer class and wrap it in the new R library **strider**. The header is installed with the package, so it can be used by other packages via the LinkingTo directive in the DESCRIPTION file. **The header has no dependencies on R and so can be used in pure C++ projects.**
+
+### Replacing index loops with standard library algorithms
+
+As a prelude to using the **strided_iterator** class, I start out with an example of vector convolution because it is one of the original examples in the [Rcpp](https://github.com/RcppCore/Rcpp) documentation, which I have copied verbatim here. I have placed some definitions into a header file whose contents can be found in the RMarkdown source file used to generate this output. Otherwise, all compiler settings were left at their default values.
+
+```{Rcpp}
+// [[Rcpp::depends(BH)]]
+// [[Rcpp::depends(strider)]]
+// [[Rcpp::plugins(cpp11)]]
+
+#include <vignette.h>
+
+// [[Rcpp::export]]
+NumericVector
+convolve_cpp(const NumericVector& a,
+             const NumericVector& b) {
+  // Declare loop counters, and vector sizes
+  int i, j,
+      na = a.size(), nb = b.size(),
+      nab = na + nb - 1;
+  // Create vector filled with 0
+  NumericVector ab(nab);
+  // Crux of the algorithm
+  for(i = 0; i < na; i++) {
+    for(j = 0; j < nb; j++) {
+          ab[i + j] += a[i] * b[j];
+    }
+  }
+  // Return result
+  return ab;
+}
+```
+
+The next code block shows my translation using the standard library transform algorithm. This version eschews integer indexes for incrementing iterators along the input and output vectors.
+
+```{Rcpp}
+// [[Rcpp::depends(BH)]]
+// [[Rcpp::depends(strider)]]
+// [[Rcpp::plugins(cpp11)]]
+
+#include <vignette.h>
+
+// [[Rcpp::export]]
+NumericVector
+stl_algo_convolve(const NumericVector& a,
+                  const NumericVector& b) {
+  // Declare vector sizes
+  int
+    na = a.size(), nb = b.size(), 
+    nab = na + nb - 1;
+  // Create vector filled with 0
+  NumericVector ab(nab);
+  // Crux of the algorithm
+  transform(begin(a), end(a),
+            begin(ab), begin(ab),
+            [&b](const double t, double& u) {
+              transform(begin(b), end(b), &u, &u,
+                        [t](const double v, const double w) {
+                          return w + t * v; });
+              return u; });
+  // Return result
+  return ab;
+}
+```
+
+```{r, include=FALSE}
+a = 1:100
+b = 1:100
+if (!identical(convolve_cpp(a, b), stl_algo_convolve(a, b)))
+  stop("stl_algo_convolve is incorrect")
+```
+
+While the code is certainly more busy, replacing explicit loops with standard library algorithms is considered by some to be a best-practice that is less susceptible to indexing errors and buffer overruns.
+
+C++11 introduced range-based for-loops that many of the advantages of the standard library algorithms in terms of avoiding indexing errors and are simpler and somewhat more natural to reason about.
+
+```{Rcpp}
+// [[Rcpp::depends(BH)]]
+// [[Rcpp::depends(strider)]]
+// [[Rcpp::plugins(cpp11)]]
+
+#include <vignette.h>
+
+// [[Rcpp::export]]
+NumericVector
+range_loop_convolve(const NumericVector& a,
+                    const NumericVector& b) {
+  // Declare vector sizes
+  int
+    na = a.size(), nb = b.size(), 
+    nab = na + nb - 1;
+  // Create vector filled with 0
+  NumericVector ab(nab);
+  // Crux of the algorithm
+  auto t = &ab[0];
+  for (const auto u : a)
+  {
+    auto v = t++;
+    for (const auto w : b)
+      *v++ += u * w;
+  }
+  // Return result
+  return ab;
+}
+```
+
+```{r, include=FALSE}
+a = 1:100
+b = 1:100
+if (!identical(convolve_cpp(a, b), range_loop_convolve(a, b)))
+  stop("range_loop_convolve is incorrect")
+```
+
+The main difference here is we have to manually increment the output iterator. That could be solved using a zip iterator adapter. (Convenient tuple syntax for this case is available in C++17.) Nonetheless, this example demonstrates how expressive range-based for-loops can be while avoiding explicit indices.
+
+There is no particular performance advantage to avoiding indices, so the choice is largely a matter of taste. Modern compilers will produce similar if not the exact same instructions regardless of the type of loop. Benchmarking comparisons can however point out problems with a particular implementation. It is useful to recall that benchmark differences within $\pm 10\%$ are likely meaningless and results will vary in different environments. Relative numbers below are therefore printed using ```digits = 1``` to demphasize small differences. With two vectors of length $10^4$, I get the following performances for the different loop implementations.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+if (require(microbenchmark) && require(dplyr))
+{
+  a = rnorm(5e3)
+  b = rnorm(5e3)
+  microbenchmark(convolve_cpp(a, b),
+                 stl_algo_convolve(a, b),
+                 range_loop_convolve(a, b)) %>%
+    summary(unit = "eps") %>% select(expr, median) %>%
+    mutate(relative = median / max(median)) %>% arrange(1 / median) %>%
+    knitr::kable(digits = 1, caption = "Evaluations per second")
+} else {
+  cat("Error: either dplyr or microbenchmark is not available")
+}
+```
+
+## Strided_iterator and strided_range
+
+The workhorse class in the **strider** package is **strided_iterator**, which inherits from the [Boost iterator adaptor](http://www.boost.org/doc/libs/release/libs/iterator/) class. It merely advances by a specified stride when incremented. It is currently possible to use negative strides, however this is not 
+tested. The strided iterator will conform to the same iterator category and support the same expressions as the iterator that is adapted. A second class, **strided_range** exists solely to construct begin and end iterators over a strided range.
+
+Users will generally only need to call one or both of two auxiliary functions with the following definitions:
+
+```{cpp}
+template<typename T>
+inline strided_iterator<T>
+make_strided(T iter,
+             typename iterator_traits<T>::difference_type stride = 0,
+             typename iterator_traits<T>::difference_type strides = 0);
+
+template<typename T>
+inline strided_range<T>
+make_strided_range(T iter,
+                   typename iterator_traits<T>::difference_type stride,
+                   typename iterator_traits<T>::difference_type strides);
+```
+
+The ```make_strided``` function converts an ordinary iterator to a strided iterator. The stride length is determined by the ```stride``` argument. As a convenience, the ```strides``` argument can be used to advance the supplied iterator ```strides``` $\times$ ```stride``` steps. This is useful in creating an end-sentinel iterator for a buffer that does not provide its own ```end``` function. Examples of this usage can be found below.
+
+The ```make_strided_range``` function creates a ```strided_range``` object with ```begin``` and ```end``` methods. Both ```stride``` and ```strides``` are required to define the spanned range.
+
+### Striding over matrix margins
+
+As a minimal example, consider computing the column sums of a matrix. I provide three example implementations using indices, ```make_strided``` and ```make_strided_range```.
+
+```{Rcpp}
+// [[Rcpp::depends(BH)]]
+// [[Rcpp::depends(strider)]]
+// [[Rcpp::plugins(cpp11)]]
+
+#include <vignette.h>
+
+// [[Rcpp::export]]
+NumericVector indx_col_sum(const NumericMatrix& x)
+{
+  auto
+    nr = x.nrow(),
+    nc = x.ncol();
+  NumericVector res(nc, 0.0);
+  for (int c = 0; c != nc; ++c)
+    for (int r = 0; r != nr; ++r)
+      res[c] += x(r, c);
+  return res;
+}
+
+// [[Rcpp::export]]
+NumericVector range_col_sum(const NumericMatrix& x)
+{
+  auto
+    nr = x.nrow(),
+    nc = x.ncol();
+  NumericVector res(nc);
+  auto t = res.begin();
+  for (const auto& u : make_strided_range(begin(x), nr, nc))
+  {
+    for (auto v = &u; v != &u + nr; ++v) *t += *v;
+    ++t;
+  }
+  return res;
+}
+
+// [[Rcpp::export]]
+NumericVector strided_col_sum(const NumericMatrix& x)
+{
+  auto nr = x.nrow();
+  NumericVector res(x.ncol());
+  transform(make_strided(begin(x), nr), make_strided(end(x)), begin(res),
+            [nr](const double& v){ return accumulate(&v, &v + nr, 0.0); });
+  return res;
+}
+
+```
+
+```{r include=FALSE}
+local({
+x = matrix(1:1e4, 1e2)
+if (!identical(indx_col_sum(x), colSums(x)))
+  stop("indx_col_sum is incorrect")
+if (!identical(strided_col_sum(x), colSums(x)))
+  stop("strided_col_sum is incorrect")
+if (!identical(range_col_sum(x), colSums(x)))
+  stop("range_col_sum is incorrect")
+})
+```
+
+In this case, owing to the column-major memory layout of R matrices, the STL ```transform``` algorithm combined with ```make_strided``` is the most compact in terms of code. Furthermore, the strided iterator is incremented in the outer loop meaning the scanning of the matrix is in the optimal order. The performance of these three implementations are equivalent, as is R's built in ```colSumms``` implemented in C.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+if (require(microbenchmark) && require(dplyr))
+{
+  x = matrix(rnorm(1e6), 1e3)
+  microbenchmark(colSums(x), indx_col_sum(x),
+                 strided_col_sum(x), range_col_sum(x)) %>%
+    summary(unit = "eps") %>% select(expr, median) %>%
+    mutate(relative = median / max(median)) %>% arrange(1 / median) %>%
+    knitr::kable(digits = 1, caption = "Evaluations per second")
+} else {
+  cat("Error: either dplyr or microbenchmark is not available")
+}
+```
+
+### Row sums
+
+Summing over rows is more interesting because R matrices are stored in column-major format. That means that looping over a row will skip from column to column by-passing all the rows in between. This non-local memory access is a drag on performance. Four implementations of the row-summing algorithm are given below. 
+
+```{Rcpp}
+// [[Rcpp::depends(BH)]]
+// [[Rcpp::depends(strider)]]
+// [[Rcpp::plugins(cpp11)]]
+
+#include <vignette.h>
+
+// [[Rcpp::export]]
+NumericVector indx_row_sum(const NumericMatrix& x)
+{
+  auto
+    nr = x.nrow(),
+    nc = x.ncol();
+  NumericVector res(nr, 0.0);
+  for (int c = 0; c != nc; ++c)
+    for (int r = 0; r != nr; ++r)
+      res[r] += x(r, c);
+  return res;
+}
+
+// [[Rcpp::export]]
+NumericVector range_row_sum(const NumericMatrix& x)
+{
+  auto
+    nr = x.nrow(),
+    nc = x.ncol();
+  NumericVector res(nc);
+  for (const auto& u : make_strided_range(begin(x), nr, nc))
+  {
+    auto t = begin(res);
+    for (auto v = &u; v != &u + nr; ++v) *t++ += *v;
+  }
+  return res;
+}
+
+// [[Rcpp::export]]
+NumericVector strided_row_sum(const NumericMatrix& x)
+{
+  auto
+    nr = x.nrow(),
+    nc = x.ncol();
+  NumericVector res(nr);
+  transform(begin(x), begin(x) + nr, begin(res), [nr, nc](const double& v) {
+    return accumulate(make_strided(&v, nr), make_strided(&v, nr, nc), 0.0); });
+  return res;
+}
+
+// [[Rcpp::export]]
+NumericVector strided_row_sum2(const NumericMatrix& x)
+{
+  auto nr = x.nrow();
+  NumericVector res(nr, 0.0);
+  for_each(make_strided(begin(x), nr), make_strided(end(x)), [&res, nr](const double& y) {
+    transform(&y, &y + nr, begin(res), begin(res), plus<double>()); });
+  return res;
+}
+```
+
+Again, the ```transform``` with ```accumulate``` implementation is compact, but here the strided iterator is in the inner loop causing poor memory locality. The alternative implementation uses ```for_each``` with ```make_strided``` to skip to the top of each column and then uses ```transform``` to accumulate the values. The final range-based version is equivalent to the ```for_each``` with ```transform``` version.
+
+```{r include=FALSE}
+local({
+x = matrix(1:1e4, 1e2)
+if (!identical(indx_row_sum(x), rowSums(x)))
+  stop("indx_row_sum is incorrect")
+if (!identical(strided_row_sum(x), rowSums(x)))
+  stop("strided_row_sum is incorrect")
+if (!identical(strided_row_sum2(x), rowSums(x)))
+  stop("strided_row_sum2 is incorrect")
+if (!identical(range_row_sum(x), rowSums(x)))
+  stop("range_row_sum is incorrect")
+})
+```
+
+The benchmark results show that indeed placing the strided iterator in the inner loop gives poor results. The index-based, range-based and ```for_each```-```transform``` version are all equivalent in efficiency. Interestingly, R's built in ```rowSums``` is several times slower, most likely indicating that the column index is incremented in the inner loop.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+if (require(microbenchmark) && require(dplyr))
+{
+  x = matrix(rnorm(1e6), 1e3)
+  microbenchmark(strided_row_sum(x), rowSums(x),
+                 indx_row_sum(x), strided_row_sum2(x),
+                 range_row_sum(x)) %>%
+    summary(unit = "eps") %>% select(expr, median) %>%
+    mutate(relative = median / max(median)) %>% arrange(1 / median) %>%
+    knitr::kable(digits = 1, caption = "Evaluations per second")
+} else {
+  cat("Error: either dplyr or microbenchmark is not available")
+}
+```
+
+### 2D convolution
+
+A much better demonstration of the strided approach is to compute the 2-dimensional convolution. This requires four nested loops and much more expensive indexing calculations. Furthermore, because C++ does not provide a bivariate index operators, accessing 2D data structures requires defining a new method and the details of this method will strongly determine overhead. In the strided approach, we simply walk the output matrix by iteration, so no indexing is required.
+
+```{Rcpp}
+// [[Rcpp::depends(BH)]]
+// [[Rcpp::depends(strider)]]
+// [[Rcpp::plugins(cpp11)]]
+
+#include <vignette.h>
+
+// [[Rcpp::export]]
+NumericMatrix
+convolve2_cpp(const NumericMatrix& a,
+              const NumericMatrix& b)
+{
+  int
+    nra = a.nrow(), nca = a.ncol(),
+    nrb = b.nrow(), ncb = b.ncol();
+  NumericMatrix ab(nra + nrb - 1, nca + ncb - 1);
+  for(int i = 0; i != nca; ++i)
+    for (int j = 0; j != ncb; ++j)
+      for (int k = 0; k != nra; ++k)
+        for (int l = 0; l != nrb; ++l)
+          ab(k + l, i + j) += a(k, i) * b(l, j);
+  return ab;
+}
+
+// [[Rcpp::export]]
+NumericMatrix
+range_loop_convolve2(const NumericMatrix& a,
+                     const NumericMatrix& b)
+{
+  int
+    nra = a.nrow(), nca = a.ncol(),
+    nrb = b.nrow(), ncb = b.ncol(),
+    nrab = nra + nrb - 1,
+    ncab = nca + ncb - 1;
+  NumericMatrix ab(nrab, ncab);
+  auto iter1 = make_strided(begin(ab), nrab);
+  for (const auto& t : make_strided_range(begin(a), nra, nca)) {
+    auto iter2 = make_strided(&*iter1++, nrab);
+    for (const auto& u : make_strided_range(begin(b), nrb, ncb)) {
+      auto iter3 = &*iter2++;
+      for (const auto& v : make_strided_range(&t, 1, nra)) {
+        auto iter4 = iter3++;
+        for (const auto& w : make_strided_range(&u, 1, nrb)) {
+          *iter4++ += v * w; }}}}
+  return ab;
+}
+
+// [[Rcpp::export]]
+NumericMatrix
+stl_algo_convolve2(const NumericMatrix& a,
+                   const NumericMatrix& b)
+{
+  int
+    nra = a.nrow(), nca = a.ncol(),
+    nrb = b.nrow(), ncb = b.ncol(),
+    nrab = nra + nrb - 1,
+    ncab = nca + ncb - 1;
+  NumericMatrix ab(nrab, ncab);
+  transform(make_strided(begin(a), nra), make_strided(end(a)),
+            make_strided(begin(ab), nrab), make_strided(begin(ab), nrab),
+            [&](const double& t, double& u) {
+    transform(make_strided(begin(b), nrb), make_strided(end(b)),
+              make_strided(&u, nrab), make_strided(&u, nrab),
+              [&](const double& v, double& w) {
+      transform(&t, &t + nra, &w, &w,
+                [&](const double x, double& y) {
+        transform(&v, &v + nrb, &y, &y,
+                  [&](const double z, const double zz) {
+          return zz + x * z; });
+        return y; });
+      return w; });
+    return u; });
+  return ab;
+}
+```
+
+As a quick test, I check whether the convolution is invariant to the delta function as required. 
+
+```{r include=FALSE}
+local({
+a = matrix(c(1, 2, 1,
+             1, 1, 1), 2, 3, byrow = TRUE)
+b = matrix(c(0, 0, 0,
+             0, 0, 0,
+             0, 1, 0,
+             0, 0, 0), 4, 3, byrow = TRUE)
+if (!identical(convolve2_cpp(a, b), range_loop_convolve2(a, b)) ||
+    !identical(convolve2_cpp(a, b), stl_algo_convolve2(a, b)) ||
+    !identical(t(convolve2_cpp(a, b)), convolve2_cpp(t(a), t(b))) ||
+    !identical(t(range_loop_convolve2(a, b)), range_loop_convolve2(t(a), t(b))) ||
+    !identical(t(stl_algo_convolve2(a, b)), stl_algo_convolve2(t(a), t(b))))
+    stop("Problem with 2D convolve")
+})
+```
+
+```{r}
+a = matrix(c(1, 2, 3,
+             4, 5, 6), 2, 3, byrow = TRUE)
+b = matrix(c(0, 0, 0,
+             0, 0, 0,
+             0, 1, 0,
+             0, 0, 0), 4, 3, byrow = TRUE)
+stl_algo_convolve2(a, b)
+```
+
+The output is correct. Here are benchmark results for $50\times50$ random matrices.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+if (require(microbenchmark) && require(dplyr))
+{
+  a = matrix(rnorm(2500), 50)
+  b = matrix(rnorm(2500), 50)
+  microbenchmark(convolve2_cpp(a, b),
+                 stl_algo_convolve2(a, b),
+                 range_loop_convolve2(a, b)) %>%
+    summary(unit = "eps") %>% select(expr, median) %>%
+    mutate(relative = median / max(median)) %>% arrange(1 / median) %>%
+    knitr::kable(digits = 1, caption = "Evaluations per second")
+} else {
+  cat("Error: either dplyr or microbenchmark is not available")
+}
+```
+
+The transform-based implementation appears to have a slight advantage, however these results may change on different systems. It is possible the index-offset calculations are making the indexed version slower. The importance of offset calculations should increase with the number of dimensions. It should be noted that these are not the fasted algorithms for performing convolution. If the kernel is separable, each dimension can be convolved individually. For large matrices, Fourier methods are faster still.
+
+## Other approaches
+
+Note that [Boost Range](https://www.boost.org/doc/libs/release/libs/range/) and the [range v3 proposal](https://github.com/ericniebler/range-v3) have strided iterators. Of course, [Herb Sutter has already thought of everything](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n3851.pdf), and there is an implementaiton [here](https://github.com/wardw/array_view). The [xtensor](https://github.com/QuantStack/xtensor) library appears to be the heir-apparent for working with multidimensional data in C++ and perhaps [R as well](https://cran.r-project.org/package=xtensor). I have not tried to implement a 2D covolution with these, however it would be an interesting experiment.
+
+## Conclusions
+
+Experimenting with the C++ standard library algorithms demonstrates that they are often highly efficient and, in some cases, faster than corresponding native R algorithms. However using the standard library algorithms with multidimensional data is challenging and it is quite common for authors to resort to index-based for-loops, which can impede performance and risk indexing errors.
+
+The **strider** package provides a lightweight iterator-adapter that makes using the standard library algorithms straightforward with multidimensional buffers accessible via a pointer or iterator. As long as one knows the dimensions and the memory layout of the data, then any dimension can be scanned by computing a stride and number of strides. When it is possible to scan the data sequentially, maximum performance is attained. Owning to the large number of legacy libraries whose APIs pass raw pointers to structured buffers, I expect that **strider** may find a wide range of applications while also improving code reliability and comprehension.
+
+***
+
+

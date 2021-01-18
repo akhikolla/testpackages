@@ -1,0 +1,2751 @@
+%\VignetteIndexEntry{Bayesian Diversification Rate Analysis}
+%\VignettePackage{TESS}
+%\VignetteKeyword{Documentation}
+%\VignetteEngine{knitr::knitr}
+
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}   %needed by Sweave
+%\usepackage[usenames, dvipsnames]{color}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{natbib}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{subfig}
+\usepackage{xspace}
+\usepackage{geometry}
+\usepackage[hidelinks]{hyperref}
+\usepackage[usenames,dvipsnames]{xcolor}
+\usepackage{colortbl}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage[font=small,labelfont=bf]{caption}
+
+\newcommand{\R}{\textsf{R}\xspace}
+\newcommand{\code}{\texttt}
+\newcommand{\pkg}{\textsf}
+\newcommand{\TESS}{\pkg{TESS}\xspace}
+\newcommand{\APE}{\pkg{ape}\xspace}
+\newcommand{\BAMM}{\pkg{BAMM}\xspace}
+\newcommand{\BayesRate}{\pkg{BayesRate}\xspace}
+\newcommand{\CODA}{\pkg{coda}\xspace}
+\newcommand{\Conifers}{\textit{Conifers}\xspace}
+\newcommand{\CoMET}{\code{CoMET}\xspace}
+\newcommand{\DDD}{\pkg{DDD}\xspace}
+\newcommand{\DivBayes}{\pkg{DivBayes}\xspace}
+\newcommand{\Diversitree}{\pkg{Diversitree}\xspace}
+\newcommand{\PyRate}{\pkg{PyRate}\xspace}
+\newcommand{\RPANDA}{\pkg{RPANDA}\xspace}
+\newcommand{\SubT}{\pkg{SubT}\xspace}
+\newcommand{\TreePar}{\pkg{TreePar}\xspace}
+\newcommand{\TreeSim}{\pkg{TreeSim}\xspace}
+
+\newcommand{\IE}{\textit{i.e.,}\xspace}
+\newcommand{\EG}{\textit{e.g.,}\xspace}
+\newcommand{\CF}{\textit{cf.}\xspace}
+
+\newcolumntype{L}[1]{>{\raggedright\let\newline\\\arraybackslash\hspace{0pt}}m{#1}}
+
+\author{Sebastian H{\"o}hna, Michael R. May and Brian R. Moore}
+\title{Phylogeny Simulation and \\ Diversification Rate Analysis with TESS}
+
+\begin{document}
+%\SweaveOpts{concordance=TRUE}
+
+<<include=FALSE>>=
+library(knitr)
+opts_chunk$set(concordance=TRUE)
+knit_theme$set("default")
+
+if ( file.exists("results") == FALSE ) dir.create("results")
+
+@
+\maketitle
+
+This tutorial describes statistical approaches for inferring rates of lineage diversification (speciation -- extinction) from empirical (\IE estimated) phylogenetic trees---and for generating simulated phylogenetic trees---under various stochastic-branching process models using the \R package \TESS.
+\TESS provides a flexible framework for specifying diversification models---where diversification rates are constant, vary continuously, or change episodically through time (including explicit models of mass-extinction events)---and implements numerical methods to estimate parameters of these models from estimated phylogenies.
+A major feature of \TESS is the ability to include various methods of incomplete taxon sampling.
+Additionally, we provide robust Bayesian methods for assessing the \textit{relative} fit of these models of lineage diversification to a given study tree---\EG where stepping-stone simulation is used to estimate the marginal likelihoods of competing models, which can then be compared using Bayes factors.
+We also provide Bayesian methods for evaluating the \textit{absolute} fit of these branching-process models to a given study tree---\IE where posterior-predictive simulation is used to assess the ability of a candidate model to generate the observed phylogenetic data.
+Finally, we show how \TESS can be used to efficiently simulate phylogenies, and how these simulations can provide invaluable null hypotheses.
+%We provide a detailed tutorial that describes how to perform these analyses on example datasets using the \R package \TESS.
+
+\newpage
+\tableofcontents
+
+\newpage
+\section{Getting Started}
+
+\noindent
+We assume that the reader has some experience using \R and has installed the \TESS package (including all dependent packages, such as \APE and \CODA).
+We also assume some familiarity with Bayesian inference and models of lineage diversification.
+Nevertheless, we intend this guide to be relatively self-contained: we provide brief explanations of the methods and models in the corresponding tutorials, and direct the reader to the relevant primary literature for more detailed descriptions of the corresponding topics.
+
+\noindent
+We originally developed \TESS as a tool for efficiently simulating phylogenies in order to test and validate new inference methods and models \citep{Hoehna2013}.
+However, \TESS has since evolved to include several methods for estimating diversification rates from empirical phylogenies \citep[\EG][]{Hoehna2014a,May2015}.
+This is a natural extension, as both simulation and inference methods are based on the same equations and underlying theory.
+
+\subsection{Types of research questions involving diversification rates}
+
+\noindent
+Many evolutionary phenomena entail differential rates of diversification (speciation -- extinction); {\it e.g.}, adaptive radiation, diversity-dependent diversification, key innovations, and mass extinction.
+The innumerable specific study questions regarding lineage diversification may be classified within five fundamental categories of inference problems.
+%Phylogeny-based statistical methods have been developed to address five fundamental questions regarding rates of lineage diversification.
+Admittedly, this classification scheme is somewhat arbitrary, but it is nevertheless useful, as it allows users to navigate the ever-increasing number of available phylogenetic methods.
+Below, we describe each of the fundamental questions regarding diversification rates and provide a few examples of software packages that are available to address them.
+\paragraph{(1) Rate estimation}\textit{What is the (constant) rate of diversification in my study group?} 
+Methods have been developed to estimate parameters of the stochastic-branching process ({\it i.e.}, rates of speciation and extinction, or composite parameters such as net-diversification and relative-extinction rates) under the assumption that rates have remained constant across lineages and through time; {\it i.e.}, under a constant-rate birth-death stochastic-branching process model.
+Statistical phylogenetic methods developed \textit{specifically} to estimate diversification-rate parameters include:
+\begin{itemize}
+\item \texttt{DivBayes} is a program to estimate the net-diversification rate (speciation--extinction rate) and the relative-extinction rate (speciation $\div$ extinction rate) given the estimated stem age of a group and the number of extant species that belong to it \citep{Ryberg2011a}.
+\item \texttt{SubT} is a program for estimating the net-diversification rate and the relative-extinction rate using the method described by \cite{Bokma2008}, which allows inclusion of unsampled species.
+This is a nice feature, as \texttt{SubT} models unsampled species explicitly---rather than assuming some artificial sampling scheme---by virtue of estimating the divergence times of the missing taxa.
+\end{itemize}
+Both \texttt{DivBayes} and \texttt{SubT} are implemented in a Bayesian statistical framework, and therefore estimate posterior probability distributions for the rate parameters of interest, which provides a natural means of accommodating uncertainty in these parameter estimates.
+Of course, rate parameters may also be estimated by many other methods that relax the assumption that rates of diversification are constant across lineages or constant through time ({\it i.e.}, the constant-rate birth-death branching model is a special case of these more general rate-variable branching process models, which we describe below).
+
+\noindent
+Similarly, diversification-rate parameters are also included as nuisance parameters of other phylogenetic models---{\it i.e.}, where these diversification-rate parameters are not of direct interest.
+For example, many methods for estimating species divergence times---such as \texttt{BEAST} \citep{Drummond2012}, \texttt{MrBayes} \citep{Ronquist2012}, and \texttt{RevBayes} \citep{Hohna2015}---implement `relaxed-clock models' that include a constant-rate birth-death branching process as a prior model on the distribution of tree topologies and node ages \citep[{\it c.f.},][]{Heath2014a}.
+Although the parameters of these `tree priors' are not typically of direct interest, they are nevertheless estimated as part of the joint posterior probability distribution of the relaxed-clock model, and so can be estimated simply by querying the corresponding marginal posterior probability densities.
+In fact, this may provide more robust estimates of the diversification-rate parameters, as they accommodate uncertainty in the other phylogenetic-model parameters (including the tree topology, divergence-time estimates, and the other relaxed-clock model parameters).\\
+
+\paragraph{(2) Detecting diversification-rate variation across branches}\textit{Is there evidence that diversification rates have varied significantly across the branches of my study group?}
+Methods have been developed to detect departures from rate constancy across lineages; these tests are analogous to methods that test for departures from a molecular clock---i.e., to assess whether \textit{substitution} rates vary significantly across lineages.
+Like molecular-clock tests, these diversification-rate methods only indicate whether \textit{diversification} rates vary significantly across lineages, but they do not identify the location(s) of any rate shifts.
+These methods are important for assessing whether a given tree violates the assumptions of other inference methods.
+For example, statistical phylogenetic methods that detect diversification-rate variation through time (see below) typically assume that rates are constant across branches at every instant in time (even though they may vary through time).
+Several methods are available to detect diversification-rate variation across lineage.
+\begin{itemize}   
+\item \texttt{SymmeTREE} \citep{Chan2005} implements a number of so-called `whole-tree' indices that summarize the shape of a tree as a number \citep[][]{Chan2002}, and uses these indices as test statistics to identify significant diversification-rate variation across lineages using Monte Carlo simulation \citep{Moore2004}.  
+\item \texttt{apTreeshape} \citep{Bortolussi2006} is an \R package that implements two of the seven `whole-tree' indices implemented in \texttt{SymmeTREE}, and implements the Monte Carlo simulation method of \citet{Moore2004} to provide tests for significant diversification-rate variation across lineages.  
+\item \texttt{TreeStat} (developed by Andrew Rambaut) also implements several `whole-tree' indices to measure tree shape, but does not provide tests for significant diversification-rate variation across lineages.  
+\end{itemize}   
+
+\paragraph{(3) Detecting diversification-shifts along branches}There are two distinct questions that fall under this general inference category, depending upon whether we are testing an \textit{a priori} hypothesis about the predicted location(s) of diversification-rate shifts in our study tree, or if we are instead agnostically surveying our study tree for possible location(s) of significant diversification-rate shifts across lineages.
+The first type of question asks: \textit{Was there a significant diversification-rate shift along a specified branch in my study group?}
+Several statistical phylogenetic methods have been developed to detect significant diversification-rate shifts along pre-specified branches of the tree.
+\begin{itemize}   
+\item \texttt{r8s} \citep{Sanderson2003} implements a maximum-likelihood approach \citep{Magallon2001} to identify pre-specified lineages that have diversified at anomalous (either significantly elevated or decreased) diversification rates.  
+\item \texttt{BayesRate} \citep{Silvestro2011} can identify significant diversification-rate shift across branches by estimating the marginal likelihood (using robust thermodynamic integration methods) of a study tree that has been partitioned into one or more rate categories, and then selecting the partition scheme (diversification-rate model) that provides the best fit to the data using Bayes factors.
+\texttt{BayesRate} implements constant and exponentially decaying birth-death models, and can accommodate phylogenetic uncertainty by averaging inferences over a sample of trees.
+\end{itemize}   
+The second type of question asks: \textit{Have there been significant diversification-rate shifts along branches in my study group, and if so, how many shifts and along which branches?}
+Several statistical phylogenetic methods have been developed to detect significant diversification-rate shifts along pre-specified branches of the tree.
+\begin{itemize}   
+\item \texttt{SymmeTREE} \citep{Chan2005} implements a maximum-likelihood approach, in which various `shift statistics' compute the probability of a diversification-rate shift along each internal node, and uses Monte Carlo simulation to assess their significance \citep{Moore2004}.  
+\item \texttt{MEDUSA} \citep{Alfaro2009} implements a maximum-likelihood approach in which birth-death models of increasing complexity (with 0, 1, 2 \dots diversification-rate shifts) are first fit to the tree, and then AIC is used to select the preferred diversification-rate model.
+\item \texttt{BAMM} \citep{Rabosky2014a} implements a compound Poisson process model in a Bayesian framework to provide estimates of the number and location of diversification-rate shifts across the branches of a tree, and also infers the diversification-rate parameters (speciation, extinction, and diversity-dependence) on each branch of the tree.
+\end{itemize}   
+
+\paragraph{(4) Detecting diversification-rate correlates}\textit{Are diversification rates correlated with some variable in my study group?}
+Several methods have been developed to identify overall correlations between diversification rates and organismal features (binary and multi-state discrete morphological traits, continuous morphological traits, geographic range, etc.), many of which are implemented in the excellent \texttt{DiversiTree} package \citep{FitzJohn2012}.
+These methods include the following: 
+\begin{itemize}   
+\item \texttt{BiSSE} \citep[Binary State Speciation and Extinction;][]{Maddison2007} models the evolution of a binary trait---with parameters $q_{01}$ and $q_{10}$ that specify the instantaneous rates of change between the two states, 0 and 1---where the rate of lineage diversification depends on the current state.
+When a lineage is in state 0, the stochastic-branching process has rate parameters $\phi_0 = \{\lambda_0,\mu_0\}$, and when it is in state 1, the process has rate parameters $\phi_1 = \{\lambda_1,\mu_1\}$.
+The \texttt{BiSSE} model is implemented in both maximum likelihood and Bayesian frameworks, although in practice, selection among candidate state-specific models is typically performed in a maximum-likelihood framework using likelihood-ratio tests.
+\item \texttt{MuSSE} \citep[Multiple State Speciation and Extinction;][]{FitzJohn2009} extends the \texttt{BiSSE} model to identify correlations for multi-state discrete states.
+\item \texttt{GeoSSE} \citep[Geographic State Speciation and Extinction;][]{Goldberg2011} extends the \texttt{BiSSE} model to identify correlations between diversification rates among a set of discrete geographic areas.
+\item \texttt{BiSSENESS} \citep[\texttt{BiSSE}-Node Enhanced State Shift;][]{Magnuson2012} extends the \texttt{BiSSE} model to identify correlations between diversification rates and a discrete binary traits, while also assessing whether the trait evolves gradually or episodically.
+\item \texttt{QuaSSE} \citep[Quantitative State Speciation and Extinction;][]{FitzJohn2010} is the continuous-trait analogue of the \texttt{BiSSE} model.
+\end{itemize}   
+
+\paragraph{(5) Detecting diversification-rate shifts through time}
+%\textit{Have diversification rate varied through time in my study group?}
+There are several distinct and common types of questions that fall under this general inference category.
+First, we might ask whether there is evidence of an episodic, tree-wide increase in diversification rates (associated with a sudden increase in speciation rate and/or decrease in extinction rate), as might occur during an episode of adaptive radiation.
+A second question asks whether there is evidence of a continuous/gradual decrease in diversification rates through time (associated with decreasing speciation rates and/or increasing extinction rates), as might occur because of diversity-dependent diversification ({\it i.e.}, where competitive ecological interactions among the species of a growing tree decrease the opportunities for speciation and/or increase the probability of extinction).
+A final question in this category asks whether our study tree was impacted by a mass-extinction event (where a large fraction of the standing species diversity is suddenly lost).
+This is the category of methods to which \texttt{TESS} belongs, which is shared with several other methods for detecting tree-wide variation in diversification rates.
+\begin{itemize}   
+\item \texttt{DDD} \citep[Diversity-Dependent Diversification;][]{Etienne2012a} implements an explicit model of diversity-dependent diversification in a maximum-likelihood framework.
+This flexible model allows diversity-dependent diversification where:
+(1) speciation rate is a function of time; 
+(2) extinction rate is a function of time;
+(3) speciation and extinction rates are both functions of time;
+(4) speciation rate is a function of species diversity;
+(5) extinction rate is a function of species diversity, and;
+(6) speciation and extinction rates are both functions of species diversity.
+Additionally, \texttt{DDD} can identify the effect of events (tree-wide `key innovations') that alter the carrying capacity of the tree \citep{Etienne2012b}, and can accommodate incomplete species sampling under the assumption of uniform species sampling.
+Finally, \texttt{DDD} can be used to simulate trees under various diversity-dependent stochastic-branching processes.
+This method is primarily used to address two research questions:
+\begin{itemize}
+\item{\textit{Does the study tree exhibit diversity-dependent diversification?}}
+\item{\textit{Have key innovations changed the carrying capacity in the study tree?}}
+\end{itemize}
+\item \texttt{RPANDA} \citep[Phylogenetic ANalyses of DiversificAtion;][]{Morlon2015} implements the time-dependent birth-death process described in \cite{Morlon2010} and \cite{Morlon2011}.
+\texttt{RPANDA} estimates maximum likelihood parameter values for any time-dependent speciation and extinction rate function, providing specification of a virtually infinite number of diversification rate through time functions.
+Missing species are modeled by uniform taxon sampling.
+This method is primarily used to address two research questions:
+\begin{itemize}
+\item \textit{Are diversification rates constant through time?}
+\item \textit{How have diversification rates changed through time?}
+\end{itemize}
+\item \texttt{TreePar} is the inference counterpart to the simulation package, \texttt{TreeSim} (described below), and enables maximum-likelihood estimation under a wide range of diversification models, including constant-rate, episodic, or continuously varying birth-death branching process models.
+Under the episodic model, tree-wide diversification rates may change instantaneously at a shift event, but are constant between those shift events \citep{Stadler2011}.
+A special case of the episodic model is an explicit mass-extinction model, in which a large fraction of the standing species diversification is lost when an event occurs.
+These (piecewise) constant-rate models are complemented by continuously varying rate models, including diversity-dependent diversification rates \citep[where the net-diversification rate is a function of the species diversity;][]{Etienne2012a,Leventhal2014}, and age-dependent models  \citep[where the extinction rate is a function of species age;][]{Lambert2014}.
+Incomplete species sampling is incorporated by uniform species sampling or using information based on the diversity of more inclusive taxonomic groups.
+An intriguing feature of \texttt{TreePar} (and \texttt{TreeSim} and \texttt{expoTree}, see below) is the ability to include serially samples species (which are common for viral datasets) to enable inference of diversification dynamics from non-ultrametric trees \citep{Stadler2010}.
+This method is primarily used to address three research questions:
+\begin{itemize}
+\item{\textit{Are diversification rates constant through time?}}
+\item{\textit{How have diversification rates changed through time?}}
+\item{\textit{Is there evidence that my study tree experienced mass extinction?}}
+\end{itemize}
+\item \texttt{TreeSim} enables flexible simulation of reconstructed and complete phylogenetic trees under constant or episodic birth-death bracing process models.
+Trees can be simulated for a specified time interval (duration) or to a species species diversity (tree size) \citep{Stadler2011a}.
+Additionally, tips can be sampled sequentially through time (\EG sampling fossil taxa).
+\item \texttt{expoTree} \citep{Leventhal2014} estimates maximum likelihood parameter values for diversity-dependent diversification branching process, and accommodates missing species under the assumption of uniform taxon sampling.
+Like \texttt{TreePar}, \texttt{expoTree} accommodates sequential species sampling, which makes it well suited for the study of epidemiological inference problems.
+This method is primarily used to address the following research question:
+\begin{itemize}
+\item{\textit{Does the study tree exhibit diversity-dependent diversification?}}
+\end{itemize}
+\end{itemize}   
+
+
+\subsection{Scope of research questions addressed by \TESS}
+
+There are three fundamental questions that can be addressed using \TESS:
+\begin{enumerate}
+\item{\textit{What are the rates of the process that gave rise to my study tree?}}
+\item{\textit{Have diversification rates changed through time in my study tree?}}
+\item{\textit{Is there evidence that my study tree experienced mass extinction?}}
+%\item{\textit{Does incomplete taxon sampling and the taxon sampling scheme affect diversification rate estimates for my study tree?}}
+\end{enumerate}
+Questions regarding diversification rates can be addressed using \TESS simply by estimating the parameters of the branching-process model---\IE rates of speciation ($\lambda$), extinction ($\mu$), net-diversification ($\lambda - \mu$), and relative-extinction ($\mu \div \lambda$).
+We estimate these parameters in a Bayesian statistical framework, which provides a natural means to accommodate our uncertainty in estimates of the parameters---\IE rather than inferring rate parameters as point estimates, \TESS provides estimates as marginal posterior probability densities.
+We describe the branching-process models implemented in \TESS---and the methods for estimating parameters of these models---in Section \ref{sec:Models} of this guide.
+
+Questions regarding temporal variation in diversification rates can be addressed using \TESS by comparing the relative fit of the study tree to candidate branching-process models---\IE by performing Bayes factor comparisons to assess the relative support for models in which diversification rates are either constant or change through time.
+Note that the models we have implemented in \TESS assume that diversification rates are homogeneous across lineages.
+Accordingly, even though diversification rates may change---gradually or episodically---through time, diversification rates are nevertheless identical across all lineages at any instant in time.
+We describe how to use \TESS to compare the fit of candidate diversification models to a given dataset in Section \ref{sec:ModelEvaluation} of this guide.
+Special attention is given to different methods of incomplete taxon sampling in Section \ref{sec:IncompleteTaxonSampling}.
+
+Questions regarding mass-extinction events can be inferred using \TESS by performing specific hypothesis tests (see Section~\ref{sec:mass-extinction}) or analyses under the CPP on Mass-Extinction Times (\CoMET) model \citep{May2015}.
+These analyses can identify whether your study tree has been impacted by mass extinction, and if so, can identify the number and timing of these events.
+Additionally, the \CoMET model can be used to explore events other than mass extinction---such as the number of tree-wide diversification-rate shifts, the timing of those events, and the rate parameters (\EG speciation and extinction rates) associated with those events.
+%However, the reliability to detect tree-wide diversification-rate shifts is currently being explored.
+We describe how to use \TESS and \CoMET to explore mass-extinction events in Section \ref{sec:CoMET} of this guide.
+
+
+\subsection{Empirical data}
+
+Rates of lineage diversification are typically estimated from phylogenies that, in turn, have been inferred from molecular sequence data.
+For example, consider the conifer phylogeny that is included with the \TESS distribution:
+<<echo=TRUE, message=FALSE>>=
+library(TESS)     # load the package
+data(conifers)    # load the conifers dataset
+@
+\noindent
+More information on this phylogeny can be found in \cite{Leslie2012}.
+You will, of course, want to use your own tree for your diversification-rate analyses.
+You can do this using the \code{read.nexus} function and \code{read.tree} provided in the \APE package:
+<<echo=TRUE, eval=FALSE>>=
+myTree <- read.nexus("data/myTree.nex")
+@
+\noindent
+You can extract the node ages from the tree using the \APE function \code{branching.times}.
+We often use the node ages for estimating parameters of birth-death processes, so we'll extract them and store them in a variable for later use.
+<<echo=TRUE >>=
+times <- as.numeric( branching.times(conifers) )
+@
+\noindent
+You then can view the phylogeny (Figure~\ref{fig:plotConifers}).
+\vspace{-3mm}
+<<echo=TRUE, label=plotConifers, include=TRUE, fig.cap="Conifer phylogeny from \\cite{Leslie2012} without taxon labels.", fig.pos='!ht'>>=
+plot(conifers,show.tip.label=FALSE,no.margin=TRUE)
+@
+\noindent
+Notice that this is an \textit{ultrametric} tree; that is, it is rooted and all of the tips are sampled at the same time horizon (\IE the present).
+The models implemented in \TESS are only valid for ultrametric trees.
+Other trees---\EG where tips are sampled sequentially through time \citep{Stadler2010,Heath2014}---are currently not supported.
+
+Additionally, you can look at the lineage-through-time (LTT) plot (Figure~\ref{fig:lttConifers}).
+\vspace{-3mm}
+<<echo=TRUE, label=lttConifers, include=TRUE, fig.cap='Lineage-through-time plot of the conifer phylogeny.',fig.pos='!ht'>>=
+ltt.plot(conifers,log="y")
+@
+\noindent
+The LTT plot allows us to visualize the phylogenetic information that is used for estimating diversification rates.
+For example, it appears that the slope of the LTT plot changes slightly at $\approx 175, 70$, and 20 million years ago.
+
+\newpage
+\section{Models}\label{sec:Models}
+
+We begin this section with a general introduction to the stochastic birth-death branching process that underlies inference of diversification rates in \TESS.
+This primer will provide some details on the relevant theory of stochastic-branching process models.
+We appreciate that some readers may want to skip this somewhat technical primer; however, we believe that a better understanding of the relevant theory provides a foundation for performing better inferences.
+We then disscuss a variety of specific birth-death models, but emphasize that these examples represent only a tiny fraction of the possible diversification-rate models that can be specified in \TESS.
+
+\subsection{The birth-death branching process}
+Our approach is based on the \textit{reconstructed evolutionary process} described by \cite{Nee1994b}; a birth-death process in which only sampled, extant lineages are observed.
+Let $N(t)$ denote the number of species at time $t$.
+Assume the process starts at time $t_1$ (the `crown' age of the most recent common ancestor of the study group, $t_\text{MRCA}$) when there are two species.
+Thus, the process is initiated with two species, $N(t_1) = 2$.
+We condition the process on sampling at least one descendant from each of these initial two lineages; otherwise $t_1$ would not correspond to the $t_\text{MRCA}$ of our study group.
+Each lineage evolves independently of all other lineages, giving rise to exactly one new lineage with rate $b(t)$ and losing one existing lineage with rate $d(t)$ (Figure~\ref{fig:BirthDeathShift} and Figure~\ref{fig:BDP}).
+Note that although each lineage evolves independently, all lineages share both a common (tree-wide) speciation rate $b(t)$ and a common extinction rate $d(t)$ \citep{Nee1994b,Hoehna2015a}.
+Additionally, at certain times, $t_{\mathbb{M}}$, a mass-extinction event occurs and each species existing at that time has the same probability, $\rho$, of survival.
+Finally, all extinct lineages are pruned and only the reconstructed tree remains (Figure \ref{fig:BirthDeathShift}).
+
+\begin{figure}[h]
+\centering
+       \includegraphics[width=0.8\textwidth]{ext_figures/BirthDeathShift.pdf}
+   \caption{A realization of the  birth-death process with mass extinction.
+   Lineages that have no extant or sampled descendant are shown in gray and surviving lineages are shown in a thicker black line.}
+\label{fig:BirthDeathShift}
+\end{figure}
+
+\begin{figure}[!htbp]
+  	\begin{center}
+  		\includegraphics[width=\textwidth]{ext_figures/birth-death-sketch.pdf}
+		\caption{
+		{\bf Examples of trees produced under a birth-death process.}
+		The process is initiated at the first speciation event (the `crown-age' of the MRCA) when there are two initial lineages.
+		At each speciation event the ancestral lineage is replaced by two descendant lineages.
+		At an extinction event one lineage simply terminates.
+		(A) A complete tree including extinct lineages.
+		(B) The reconstructed tree of tree from A with extinct lineages pruned away.
+		(C) A \emph{uniform} subsample of the tree from B, where each species was sampled with equal probability, $\rho$.
+		(D) A \emph{diversified} subsample of the tree from B, where the species were selected so as to maximize diversity.}
+	\label{fig:BDP}
+  	\end{center}
+\end{figure}
+
+To condition the probability of observing the branching times on the survival of both lineages that descend from the root, we divide by $P(N(T) > 0 | N(0) = 1)^2$.
+Then, the probability density of the branching times, $\mathbb{T}$, becomes
+\begin{align*}
+P(\mathbb{T}) = \frac{\overbrace{P(N(T) = 1 \mid N(0) = 1)^2}^{\text{both initial lineages have one descendant}}}{ \underbrace{P(N(T) > 0 \mid N(0) = 1)^2}_{\text{both initial lineages survive}} } \times \prod_{i=2}^{n-1} \overbrace{i \times b(t_i)}^{\text{speciation rate}} \times \overbrace{P(N(T) = 1 \mid N(t_i) = 1)}^\text{lineage has one descendant},
+\end{align*}
+and the probability density of the reconstructed tree (topology and branching times) is then
+\begin{align}
+P(\Psi) = \; & \frac{2^{n-1}}{n!(n-1)!} \times \left( \frac{P(N(T) = 1 \mid N(0) = 1)}{P(N(T) > 0 \mid N(0) = 1)} \right)^2 \nonumber\\
+		  \; & \times \prod_{i=2}^{n-1} i \times b(t_i) \times P(N(T) = 1 \mid N(t_i) = 1)
+	\label{eq:tree_probability}
+\end{align}
+
+We can expand Equation~(\ref{eq:tree_probability}) by substituting $P(N(T) > 0 \mid N(t) =1)^2 \exp(r(t,T))$ for $P(N(T) = 1 \mid N(t) = 1)$, where $r(u,v) = \int^v_u d(t)-b(t)dt$; the above equation becomes
+\begin{align}
+P(\Psi) = \; & \frac{2^{n-1}}{n!(n-1)!} \times \left( \frac{P(N(T) > 0 \mid N(0) =1 )^2 \exp(r(0,T))}{P(N(T) > 0 \mid N(0) = 1)} \right)^2 \nonumber\\
+		  \; & \times \prod_{i=2}^{n-1} i \times b(t_i) \times P(N(T) > 0 \mid N(t_i) = 1)^2 \exp(r(t_i,T)) \nonumber\\
+		= \; & \frac{2^{n-1}}{n!} \times \Big(P(N(T) > 0 \mid N(0) =1 ) \exp(r(0,T))\Big)^2 \nonumber\\
+		  \; & \times \prod_{i=2}^{n-1} b(t_i) \times P(N(T) > 0 \mid N(t_i) = 1)^2 \exp(r(t_i,T)).
+		\label{eq:tree_probability_substitution}
+\end{align}
+For a detailed description of this substitution, see \cite{Hoehna2015a}.
+Additional information regarding the underlying birth-death process can be found in \cite[Equation 3.4.6]{Thompson1975} and \cite{Nee1994b} for constant rates and \cite{Lambert2010,Lambert2013,Hoehna2013,Hoehna2014a,Hoehna2015a} for arbitrary rate functions.
+
+To compute the equation above we need to know the rate function, $r(t,s) = \int_t^s d(x)-b(x) dx$, and the probability of survival, $P(N(T)\!>\!0|N(t)\!=\!1)$.
+\cite{Yule1925} and later \cite{Kendall1948} derived the probability that a process survives ($N(T) > 0$) and the probability of obtaining exactly $n$ species at time $T$ ($N(T) = n$) when the process started at time $t$ with one species.
+Kendall's results were summarized in Equation (3) and Equation (24) in \cite{Nee1994b}
+\begin{eqnarray}
+P(N(T)\!>\!0|N(t)\!=\!1) & = & \left(1+\int\limits_t^{T} \bigg(\mu(s) \exp(r(t,s))\bigg) ds\right)^{-1} \label{eq:survival} \\ \nonumber \\
+P(N(T)\!=\!n|N(t)\!=\!1) & = & (1-P(N(T)\!>\!0|N(t)\!=\!1)\exp(r(t,T)))^{n-1} \nonumber\\
+& & \times P(N(T)\!>\!0|N(t)\!=\!1)^2 \exp(r(t,T)) \label{eq:N} %\\
+%P(N(T)\!=\!1|N(t)\!=\!1) & = & P(N(T)\!>\!0|N(t)\!=\!1)^2 \exp(r(t,T)) \label{eq:1}
+\end{eqnarray}
+An overview for different diversification models is given in \cite{Hoehna2015a}.
+
+
+
+\subsection{The space of birth-death branching-process models}
+
+Our preceding discussion of the birth-death process makes it clear that we can define countless birth-death models that specify different speciation- and extinction-rate functions over time.
+We could assume, for example, that the extinction rate is constant over time, $d(t)=\mu$, or that the speciation rate decreases exponentially, $b(t) = \lambda * \exp(-\alpha*t)$.
+Furthermore, the constant-rate birth-death process can be parameterized in various ways, for example, by adopting parameters for the rate of speciation, $b(t)=\lambda$, and extinction, $d(t)=\mu$.
+Alternatively, we could describe the birth-death process using parameters for the net-diversification rate, $\delta=\lambda-\mu$, and relative-extinction rate, $\epsilon=\mu/\lambda$, such that $b(t)=\delta/(1-\epsilon)$ and $d(t)=\epsilon * (\delta/(1-\epsilon))$.
+Finally,  we could describe the birth-death process using parameters for the net-diversification rate, $\delta=\lambda-\mu$, and turnover rate, $\tau=\mu$, such  that $b(t)=\delta+\tau$ and $d(t)=\tau$.
+Depending on the inference scenario, each of these parameterizations may offer advantages in terms of interpretation.
+
+Below, we list several birth-death process models \cite[\EG used in][]{Hoehna2014a} to provide a sense of the types of models that can be specified and how they are parametrized in \TESS (Table~\ref{tab:Models}).
+\begin{table*}[!htbp]
+  \caption{Six different birth-death models with the corresponding parameters.}
+  \begin{center}
+      \begin{tabular}{lll}
+        \hline\noalign{\smallskip}
+        \textbf{Model} & $b(t)$ & $d(t)$ \\
+        \noalign{\smallskip}
+        \hline
+        \noalign{\smallskip}
+        Model 1 & $\lambda_0$ & 0 \\
+        Model 2 & $\lambda_1 * \exp(-\alpha*t)$ & 0 \\
+        Model 3 & $\lambda_0$ & $\mu$ \\
+        Model 4 & $\lambda_0 + \lambda_1 * \exp(-\alpha*t)$ & 0 \\
+        Model 5 & $\lambda_1 * \exp(-\alpha*t)$ & $\mu$ \\
+        Model 6 & $\lambda_0 + \lambda_1 * \exp(-\alpha*t)$ & $\mu$  \\
+        \hline
+      \end{tabular}
+  \end{center}
+  \label{tab:Models}
+\end{table*}
+
+\vspace{-5mm}
+\begin{itemize}
+\item Model 1: A constant-rate pure-birth (Yule) process \citep{Yule1925}.
+              Under this process, the number of species increases monotonically and exponentially.
+\item Model 2: A decreasing-rate pure-birth process where the speciation rate declines toward zero.
+              This process is equivalent to the decreasing-rate pure-birth process used in \cite{Rabosky2008}.
+              Under this process, the number of species increases monotonically.
+\item Model 3: A constant-rate birth-death process, as used in \cite{Thompson1975}.
+              Under this process, the expected number of species increases exponentially.
+\item Model 4: A pure-birth process with a decaying rate of speciation but a constant, non-zero speciation rate the longer the process continues ($\lambda(t) = \lambda_0 + \lambda_1 * \exp(-\alpha*t)$).
+              Thus, the process does not stop producing new species after the initial burst, as in Model 2.
+              As in the other two pure-birth processes, the number of species increases monotonically.
+\item Model 5: A birth-death process with an initial expansion phase (where the speciation rate exceeds the extinction rate) that subsequently converges to a critical-branching process, \IE where the speciation and extinction rates are equal, $\lambda(t) = \mu + \lambda_1 * \exp(-\alpha*t)$ and $\mu(t) = \mu$.
+              Although one might assume that the expected number of species will remain constant for a critical-branching process, this does not hold if the process is conditioned on survival.
+
+\item Model 6: A birth-death process where the extinction rate remains constant, but speciation rate has an initially constant phase followed by a decreasing phase.
+              This model corresponds to an early phase of radiation, followed by a phase of steady increase, $\lambda(t) = \lambda_0 + \lambda_1 * \exp(-\alpha*t)$ and $\mu(t) = \mu$.
+\end{itemize}
+
+The parametrizations of these models are  listed in Table~\ref{tab:Models}, and the expected number of species, $E[N(T)]$, at time $T$ under each model is depicted in Figure~\ref{fig:Models}.
+We derive $E[N(T)]$ analytically by using the fact that $N(T)$ is geometrically distributed \citep[see Equation~5 in][]{Hoehna2013}.
+Note that the process is conditioned on survival to the present, such that $E[N(T)]$ increases even if $\lambda(t) = \mu(t)$.
+
+\begin{figure}[!htbp]
+  	\begin{center}
+  		\includegraphics[width=\textwidth]{ext_figures/models.pdf}
+		\caption{Six possible birth-death models.
+		Each plot shows the speciation and extinction rates over time, and also the expected number of species ($E[N(t)]$).
+		Model 1: A constant-rate pure-birth process.
+		Model 2: A decreasing-rate pure-birth process with speciation rate declining to zero.
+		Model 3: A constant-rate birth-death process.
+		Model 4: A pure-birth process, where the speciation rate passes through a constant phase to a decreasing phase.
+		Model 5: A birth-death process with an initial expansion phase (speciation rate $\textgreater$ extinction rate) that later converges to a critical-branching process.
+		Model 6: A birth-death process with a constant extinction rate, where the speciation rate is initially constant and later decreases.}
+	\label{fig:Models}
+  	\end{center}
+\end{figure}
+
+\subsection{Simulating data}
+Simulating phylogenies is critical for validating methods/models of lineage diversification, and is also invaluable for developing our intuition about the behavior of these models.
+Simulations are also crucial for assessing the adequacy (absolute fit) of a model for a given dataset, which we will describe later.
+In the previous section we described the expected form of lineage-accumulation curves under different branching-process models.
+We will now briefly explain how to simulate phylogenies using \TESS.
+
+We will explore some common diversification models, including the constant-rate pure-birth process, the constant-rate birth-death process, and the exponentially decaying pure-birth process.
+Specifically, we will use \TESS to simulate 50 trees under these models and look at the corresponding LTT plots.
+You can experiment with the parameter settings to better understand their impact, \EG the influence of the extinction rate.
+
+We will first simulate trees under a constant-rate pure-birth process, where we specify a speciation rate of 1.0 and the duration of the process as 3.0 time units.
+<<echo = TRUE, eval=FALSE>>=
+speciation <- 1.0
+extinction <- 0.0
+tmrca <- 3.0
+@
+\noindent
+Here, we are explicitly conditioning the simulation on the time of the process.
+Because it is a stochastic process, this will result in simulated trees of different sizes (number of species), which may be relevant to our question.
+We might, for example, wish to know whether the observed species diversity in our study tree is improbable under the current model and parameterization.
+In the next subsection we will show how to simulate trees conditioned on the number of extant species.
+
+We simulate 50 trees under the specified model as follows:
+<<echo = TRUE, eval=FALSE>>=
+trees <- tess.sim.age(n = 50,
+                      age = tmrca,
+                      lambda = speciation,
+                      mu = extinction,
+                      MRCA = TRUE)
+@
+\noindent
+Note that we are initializing the simulation with two species; \IE from the `crown age' of the most recent common ancestor (MRCA).
+Accordingly, the resulting trees will not have `stem' branches subtending their root nodes; instead, these trees begin at the root node that corresponds to the first speciation event in each tree (\emph{c.f.}, Figure \ref{fig:BDP}).
+This scenario corresponds well with empirical trees, where (by definition) at least one species from both of these two initial lineages will survive to the present (otherwise we would not recognize this node as the root of our study tree).
+
+Next, we will generate the lineage-through-time plots for all 50 simulated trees.
+<<echo = TRUE, eval=FALSE>>=
+mltt.plot(trees,
+          log = "y",
+          dcol = FALSE,
+          legend = FALSE,
+          backward = FALSE)
+@
+\noindent
+For a fully specified model, \TESS can calculate the expected number of lineages through time.
+We will overlay a curve describing the the expected number of lineages on the LTT plot.
+<<echo = TRUE, include = TRUE, eval=FALSE >>=
+expected <- function(t)
+  tess.nTaxa.expected(begin = 0,
+                      t = t,
+                      end = tmrca,
+                      lambda = speciation,
+                      mu = extinction,
+                      MRCA = TRUE,
+                      reconstructed = TRUE)
+
+curve(expected,add=FALSE,col="red",lty=2,lwd=5)
+legend("topleft",col="red",lty=2,"Expected Diversity")
+@
+\noindent
+The results of this simulation are shown in Figure~\ref{fig:lttPlots}A.
+Here, you can see that the shape of the LTT curve is clearly linear (in log-scale) under a constant-rate pure-birth process.
+All other curves will be rendered in log-scale for convenience.
+Notice also that we used the argument \code{reconstructed = TRUE} which means that we compute the expected number of species (diversity) of a reconstructed phylogeny.
+This must be a monotonically increasing function.
+You could plot the expected diversity at any given time and compare it to the diversity of reconstructed phylogeny.
+
+We will now repeat the above simulation under a constant-rate birth-death process.
+First, we set the parameters of the model.
+<<echo=TRUE>>=
+speciation <- 5.0
+extinction <- 4.0
+tmrca <- 3.0
+@
+\noindent
+Then simulate 50 trees under these parameters.
+<<echo=TRUE, eval=FALSE>>=
+trees <- tess.sim.age(n = 50,
+                      age = tmrca,
+                      lambda = speciation,
+                      mu = extinction,
+                      MRCA = TRUE)
+@
+\noindent
+Next, we plot the lineage-through-time curves for the simulated trees:
+<<echo=TRUE, eval=FALSE>>=
+mltt.plot(trees,
+          log = "y",
+          dcol = FALSE,
+          legend = FALSE,
+          backward = FALSE)
+@
+\noindent
+Finally, we overlay the expected number of lineages on our LTT plot.
+In this example you may notice that the expected number of lineages under the birth-death process diverges from the expected number of lineages in the reconstructed tree.
+This is simply because the expected number of lineages in the reconstructed tree only considers lineages that have at least one descendant sampled at the present time, whereas the expected number of lineages gives the expected diversity at the time without that constraint.
+<<echo=TRUE, eval = FALSE>>=
+expected <- function(t)
+  tess.nTaxa.expected(begin = 0,
+                      t = t,
+                      end = tmrca,
+                      lambda = speciation,
+                      mu = extinction,
+                      MRCA = TRUE,
+                      reconstructed = TRUE)
+
+curve(expected,add=TRUE,col="red",lty=2,lwd=5)
+legend("topleft",col="red",lty=2,"Expected Diversity")
+@
+
+\noindent
+The results of this simulation are shown in Figure~\ref{fig:lttPlots}B.
+Notice that the slope of the LTT plot increases sharply near the present: this is commonly referred the `pull-of-the-present' effect.
+This effect becomes more pronounced as the relative-extinction rate ({\it i.e.}, extinction $\div$ speciation) increases.
+
+Finally, we will consider a pure-birth process with exponentially decreasing speciation rate.
+In \TESS you can either specify a simple numeric value for the speciation and extinction rates or you can specify a function that takes the time \textit{t} as a parameter.
+Here, we will use the second option.
+<<echo=TRUE>>=
+speciation <- function(t) 0.5 + 2 * exp(-1.0*t)
+extinction <- 0.0
+tmrca <- 3.0
+@
+\noindent
+We again simulate 50 trees conditioned on the survival of the two initial lineages.
+<<echo=TRUE, eval=FALSE>>=
+trees <- tess.sim.age(n = 50,
+                      age = tmrca,
+                      lambda = speciation,
+                      mu = extinction,
+                      MRCA = TRUE)
+@
+\noindent
+We generate the LTT plots for the simulated trees.
+<<echo=TRUE, eval = FALSE>>=
+mltt.plot(trees,
+          log = "y",
+          dcol = FALSE,
+          legend = FALSE,
+          backward = FALSE)
+@
+\noindent
+And then add the expected number of lineages in the reconstructed phylogeny.
+<<echo=TRUE, eval=FALSE>>=
+expected <- function(t)
+  tess.nTaxa.expected(begin = 0,
+                      t = t,
+                      end = tmrca,
+                      lambda = speciation,
+                      mu = extinction,
+                      MRCA = TRUE,
+                      reconstructed = TRUE)
+
+curve(expected,add=TRUE,col="red",lty=2,lwd=5)
+legend("topleft",col="red",lty=2,"Expected Diversity")
+@
+\noindent
+The results of the three simulations are shown in Figure~\ref{fig:lttPlots}.
+We will return to simulating reconstructed trees in Section \ref{sec:PosteriorPredictiveTesting} when we discuss model adequacy testing.
+
+<<echo=FALSE, label=lttPlots, include=TRUE, fig.height=3, out.width="\\linewidth", fig.align="center", fig.cap="Lineage-through-time curves for pure-birth trees (panel A), birth-death trees (panel B), and pure-birth trees with exponentially decreasing speciation rate (panel C).">>=
+
+# Pure-birth
+pureBirthSpeciation <- 1.0
+pureBirthExtinction <- 0.0
+tmrca <- 3.0
+
+pureBirthTrees <- tess.sim.age(n = 50,
+                                age = tmrca,
+                                lambda = pureBirthSpeciation,
+                                mu = pureBirthExtinction,
+                                MRCA = TRUE)
+
+
+# Birth-death
+birthDeathSpeciation <- 5.0
+birthDeathExtinction <- 4.0
+tmrca <- 3.0
+
+birthDeathTrees <- tess.sim.age(n = 50,
+                                age = tmrca,
+                                lambda = birthDeathSpeciation,
+                                mu = birthDeathExtinction,
+                                MRCA = TRUE)
+
+
+# Decreasing rate pure-birth trees
+rateDecreaseSpeciation <- function(t) 0.5 + 2 * exp(-1.0*t)
+rateDecreaseExtinction <- 0.0
+tmrca <- 3.0
+
+rateDecreaseTrees <- tess.sim.age(n = 50,
+                                  age = tmrca,
+                                  lambda = rateDecreaseSpeciation,
+                                  mu = rateDecreaseExtinction,
+                                  MRCA = TRUE)
+
+# Expected number of taxa function
+expected <- function(t,speciation,extinction)
+  tess.nTaxa.expected(begin = 0,
+                            t = t,
+                            end = tmrca,
+                            lambda = speciation,
+                            mu = extinction,
+                            MRCA = TRUE,
+                            reconstructed = TRUE)
+
+par(mfrow=c(1,3),mar=c(5,4,3,0.1),las=1)
+
+# Plot the trees
+mltt.plot(pureBirthTrees,log = "y",dcol = FALSE, legend = FALSE,backward = FALSE)
+mtext("A", line = 1)
+curve(expected(t=x,speciation=pureBirthSpeciation,extinction=pureBirthExtinction),add=TRUE,col="red",lty=2,lwd=2)
+legend("topleft",col="red",lty=2,"Expected Diversity",lwd=2,bty='n')
+
+mltt.plot(birthDeathTrees,log = "y",dcol = FALSE,legend = FALSE,backward = FALSE)
+mtext("B", line = 1)
+curve(expected(t=x,speciation=birthDeathSpeciation,extinction=birthDeathExtinction),add=TRUE,col="red",lty=2,lwd=2)
+legend("topleft",col="red",lty=2,"Expected Diversity",lwd=2,bty='n')
+
+mltt.plot(rateDecreaseTrees,log = "y",dcol = FALSE,legend = FALSE,backward = FALSE)
+mtext("C", line = 1)
+curve(expected(t=x,speciation=rateDecreaseSpeciation,extinction=rateDecreaseExtinction),add=TRUE,col="red",lty=2,lwd=2)
+legend("topleft",col="red",lty=2,"Expected Diversity",lwd=2,bty='n')
+
+@
+
+\subsection{Estimating parameters using Markov chain Monte Carlo (MCMC)} \label{sec:MCMC}
+
+In the previous section we introduced some stochastic-branching process models, and demonstrated how to simulate trees under those models.
+Here, we turn to the issue of estimating parameters of branching-process models from empirical data.
+We estimate parameters within a Bayesian statistical framework, which adopts the perspective that parameters are random variables.
+Accordingly, it is necessary to specify a probability distribution for each parameter that describes the nature of that random variation.
+These \textit{prior} probability distributions describe our beliefs about the parameter values before evaluating the data at hand.
+Prior probabilities are updated by the information in the data (via the likelihood function) to provide the corresponding \textit{posterior} probability distributions.
+These posterior probability distributions reflect our belief about the parameter values after incorporating the new information in our data.
+We estimate the joint posterior probability density of the model parameters from the data using numerical methods---Markov chain Monte Carlo (MCMC) algorithms.
+
+\subsubsection{Birth-death processes with constant rates}\label{sec:ConstBD}
+
+We first consider the constant-rate birth-death process.
+Although we do not explicitly consider the constant-rate pure-birth process, it can easily be specifed by simply setting the extinction rate of the constant-rate birth-death process to zero.
+
+First, we specify prior distributions for our parameters.
+The constant-rate birth-death process has two parameters; the speciation rate and extinction rate.
+There are many possible prior distributions that we might adopt for these two parameters, \EG the exponential, gamma, lognormal distributions.
+Here, we will use an exponential distribution, which has a single parameter (the rate parameter) that describes the shape of the distribution.
+We will specify a value of 0.1 for the rate parameter (such that the mean of the exponential is 1/rate = 10.0).
+We will use identical priors for both the speciation- and extinction-rate parameters.
+
+In \TESS the prior distribution must be functions that can be computed for all values that can be realized by the corresponding parameter (\EG priors for rates must only include positive-real values).
+Furthermore, the prior distributions need to return log-transformed probabilities (this is a standard convention adopted to avoid underflow in computer memory).
+<<echo = TRUE>>=
+prior_delta <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+prior_tau <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+priorsConstBD <- c("diversification"=prior_delta,
+                   "turnover"=prior_tau)
+@
+\noindent
+If you provide names for the prior distributions, as we did here, then these names will be used to label that parameters in the MCMC output.
+Currently, only the names of the priors are used.
+
+Next, we set up the likelihood of the constant-rate birth-death process as an \R function.
+Here, the actual likelihood computation is performed by the function \code{tess.likelihood}.
+It is necessary to wrap the \TESS likelihood into another \R function because you need to specify how the speciation and extinction rates are assembled and which assumptions/conditions are applied.
+This approach enables maximal flexibility for using \TESS.
+<<echo=TRUE>>=
+likelihoodConstBD <- function(params) {
+
+  speciation <- params[1] + params[2]
+  extinction <- params[2]
+
+  lnl <- tess.likelihood(times,
+                         lambda = speciation,
+                         mu = extinction,
+                         samplingProbability = 1.0,
+                         log = TRUE)
+
+  return (lnl)
+
+}
+@
+It is also possible to specify prior distributions on other parameterizations of the constant-rate birth-death model,
+\EG using parameters for the net-diversification rate (speciation$-$extinction) and the relative-extinction rate (extinction/speciation).
+This alternative parmaterization of the model would, of course, require modification of the likelihood function.
+
+Next, we use the function \code{tess.mcmc} to run an MCMC simulation.
+The function takes in several arguments to describe the MCMC algorithm.
+Specifically, you must specify the \code{likelihoodFunction}, \code{priors}, and initial values for the \code{parameters}.
+Additionally, you can specify whether the MCMC proposal mechanisms should operate on the log-transformed parameters, which is advisable for rate parameters but not for location parameters.
+
+We will also specify the value for the \code{delta} parameter, which defines the (initial) width of the sliding-window proposal mechanism.
+This \code{delta} tuning parameter determines the scale (severity) of the proposal mechanism: larger values will specify more severe changes to the current parameter value when that parameter is being updated during the MCMC.
+We will discuss these issues in more detail in Section \ref{sec:mcmcDiagnosis} of this guide.
+The remaining parameters specify the number of iterations of the MCMC simulation, the number of iterations for the pre-burnin phase, the thinning schedule, and whether the scale of the poposal mechanisms are to be automatically tuned.
+<<echo = TRUE, eval=FALSE>>=
+set.seed(12345)   # remove this line to obtain a random seed
+samplesConstBD <- tess.mcmc(likelihoodFunction = likelihoodConstBD,
+                            priors = priorsConstBD,
+                            parameters = runif(2,0,1),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,1),
+                            iterations = 10000,
+                            burnin = 1000,
+                            thinning = 10,
+                            adaptive = TRUE,
+                            verbose = TRUE)
+@
+<<echo = FALSE, eval=TRUE>>=
+if ( file.exists("results/samplesConstBD.rds") == FALSE ) {
+set.seed(12345)   # remove this line to obtain a random seed
+samplesConstBD <- tess.mcmc(likelihoodFunction = likelihoodConstBD,
+                            priors = priorsConstBD,
+                            parameters = runif(2,0,1),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,1),
+                            iterations = 10000,
+                            burnin = 1000,
+                            thinning = 10,
+                            adaptive = TRUE,
+                            verbose = TRUE)
+saveRDS(samplesConstBD, "results/samplesConstBD.rds")
+} else {
+samplesConstBD <- readRDS("results/samplesConstBD.rds")
+}
+@
+
+Note that we have specified a starting seed for the random-number generator.
+We have done this only to ensure that your results will be identical to those in this guide.
+However, you \textit{should not} specify the starting seed for your analyses, but instead use a random starting seed that is automatically generated from the system clock (\IE just delete or comment out the line that sets the seed).
+This is important, as you will want to perform multiple independent MCMC simulations to assess convergence.
+The basic idea is to compare parameter estimates from multiple independent analyses: if the chains have converged to the target (joint posterior probability) distribution, then the parameter estimates from the replicate chains should be identical up to some stochastic uncertainty.
+However, this important diagnostic would be rendered meaningless if the replicate analyses were performed under the same starting seed; in this case, the results are guaranteed to be identical.
+
+Note that we ran a short MCMC simulation above for covenience.
+In practice, MCMC simulations are commonly run for $10^5$ to $10^8$ iterations.
+We will use the \R package \CODA (which is automatically loaded with \TESS) to summarize the samples from our MCMC simulation.
+\TESS saves samples in the \CODA format, which allows us to easily summarize our samples:
+<<echo = TRUE>>=
+summary(samplesConstBD)
+@
+\noindent
+We can also visualize the trace plots and marginal posterior probability densities for these samples (Figure~\ref{fig:mcmcConstBD}).
+<<label=mcmcConstBD, include=TRUE, fig.cap="Trace plots (left) and marginal posterior probability densities (right) for the diversification rate (top) and turnover rate (bottom) from the MCMC simulation under the constant-rate birth-death process.", fig.pos='!ht'>>=
+plot(samplesConstBD)
+@
+
+
+
+\subsubsection{Birth-death processes with continuously varying rates}
+
+Here we consider a birth-death process with an exponentially decreasing speciation rate.
+Specifically, we define the speciation rate as $\lambda(t) = \delta + \lambda \exp(-\alpha*t)$ and extinction rate as $\mu(t) = \delta$ \citep{Hoehna2014a}.
+It is not possible to analytically compute the probability density (or likelihood) under this process.
+Instead, we approximate these quantities using numerical integration techniques.
+These numerical methods are implemented in \TESS and will be performed automatically if you provide functions instead of numerical arguments for the speciation and/or extinction rate.
+The numerical integration is very convenient but, of course, imposes a higher computational cost that will make these analyses run more slowly.
+
+The decreasing speciation rate birth-death model has three parameters: $\delta$, $\lambda_1$, and $\alpha$.
+We will use an exponential prior probability distribution with a rate of 0.1 (\IE with a mean of 10.0) for all three parameters.
+As before, the prior distributions must be functions that return the log-transformed probability for a given value of the parameter.
+<<echo = TRUE>>=
+prior_delta <- function(x) { dexp(x,rate=0.1,log=TRUE) }
+prior_lambda <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+prior_alpha <- function(x) { dexp(x,rate=0.1,log=TRUE) }
+priorsDecrBD <- c("turnover"=prior_delta,
+                  "initial speciation"=prior_lambda,
+                  "speciation decay"=prior_alpha)
+@
+\noindent
+We now specify the speciation and extinction rates as functions and pass them into the likelihood, which again must be provided as a function.
+<<echo=TRUE>>=
+likelihoodDecrBD <- function(params) {
+
+  speciation <- function(t) params[1] + params[2] * exp(-params[3]*t)
+  extinction <- function(t) params[1]
+
+  lnl <- tess.likelihood(times,
+                         lambda = speciation,
+                         mu = extinction,
+                         samplingProbability = 1.0,
+                         log = TRUE)
+
+  return (lnl)
+
+}
+@
+\noindent
+Next, we start the analysis by calling the MCMC function in \TESS.
+(The details of this MCMC simulation are similar to those described in the constant-rate birth-death example, above.)
+<<echo = TRUE, eval=FALSE>>=
+set.seed(12345)
+samplesDecrBD <- tess.mcmc(likelihoodFunction = likelihoodDecrBD,
+                           priors = priorsDecrBD,
+                           parameters = runif(3,0,1),
+                           logTransforms = c(TRUE,TRUE,TRUE),
+                           delta = c(1,1,1),
+                           iterations = 10000,
+                           burnin = 1000,
+                           thinning = 10,
+                           adaptive = TRUE,
+                           verbose = TRUE)
+@
+<<echo = FALSE, eval=TRUE>>=
+if ( file.exists("results/samplesDecrBD.rds") == FALSE ) {
+set.seed(12345)
+samplesDecrBD <- tess.mcmc(likelihoodFunction = likelihoodDecrBD,
+                           priors = priorsDecrBD,
+                           parameters = runif(3,0,1),
+                           logTransforms = c(TRUE,TRUE,TRUE),
+                           delta = c(1,1,1),
+                           iterations = 10000,
+                           burnin = 1000,
+                           thinning = 10,
+                           adaptive = TRUE,
+                           verbose = TRUE)
+saveRDS(samplesDecrBD, "results/samplesDecrBD.rds")
+} else {
+samplesDecrBD <- readRDS("results/samplesDecrBD.rds")
+}
+@
+\noindent
+We then summarize the parameter estimates from our MCMC samples:
+<<echo = TRUE>>=
+summary(samplesDecrBD)
+@
+\noindent
+We can also visualize the trace plots and marginal posterior probability densities for these samples:
+<<label=mcmcPlotDecrBD, echo = TRUE, include=TRUE, fig.cap="Trace plots and estimated posterior distribution of the parameter under the decreasing speciation rate birth-death model.", eval=TRUE>>=
+plot(samplesDecrBD)
+@
+
+\subsubsection{Birth-death processes with episodically varying rates}
+
+The next model we consider is a birth-death process with piecewise-constant rates.
+Under this model, rates of speciation and extinction change at some (discrete) number of events; between these rate-shift events, however, the diversification-rate parameters remain constant \citep{Stadler2011,Hoehna2015a}.
+
+The number of parameters included in the episodic model varies depending on the number of rate-shift events.
+In general, there are $k_\mathbb{B}+1$ speciation-rate parameters and $k_\mathbb{D}+1$ extinction-rate parameters, where $k_\mathbb{B}$ is the number of speciation-rate shifts and $k_\mathbb{D}$ is the number of extinction-rate shifts.
+
+In this example, we will assume there is a single speciation-rate shift and a single extinction-rate shift, both occurring at the mid-point of the duration spanned by the conifer tree.
+First, we specify the time of the rate-shift event.
+<<echo = TRUE>>=
+rateChangeTime <- max( times ) / 2
+@
+\noindent
+Next, we specify priors for the parameters.
+There are a total of four parameters (the speciation and extinction rates before and after the rate-shift event).
+Accordingly, we specify four identical exponential priors for these parameters, all with a rate of 10.0 (and a mean of 0.1).
+<<echo = TRUE>>=
+prior_delta_before <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+prior_tau_before <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+prior_delta_after <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+prior_tau_after <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+priorsEpisodicBD <- c("diversification before"=prior_delta_before,
+                      "turnover before"=prior_tau_before,
+                      "diversification after"=prior_delta_after,
+                      "turnover after"=prior_tau_after)
+@
+\noindent
+Next, we specify a likelihood function using the rate-shift model implemented in \TESS, \code{tess.likelihood.rateshift}.
+<<echo=TRUE>>=
+likelihoodEpisodicBD <- function(params) {
+
+  speciation <- c(params[1]+params[2],params[3]+params[4])
+  extinction <- c(params[2],params[4])
+
+  lnl <- tess.likelihood.rateshift(times,
+                                   lambda = speciation,
+                                   mu = extinction,
+                                   rateChangeTimesLambda = rateChangeTime,
+                                   rateChangeTimesMu = rateChangeTime,
+                                   samplingProbability = 1.0,
+                                   log = TRUE)
+
+  return (lnl)
+
+}
+@
+\noindent
+Now we can start the analysis by calling the MCMC function in \TESS.
+(The details of this MCMC simulation are similar to those described in the constant-rate birth-death example, above.)
+<<echo = TRUE, eval=FALSE>>=
+set.seed(12345)
+samplesEpisodicBD <- tess.mcmc(likelihoodFunction = likelihoodEpisodicBD,
+                               priors = priorsEpisodicBD,
+                               parameters = runif(4,0,1),
+                               logTransforms = c(TRUE,TRUE,TRUE,TRUE),
+                               delta = c(1,1,1,1),
+                               iterations = 10000,
+                               burnin = 1000,
+                               thinning = 10,
+                               adaptive = TRUE,
+                               verbose = TRUE)
+@
+<<echo = FALSE, eval=TRUE>>=
+if ( file.exists("results/samplesEpisodicBD.rds") == FALSE ) {
+set.seed(12345)
+samplesEpisodicBD <- tess.mcmc(likelihoodFunction = likelihoodEpisodicBD,
+                               priors = priorsEpisodicBD,
+                               parameters = runif(4,0,1),
+                               logTransforms = c(TRUE,TRUE,TRUE,TRUE),
+                               delta = c(1,1,1,1),
+                               iterations = 10000,
+                               burnin = 1000,
+                               thinning = 10,
+                               adaptive = TRUE,
+                               verbose = TRUE)
+saveRDS(samplesEpisodicBD, "results/samplesEpisodicBD.rds")
+} else {
+samplesEpisodicBD <- readRDS("results/samplesEpisodicBD.rds")
+}
+@
+\noindent
+We then summarize the parameter estimates from our MCMC samples:
+<<echo = TRUE>>=
+summary(samplesEpisodicBD)
+@
+\noindent
+Finally, we can visualize the trace plots and marginal posterior probability densities for these samples:
+%(Figure~\ref{fig:mcmcVarBD}).
+<<label=mcmcPlotEpisodicBD, echo = TRUE, include=TRUE, fig.cap="Trace plots and estimated posterior distributions of the parameters under a birth-death-shift model.", eval=TRUE>>=
+plot(samplesEpisodicBD)
+@
+
+\subsubsection{Birth-death processes with explicit mass-extinction events} \label{sec:mass-extinction}
+The final model we consider is one where speciation and extinction rates are constant, but where there is a single mass-extinction event at some unknown time.
+We'll assume that 10\% of the species survive the mass-extinction event.
+<<echo = TRUE>>=
+survivalProbability <- 0.1
+@
+\noindent
+There are three parameters in the model: the speciation rate, the extinction rate, and the mass-extinction time.
+We must specify priors for each of these parameters.
+For simplicity, we'll assume \emph{a priori} that the mass-extinction event could happen at any time in the most recent half of the tree with equal probability.
+<<echo = TRUE>>=
+prior_delta <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+prior_tau <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+prior_time <- function(x) { dunif(x,min=max(times)/2,max=max(times),log=TRUE)}
+priorsMassExtinctionBD <- c("diversification"=prior_delta,
+                            "turnover"=prior_tau,
+                            "mass-extinction time"=prior_time)
+@
+\noindent
+Next, we specify a likelihood function.
+We can use either the standard likelihood function \code{tess.likelihood} or the likelihood function of the rate-shift model \code{tess.likelihood.rateshift}.
+<<echo=TRUE>>=
+likelihoodMassExtinctionBD <- function(params) {
+
+  speciation <- params[1]+params[2]
+  extinction <- params[2]
+  time <- params[3]
+
+  lnl <- tess.likelihood(times,
+                         lambda = speciation,
+                         mu = extinction,
+                         massExtinctionTimes = time,
+                         massExtinctionSurvivalProbabilities =
+                                      survivalProbability,
+                         samplingProbability = 1.0,
+                         log = TRUE)
+
+  return (lnl)
+
+}
+@
+\noindent
+Now we can start the analysis by calling the MCMC function in \TESS.
+(The details of this MCMC simulation are similar to those described in the constant-rate birth-death example, above.)
+<<echo = TRUE, eval=FALSE>>=
+set.seed(12345)
+samplesMassExtinctionBD <- tess.mcmc(likelihoodFunction =
+                                       likelihoodMassExtinctionBD,
+                                       priors = priorsMassExtinctionBD,
+                                       parameters = c(runif(2,0,1),max(times)*3/4),
+                                       logTransforms = c(TRUE,TRUE,FALSE),
+                                       delta = c(1,1,1),
+                                       iterations = 10000,
+                                       burnin = 1000,
+                                       thinning = 10,
+                                       adaptive = TRUE,
+                                       verbose = TRUE)
+@
+<<echo = FALSE, eval=TRUE>>=
+if ( file.exists("results/samplesMassExtinctionBD.rds") == FALSE ) {
+set.seed(12345)
+samplesMassExtinctionBD <- tess.mcmc(likelihoodFunction =
+                                       likelihoodMassExtinctionBD,
+                                       priors = priorsMassExtinctionBD,
+                                       parameters = c(runif(2,0,1),max(times)*3/4),
+                                       logTransforms = c(TRUE,TRUE,FALSE),
+                                       delta = c(1,1,1),
+                                       iterations = 10000,
+                                       burnin = 1000,
+                                       thinning = 10,
+                                       adaptive = TRUE,
+                                       verbose = TRUE)
+saveRDS(samplesMassExtinctionBD, "results/samplesMassExtinctionBD.rds")
+} else {
+samplesMassExtinctionBD <- readRDS("results/samplesMassExtinctionBD.rds")
+}
+@
+\noindent
+We then summarize the parameter estimates from our MCMC samples:
+<<echo = TRUE>>=
+summary(samplesMassExtinctionBD)
+@
+\noindent
+Finally, we visualize the trace plots and marginal posterior probability densities for these samples:
+%(Figure~\ref{fig:mcmcVarBD}).
+<<label=mcmcPlotMassExtinctionBD, echo = TRUE, include=TRUE, eval=TRUE>>=
+plot(samplesMassExtinctionBD)
+@
+
+\newpage
+\section{Accommodating Incomplete Taxon Sampling}\label{sec:IncompleteTaxonSampling}
+
+Most phylogenies do not contain all species of the group under study.
+Instead, only an \emph{incomplete sample}---or subsample---of all described species are included.
+Assuming complete taxon sampling for trees that are actually incomplete is known to bias estimates of diversification rates \citep{Cusimano2010}.
+Additionally, the sampling strategy (\EG whether species are sampled uniformly at random or to maximize diversity) also influences the parameter estimates \citep{Hoehna2011}.
+Fortunately, methods for modeling incomplete taxon sampling exist to correct for the introduced bias \citep{Cusimano2010,Hoehna2011,Cusimano2012,Stadler2013,Hoehna2014a}.
+
+Here we consider two approach of incomplete taxon sampling: \emph{uniform} sampling and \emph{diversified} sampling.
+A sketch of the two sampling methods was provided in Figure~\ref{fig:BDP}.
+As we will demonstrate below, the sampling strategy has a substantial influence on the distribution of branching times in the tree, which results in different patterns in the lineage-through-time curves for the different sampling schemes.
+Additionally, we note that the patterns induced by incomplete sampling can mimic patterns of decreasing rates of lineage diversification \citep{Pybus2000,Cusimano2010,Hoehna2011}, and thus it is critical to incorporate incomplete sampling in any study of lineage diversification rates.
+
+We will begin by simulating trees under different kinds of sampling schemes, and then demonstrate how we can incorporate these sampling schemes into branching-process models in \TESS.
+
+\subsection{Patterns of incomplete sampling}
+To demonstrate the impact of incomplete taxon sampling, we will simulate trees under each sampling strategy and plot the resulting LTT curves.
+We simulate $n=50$ trees, each conditioned on the specified age.
+First, we simulate trees with complete taxon sampling to compare against the other sampling schemes.
+Next, we simulate trees under uniform taxon sampling with a sampling probability of $\rho=0.25$ (which means that each species at the present has the same probability of $\rho=0.25$ being included in the phylogeny; if a species is not sampled then its lineage is removed from the reconstructed tree).
+Finally, we simulate trees under diversified taxon sampling with a sampling probability of $\rho=0.25$ (\IE only the oldest 25\% of divergence events are included in the reconstructed phylogeny, and all later divergence events are excluded).
+
+<<echo=TRUE, label=lttPlotsSampling, include=TRUE, fig.height=3, out.width="\\linewidth", fig.align="center", fig.cap="Lineage-through-time plots for completely sampled trees (panel A), incomplete trees with uniform sampling (panel B), and incomplete trees with diversified sampling (panel C).">>=
+
+# Birth-death
+birthDeathSpeciationSampling <- 2.0
+birthDeathExtinctionSampling <- 1.0
+
+birthDeathTreesComplete <- tess.sim.age(n = 50,
+                                age = 3.0,
+                                lambda = birthDeathSpeciationSampling,
+                                mu = birthDeathExtinctionSampling,
+                                MRCA = TRUE)
+
+birthDeathTreesUniform <- tess.sim.age(n = 50,
+                                age = 4.0,
+                                lambda = birthDeathSpeciationSampling,
+                                mu = birthDeathExtinctionSampling,
+                                samplingProbability = 0.25,
+                                samplingStrategy = "uniform",
+                                MRCA = TRUE)
+
+birthDeathTreesDiversified <- tess.sim.age(n = 50,
+                                age = 4.0,
+                                lambda = birthDeathSpeciationSampling,
+                                mu = birthDeathExtinctionSampling,
+                                samplingProbability = 0.25,
+                                samplingStrategy = "diversified",
+                                MRCA = TRUE)
+
+
+
+par(mfrow=c(1,3),mar=c(5,4,3,0.1),las=1)
+
+# Plot the trees
+mltt.plot(birthDeathTreesComplete,log = "y",dcol = FALSE,
+          legend = FALSE,backward = FALSE)
+mtext("A", line = 1)
+
+mltt.plot(birthDeathTreesUniform,log = "y",dcol = FALSE,
+          legend = FALSE,backward = FALSE)
+mtext("B", line = 1)
+
+mltt.plot(birthDeathTreesDiversified,log = "y",dcol = FALSE,
+          legend = FALSE,backward = FALSE)
+mtext("C", line = 1)
+
+@
+\noindent
+For the remainder of this section, we focus on the biases stemming from incomplete taxon sampling.
+We will simulate a single incompletely sampled tree under a diversified sampling strategy with sampling fraction $\rho = 0.25$, and in the following sections we will estimate parameters under various birth-death processes from this tree.
+We have simulated the tree under diversified sampling with known speciation and extinction rates, which allows us to compare estimates of parameter values using various approaches to the true parameter values in order to better understand the influence of the sampling strategy on parameter estimates.
+
+<<echo=TRUE, include=TRUE>>=
+# simulate a tree under diversified taxon sampling
+tree.diversified <- tess.sim.age(n = 1,
+                                age = 4.0,
+                                lambda = 2.0,
+                                mu = 1.0,
+                                samplingProbability = 0.25,
+                                samplingStrategy = "diversified",
+                                MRCA = TRUE)[[1]]
+
+# extract the branching times from the tree
+times.diversified <- as.numeric( branching.times(tree.diversified) )
+@
+\noindent
+First, we will take a look at the simulated tree: it looks similar to many empirical phylogenies.
+%The \emph{diversified} taxon sampling creates a slightly artificial cut-off regarding the included species.
+%None of the most recently diverged species is included.
+%Nevertheless, it may be a close enough approximation in many situations.
+<<label=treeSamplingDiversified, include=TRUE, fig.height=4, fig.width=4, fig.align='center', fig.cap="The simulated tree under \\emph{diversified} sampling with sampling fraction $\\rho=0.25$.", fig.pos='!ht'>>=
+plot(tree.diversified,show.tip.label=FALSE,no.margin=TRUE)
+@
+\noindent
+In the following sections we will infer diversification rates on this simulated tree.
+
+\subsection{Uniform taxon sampling}
+Uniform taxon sampling, which is sometimes also called \emph{random} taxon sampling, assumes that every species at present has the same probability $\rho$ of being included in the sample \citep{Nee1994b,Yang1997,Stadler2009,Hoehna2011,Hoehna2014a}.
+That is, regardless of age or phylogenetic relationship, this method assumes that a researcher flips a coin for each species to decide whether it will be included in the analysis.
+This sampling scheme may not be realistic, as many factors typically influence the probability that a researcher will include a species in their study.
+However, the uniform taxon sampling scheme was initially adopted because it is mathematically convenient.
+Moroever, the approximation to uniform sampling scheme improves when the sampling fraction is large, \IE if more than 80\% of the species are included.
+
+In principle, we could treat the sampling probablity $\rho$ as a random variable and estimate it from the data.
+However, estimating all three parameters of the sampled constant-rate birth-death process model---the speciation rate, the extinction rate and the sampling probability---is not possible because the parameters are nonidentifiable \citep{Stadler2009}.
+Therefore, we use the empirical sampling fraction; simply the number of included species divided by the total number of known species (630 for conifers).
+<<echo = TRUE>>=
+# There are 630 known conifer species
+samplingFraction <- (conifers$Nnode + 1) / 630
+@
+We can then use this empirical sampling fraction as our sampling probability.
+All the likelihood functions in \TESS, as described in the previous sections, have an argument called \code{samplingProbability}.
+You can incorporate incomplete sampling in any of these analyses by setting this argument to the empirical sampling probability.
+
+How well does the \emph{uniform} taxon sampling scheme perform on our simulated phylogeny?
+We will assess the performance of this method by estimating the joint posterior density of the diversification-rate parameters by performing an MCMC simulation.
+As usual, we start by specifying the prior distributions.
+Here, we use the constant-rate birth-death process with the net-diversification rate (speciation $-$ extinction) and turnover rate (extinction).
+We choose exponential prior distributions with a mean of 1.0, which corresponds to the true value.
+Notice that this is essentially an ideal setting, as the true parameter values are clearly unknown for empirical analyses.
+Therefore, this represents a best case scenario for the impact of taxon sampling on parameter estimates.
+<<echo = TRUE>>=
+prior_delta <- function(x) { dexp(x,rate=1.0,log=TRUE) }
+prior_tau <- function(x) { dexp(x,rate=1.0,log=TRUE) }
+priorsSampling <- c("diversifiation"=prior_delta,
+                    "turnover"=prior_tau)
+@
+\noindent
+We then define the likelihood function.
+This is similar to the likelihood function used previously for the constant-rate birth-death process.
+However, in this case we will specify the sampling probability ($\rho=0.25$) and the sampling strategy.
+<<echo=TRUE>>=
+likelihoodUniform <- function(params) {
+
+  speciation <- params[1] + params[2]
+  extinction <- params[2]
+
+  lnl <- tess.likelihood(times.diversified,
+                         lambda = speciation,
+                         mu = extinction,
+                         samplingProbability = 0.25,
+                         samplingStrategy = "uniform",
+                         log = TRUE)
+
+  return (lnl)
+
+}
+@
+\noindent
+Now we are ready to estimate the diversification-rate parameters.
+The settings for the MCMC simulation are the same as those used previously (\emph{c.f.}, Section~\ref{sec:MCMC}).
+<<echo = TRUE, eval=FALSE>>=
+set.seed(12345)
+samplesUniform <- tess.mcmc(likelihoodFunction = likelihoodUniform,
+                            priors = priorsSampling,
+                            parameters = runif(2,0,1),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,1),
+                            iterations = 10000,
+                            burnin = 1000,
+                            thinning = 10,
+                            adaptive = TRUE,
+                            verbose = TRUE)
+@
+<<echo = FALSE, eval=TRUE>>=
+if ( file.exists("results/samplesUniform.rds") == FALSE ) {
+set.seed(12345)
+samplesUniform <- tess.mcmc(likelihoodFunction = likelihoodUniform,
+                            priors = priorsSampling,
+                            parameters = runif(2,0,1),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,1),
+                            iterations = 10000,
+                            burnin = 1000,
+                            thinning = 10,
+                            adaptive = TRUE,
+                            verbose = TRUE)
+                            
+saveRDS(samplesUniform, "results/samplesUniform.rds")
+} else {
+samplesUniform <- readRDS("results/samplesUniform.rds")
+}
+@
+\noindent
+Recall that the true parameter values are $\lambda=2.0$ and $\mu=1.0$.
+This correspods to a diversification rate of 1.0 and a turnover rate of 1.0.
+The estimated parameters under \emph{uniform} taxon sampling are
+<<label=mcmcPlotSamplingUniform, include=TRUE, fig.cap="Trace plots (left) and marginal posterior probability densities (right) for the diversification rate (speciation - extinction) and turnover rate (extinction) under \\emph{uniform} sampling from the MCMC simulation.", fig.pos='!ht'>>=
+summary(samplesUniform)
+plot(samplesUniform)
+@
+\noindent
+Our estimate of the diversification rate is actually quite good.
+This is because most information about the diversification rate comes from the age of the phylogeny and the number of sampled species, which does not depend on the sampling scheme or the divergence times.
+However, the estimated turnover rate is quite biased.
+As a result, the speciation- and extinction-rate estimates are both biased.
+This is caused by the underestimation of the extinction rate \citep{Hoehna2011}.
+The bias is quite severe: the true values are not even contained in the 95\% credible interval (see Figure~\ref{fig:mcmcPlotSamplingUniform}).
+% It is thus very important to notice that our estimates can only represent the truth if the model is also true.
+
+
+\subsection{Diversified taxon sampling}
+Now we will consider diversified sampling in more detail.
+We assume that our study group contains $m$ species from which we have $n$ sampled species.
+Under \emph{diversified} sampling, this means that the most recent $m-n$ speciation events have been discarded.
+This is the strictly mathematical interpretation of \emph{diversified} sampling \citep{Hoehna2011,Hoehna2014a}.
+
+This sampling strategy is intended to mimic empirical datasets where species were selected to include ``representatives'' from some number of distinct lineages (\EG all families or all genera).
+This sampling implicitly maximizes species diversity and comes close to the mathematical description of \emph{diversified} sampling.
+However, diversified taxon sampling is not a perfect mathematical description of this sort of sampling.
+For example, not all ``major lineages'' are of the same age and size, and we may therefore sometimes include species that are recently diverged.
+
+As we did for \emph{uniform} taxon sampling, we want to test how well the method performs in estimating parameters given the simulated phylogeny.
+We will use the same constant-rate birth-death process with the only difference being the sampling strategy.
+We therefore use the same prior distributions as in the \emph{uniform} sampling analysis.
+The likelihood function is adapted by changing the \code{samplingStrategy} to ``diversified''.
+\vspace{-2mm}
+<<echo=TRUE>>=
+likelihoodDiversified <- function(params) {
+
+  speciation <- params[1] + params[2]
+  extinction <- params[2]
+
+  lnl <- tess.likelihood(times.diversified,
+                         lambda = speciation,
+                         mu = extinction,
+                         samplingProbability = 0.25,
+                         samplingStrategy = "diversified",
+                         log = TRUE)
+
+  return (lnl)
+
+}
+@
+\noindent
+Then, we perform a (short) MCMC simulation to sample from the posterior distribution of the parameters.
+\vspace{-3mm}
+<<echo = TRUE, eval=FALSE>>=
+samplesDiversified <- tess.mcmc(likelihoodFunction = likelihoodDiversified,
+                            priors = priorsSampling,
+                            parameters = runif(2,0,1),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,1),
+                            iterations = 10000,
+                            burnin = 1000,
+                            thinning = 10,
+                            adaptive = TRUE,
+                            verbose = TRUE)
+@
+<<echo = FALSE, eval=TRUE>>=
+if ( file.exists("results/samplesDiversified.rds") == FALSE ) {
+
+samplesDiversified <- tess.mcmc(likelihoodFunction = likelihoodDiversified,
+                            priors = priorsSampling,
+                            parameters = runif(2,0,1),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,1),
+                            iterations = 10000,
+                            burnin = 1000,
+                            thinning = 10,
+                            adaptive = TRUE,
+                            verbose = TRUE)
+                            
+saveRDS(samplesDiversified, "results/samplesDiversified.rds")
+} else {
+samplesDiversified <- readRDS("results/samplesDiversified.rds")
+}
+@
+\noindent
+Finally, our estimates of the diversification rate and turnover rate under \emph{diversified} taxon sampling are
+\vspace{-2mm}
+<<label=mcmcPlotSamplingDiversified, include=TRUE, fig.cap="Trace plots (left) and marginal posterior probability densities (right) for the diversification rate (speciation - extinction) and turnover rate (extinction) under \\emph{diversified} sampling from the MCMC simulation.", fig.pos='!ht'>>=
+summary(samplesDiversified)
+plot(samplesDiversified)
+@
+\vspace{-2mm}
+\noindent
+Here we see that the true values fall within the 95\% credible interval.
+The mean estimate of the \emph{diversification} rate might be slightly worse, but the transformed speciation and extinction rate estimates are significantly better.
+Thus, we can conclude that only if we know the true sampling strategy, and sampling fraction, are we able to make unbiased estimates the speciation and extinction rates.
+
+You may wish to repeat the above experiment for the case when you simulate the tree under \emph{uniform} taxon sampling, and/or when you assume an incorrect sampling fraction (\IE that is either too large or too small).
+For more information about incomplete taxon sampling, we refer the reader to \cite{Hoehna2011} and \cite{Hoehna2014a}.
+
+\newpage
+\section{Model Evaluation} \label{sec:ModelEvaluation}
+
+Model-based inference is, by definition, based on the model.
+The model describes the process that gave rise to our observed data---in the present case, it describes the stochastic-branching process that gave rise to our study tree.
+Accordingly, if the model provides a `poor fit' to the data---\IE provides a poor description of the process that gave rise to the observed data---then all bets are off.
+
+The model must balance two competing criteria: (1) it must include the relevant parameters to describe important aspects of the diversification process, but; (2) it must exclude any superfluous parameters that only capture stochastic fluctuations in the data.
+Failure to satisfy criterion (1) will result in biased estimates of parameters; \EG speciation and extinction rates.
+Failure to satisfy criterion (2) will inflate the variance in the error of the parameter estimates (overconfidence in estimates).
+
+Accordingly, we must be mindful both regarding our choice of model and also with respect to assessing our ability to perform reliable inference under the chosen model.
+Model evaluation entails three closely related issues.
+\emph{Model selection} entails assessing the relative fit of our dataset to the pool of candidate models.
+In a Bayesian statistical framework, we compare the relative fit of candidate models based on their marginal likelihood (which measures the average fit of the candidate models to the data).
+\emph{Model adequacy} entails assessing the absolute fit of the dataset to a given model.
+\emph{Model uncertainty} is related to the common scenario when multiple candidate models provide a similar fit to the data and model averaging provides a method to
+(a) estimate the probability of a model being true given the set of available models, and
+(b) infers the parameters of interest by averaging over all specified models.
+Below, we demonstrate how to address each of these model-evaluation issues using \TESS.
+
+\subsection{Comparing models with Bayes factors}
+
+For most groups of species, several (possibly many) branching-process models of varying complexity are plausible {\it a priori}.
+We therefore need a way to objectively identify the model that balances estimation bias and inflated error variance associated with under- and over-parameterized models, respectively.
+Increasingly, model selection is based on \textit{Bayes factors} \citep[{\it e.g.},][]{Kass1995,Suchard2001,Lartillot2006,Xie2011,Fan2011,Baele2012,Baele2013}.
+This procedure requires that we first calculate the marginal likelihood of each candidate model, and we then compare the ratio of the marginal likelihoods for the set of candidate models.
+
+Note that interpreting Bayes factors (BF) involves a measure of subjectivity.
+That is, it is up to you to decide what BF values appropriately reflect the level of significance in the competing models.
+Despite the absence of an absolutely objective model-selection threshold, we can refer to the scale \citep[outlined by][]{Jeffreys1961} that provides a ``rule-of-thumb'' for interpreting these measures (Table \ref{bftable}).
+
+\begin{table}[h]
+\centering
+\caption{\small The scale for interpreting Bayes factors by Harold \citet{Jeffreys1961}.}
+\label{bftable}
+\begin{tabular}{l c c c}
+\hline
+\multicolumn{1}{l}{{Strength of evidence}} & \multicolumn{1}{l}{$BF(M_0, M_1)$} & \multicolumn{1}{l}{ln($BF(M_0, M_1)$)} &  \multicolumn{1}{l}{$\text{log}_{10}$($BF(M_0, M_1)$)}\\
+\hline
+Negative (supports $M_1$) & $<1$ & $<0$ & $<0$\\
+Barely worth mentioning & $1$ to $3.2$ & $0$ to $1.16$ & $0$ to $0.5$\\
+Substantial & $3.2$ to $10$ & $1.16$ to $2.3$ & $0.5$ to $1$ \\
+Strong & $10$ to $100$ & $2.3$ to $4.6$ & $1$ to $2$ \\
+Decisive& $>100$ & $>4.6$ & $>2$ \\
+\hline
+\multicolumn{3}{l}{{\scriptsize{For a detailed description of Bayes factors see \citet{Kass1995}}}}
+\end{tabular}
+\end{table}
+
+Given two candidate models, $M_0$ and $M_1$, the Bayes-factor comparison to assess the relative fit of each model to the data, $BF(M_0,M_1)$, is:
+\begin{align*}
+BF(M_0,M_1) = \frac{\mathbb{P}(M_0 \mid \mathbf X)}{\mathbb{P}(M_1 \mid \mathbf X)} = \frac{\mathbb{P}(M_0)}{\mathbb{P}(M_1)} \frac{\mathbb{P}(\mathbf X \mid M_0)}{\mathbb{P}(\mathbf X \mid M_1)},
+\end{align*}
+where $\mathbb{P}(\mathbf X \mid M_i)$ is the \textit{marginal likelihood} of the data (this may be familiar to you as the denominator of Bayes Theorem, which is variously referred to as the \textit{model evidence} or \textit{integrated likelihood}).
+Formally, the marginal likelihood is the probability of the observed data ($\mathbf X$) under a given model ($M_i$) that is averaged over all possible values of the parameters of the model ($\theta_i$) with respect to the prior density on $\theta_i$
+\begin{align}\label{margeLike}
+\mathbb{P}(\mathbf X \mid M_i) = \int \mathbb{P}(\mathbf X \mid \theta_i) \mathbb{P}(\theta_i)d\theta.
+\end{align}
+This makes it clear that more complex (parameter-rich) models are penalized by virtue of the associated prior: each additional parameter entails integration of the likelihood over the corresponding prior density.
+
+Exact solutions for calculating marginal likelihoods are not avaiable for most models, which requires that we resort to numerical integration methods to approximate these values.
+Below, we first provide a brief description of a robust method for estimating marginal likelihoods---stepping-stone simulation \citep{Xie2011,Fan2011}---and then demonstrate how to use the implementation of the stepping-stone algorithm in \TESS to estimate the marginal likelihoods for two birth-death branching-process models.
+
+
+\subsubsection{Stepping-stone simulation}
+
+Recent developments provide robust methods for estimating marginal likelihoods, including stepping-stone \citep{Xie2011,Fan2011} and path-sampling estimators \citep{Lartillot2006, Baele2012}.
+These algorithms are similar to the familiar MCMC algorithms, which are intended to sample from (and estimate) the joint posterior probability of the model parameters.
+Stepping-stone algorithms are like a series of MCMC simulations that iteratively sample from a specified number of discrete steps between the posterior and the prior probability distributions.
+The basic idea is to estimate the probability of the data for all points between the posterior and the prior---effectively summing the probability of the data over the prior probability of the parameters to estimate the marginal likelihood.
+Technically, the steps correspond to a series of \textit{power-posteriors}: a series of numbers between 1 and 0 that are iteratively applied to the posterior.
+When the posterior probability is raised to the power of 1 (typically the first stepping stone), samples are drawn from the (untransformed) posterior.
+By contrast, when the posterior probability is raised to the power of 0 (typically the last stepping stone), samples are drawn from the prior (Figure \ref{fig:ss}).
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.9\textwidth,angle=0]{ext_figures/ss.pdf}
+\caption{\small Estimating marginal likelihoods using stepping-stone simulation.
+Estimating the marginal likelihood involves integrating the likelihood of the data over the entire prior probability density for the model parameters.
+MCMC algorithms target the posterior probability density, which is typically concentrated in a small region of the prior probability density (A).
+Accordingly, standard MCMC simulation cannot provide unbiased estimates of the marginal likelihood because it will typically fail to explore most of the prior density.
+(B) Stepping-stone algorithms estimate the marginal likelihood by means of a series of MCMC-like simulations, where the likelihood is iterativey raised to a series of powers, effectivey forcing the simulation to more fully explore the prior density of the model parameters.
+Six uniformly spaced stones span the posterior, where the power posterior is $\beta=6/6=1$, to the prior, where the power posterior is $\beta=0/6=0$.}
+\label{fig:ss}
+\end{figure}
+
+To perform a stepping-stone simulation, we need to specify
+(1) the number of stepping stones (power posteriors) that we will use to traverse the path between the posterior and the prior (\EG we specify 50 or 100 stones),
+(2) the spacing of the stones between the posterior and prior (\EG we may specify that the stones are distributed according to a beta distribution),
+(3) the number (and thinning) of samples to be drawn from each stepping stone, and
+
+%With a fully specified model, we can set up the \cl{powerPosterior()} analysis to create a file of `powers' and likelihoods from which we can estimate the marginal likelihood using stepping-stone or path sampling.
+This method computes a vector of powers from a beta distribution, then executes an MCMC run for each power step while raising the likelihood to that power.
+As implementated in \TESS, the vector of powers starts with 1, initially sampling the likelihood close to the posterior, and incrementally sampling closer and closer to the prior as the simulation progresses across the stepping stones.
+
+\subsubsection{Estimating marginal likelihoods of birth-death models}\label{sec:bayesFactors}
+To estimate the marginal likelihoods of the branching-process models, we will again make use of the corresponding likelihood functions that we defined in the previous section.
+However, rather than using the \code{tess.mcmc} function to sample from (and so estimate) the posterior distribution of model parameters, we will use the \code{tess.steppingStoneSampling} function to estimate the marginal likelihood of the data under the various models.
+The commands to execute this function for each of the three branching-process models are as follows:
+<< echo = TRUE, eval=FALSE >>=
+set.seed(12345)
+marginalLikelihoodConstBD <- tess.steppingStoneSampling(
+                likelihoodFunction = likelihoodConstBD,
+                priors = priorsConstBD,
+                parameters = runif(2,0,1),
+                logTransforms = c(TRUE,TRUE),
+                iterations = 1000,
+                burnin = 100,
+                K = 50)
+
+marginalLikelihoodDecrBD <- tess.steppingStoneSampling(
+                likelihoodFunction = likelihoodDecrBD,
+                priors = priorsDecrBD,
+                parameters = runif(3,0,1),
+                logTransforms = c(TRUE,TRUE,TRUE),
+                iterations = 1000,
+                burnin = 100,
+                K = 50)
+
+marginalLikelihoodEpisodicBD <- tess.steppingStoneSampling(
+                likelihoodFunction = likelihoodEpisodicBD,
+                priors = priorsEpisodicBD,
+                parameters = runif(4,0,1),
+                logTransforms = c(TRUE,TRUE,TRUE,TRUE),
+                iterations = 1000,
+                burnin = 100,
+                K = 50)
+
+marginalLikelihoodMassExtinctionBD <- tess.steppingStoneSampling(
+                likelihoodFunction = likelihoodMassExtinctionBD,
+                priors = priorsMassExtinctionBD,
+                parameters = c(runif(2,0,1),max(times)*3/4),
+                logTransforms = c(TRUE,TRUE,FALSE),
+                iterations = 1000,
+                burnin = 100,
+                K = 50)
+
+@
+<<echo = FALSE, eval=TRUE>>=
+if ( file.exists("results/marginalLikelihoodConstBD.rds") == FALSE ) {
+
+set.seed(12345)
+marginalLikelihoodConstBD <- tess.steppingStoneSampling(
+                likelihoodFunction = likelihoodConstBD,
+                priors = priorsConstBD,
+                parameters = runif(2,0,1),
+                logTransforms = c(TRUE,TRUE),
+                iterations = 1000,
+                burnin = 100,
+                K = 50)
+
+marginalLikelihoodDecrBD <- tess.steppingStoneSampling(
+                likelihoodFunction = likelihoodDecrBD,
+                priors = priorsDecrBD,
+                parameters = runif(3,0,1),
+                logTransforms = c(TRUE,TRUE,TRUE),
+                iterations = 1000,
+                burnin = 100,
+                K = 50)
+
+marginalLikelihoodEpisodicBD <- tess.steppingStoneSampling(
+                likelihoodFunction = likelihoodEpisodicBD,
+                priors = priorsEpisodicBD,
+                parameters = runif(4,0,1),
+                logTransforms = c(TRUE,TRUE,TRUE,TRUE),
+                iterations = 1000,
+                burnin = 100,
+                K = 50)
+
+marginalLikelihoodMassExtinctionBD <- tess.steppingStoneSampling(
+                likelihoodFunction = likelihoodMassExtinctionBD,
+                priors = priorsMassExtinctionBD,
+                parameters = c(runif(2,0,1),max(times)*3/4),
+                logTransforms = c(TRUE,TRUE,FALSE),
+                iterations = 1000,
+                burnin = 100,
+                K = 50)
+
+saveRDS(marginalLikelihoodConstBD, "results/marginalLikelihoodConstBD.rds")
+saveRDS(marginalLikelihoodDecrBD, "results/marginalLikelihoodDecrBD.rds")
+saveRDS(marginalLikelihoodEpisodicBD, "results/marginalLikelihoodEpisodicBD.rds")
+saveRDS(marginalLikelihoodMassExtinctionBD, "results/marginalLikelihoodMassExtinctionBD.rds")
+} else {
+marginalLikelihoodConstBD <- readRDS("results/marginalLikelihoodConstBD.rds")
+marginalLikelihoodDecrBD <- readRDS("results/marginalLikelihoodDecrBD.rds")
+marginalLikelihoodEpisodicBD <- readRDS("results/marginalLikelihoodEpisodicBD.rds")
+marginalLikelihoodMassExtinctionBD <- readRDS("results/marginalLikelihoodMassExtinctionBD.rds")
+}
+@
+\noindent
+We can now use the estimated marginal likelihoods to perform Bayes factor comparisons of these three candidate branching-process models.
+<<echo=TRUE>>=
+# First, construct a vector of the marginal likelhoods named by the
+# model to which they refer.
+candidateModels <- c("ConstBD"=marginalLikelihoodConstBD,
+                     "DecrBD"=marginalLikelihoodDecrBD,
+                     "EpisodicBD"=marginalLikelihoodEpisodicBD,
+                     "MassExtinctionBD"=marginalLikelihoodMassExtinctionBD)
+
+# Make all possible combinations of the models.
+marginalLikelihoodGrid <- expand.grid(M0=names(candidateModels),
+                                      M1=names(candidateModels))
+
+# Add a column that is the 2 ln BF for each pair of models.
+marginalLikelihoodGrid$BF <- 2 * (candidateModels[marginalLikelihoodGrid$M0] -
+                                  candidateModels[marginalLikelihoodGrid$M1])
+
+# Sort the comparisons by their 2 ln BF in descending order.
+marginalLikelihoodGrid <- marginalLikelihoodGrid[order(marginalLikelihoodGrid$BF,
+                                                       decreasing=TRUE),]
+
+marginalLikelihoodGrid
+@
+\noindent
+If we compare these computed Bayes factor values to the thresholds in Table \ref{bftable}, we see that there is decisive support for the constant-rate model (\EG this model is decisively preferred over either of the variable-rate models; BF $\gg 4.6$).
+Furthermore, we see that the decreasing-rate model is decisively preferred over the episodic model.
+
+\vspace{15mm}
+\subsection{Assessing model adequacy with posterior predictive simulation}\label{sec:PosteriorPredictiveTesting}
+Bayes factors, dicussed in the previous section, allow us to assess the relative fit of two or more competing models to a given dataset.
+However, even the very best of the competing models may nevertheless be inadequate in an absolute sense.
+Fortunately, we can assess the absolute fit of a candidate model to a given dataset using \textit{posterior-predictive simulation}.
+The basic premise of this approach is as folows: if the model under consideration provides an adequate description of the process that gave rise to our observed dataset, then we should be able to use that model generate new datasets that are in some sense `similar' to our dataset.
+
+\subsubsection{Posterior-predictive simulation}
+Posterior-predictive simulation involves six main steps:
+\begin{enumerate}
+\item{We first calculate a summary statistic for our observed dataset.
+This is intended to capture---in a single number---a relevant feature of our dataset.
+For models of lineage diversification, for example, we might use number of species in the tree or the $\gamma$-statistic \citep{Pybus2000} as our summary statistic.}
+\item{We then estimate parameters of the candidate model from our oberved dataset.
+This simply involves performing an MCMC simulation to estimate the posterior probability distribution of the candidate model parameters.}
+\item{Next, we specify parameters of the candidate model by drawing values from the inferred joint posterior probability distributions.
+For example, we would parameterize the diversification model under consideration by drawing rate parameters from the joint posterior densities that we inferred from the study tree.}
+\item{We then use this parameterized model to simulate a tree, and calculate the summary statistic for the resulting tree.}
+\item{We repeat steps $3-4$ many times to generate a distribution of the summary statistic.
+This is the distribution that is predicted by simulating datasets under the candidate model that has been parameterized using posterior estimates on the observed dataset.}
+\item{Finally, we compare the summary statistic calculated for the observed dataset to the posterior-predictive distribution.
+If the candidate model provides an adequate description of the process that gave rise to the original dataset, then the statistic for the observed dataset will fall near the center of the simulated distribution.
+Otherwise, the statistic from the observed data will fall near the tails of the null distribution, indicating that the model cannot be used to predict future data that look like the observed dataset.
+}
+\end{enumerate}
+
+We can formalize the relative position of the statistic for the observed data to the posterior-predictive distribution by calculating the \textit{posterior-predictive p-value}.
+To do so, we simply sum the number of simulated summary statistics that are greater than or equal to the observed value, and divide this by the number of simulated values.
+
+\subsubsection{Assessing the adequacy of branching-process models}\label{sec:PPT}
+To  assess the adequacy of branching-process  models in \TESS, we will use the number of species and the $\gamma$-statistic \citep{Pybus2000} as our example test statistics.
+We will demonstrate how to perform posterior-predictive simulation to assess the absolute fit of the constant-rate birth-death process model to the conifer dataset.
+Note that we have already estimated the joint posterior probability distribution of this model using MCMC (described in Section \ref{sec:ConstBD}, above).
+
+We will condition our simulated trees on the age of conifer phylogeny.
+<<echo = TRUE>>=
+tmrca <- max( times )
+@
+We first define the function that will perform the simulation.
+This is analogous to the specification of the likelihood function, which means that it is possible to perform posterior-predictive simulation under any birth-death model.
+<<echo = TRUE>>=
+# The simulation function
+simConstBD <- function(params) {
+
+  # Same model as above.
+  speciation <- params[1] + params[2]
+  extinction <- params[2]
+
+  # We need trees with at least three tips for the
+  # gamma-statistic.
+  repeat {
+    tree <- tess.sim.age(n = 1,
+                         age = tmrca,
+                         lambda = speciation,
+                         mu = extinction,
+                         samplingProbability = 1.0,
+                         MRCA = TRUE)[[1]]
+    if (tree$Nnode > 1) break
+  }
+  return (tree)
+}
+@
+\noindent
+Note that the simulation function needs to return a single tree.
+The next step is to simulate trees by sampling parameter values (for the speciation and extinction rate) from the corresponding posterior probability distributions that we inferred from the conifer tree (these are referred to as the `posterior-predictive samples').
+<< echo = TRUE, eval=TRUE>>=
+# simulate trees from the posterior-predictive distribution
+treesConstBD <- tess.PosteriorPrediction(simConstBD,samplesConstBD)
+@
+\noindent
+We will specify the number of species as the summary statistic:
+<<echo = TRUE>>=
+# compute the number of species in each simulate tree
+numTaxaConstBD <- c()
+for (i in 1:length(treesConstBD)){
+  numTaxaConstBD[i] <- treesConstBD[[i]]$Nnode + 1
+}
+@
+\noindent
+We then compute the posterior-predictive quantiles for the number of species and plot the posterior-predictive distribution and quantiles.
+Finally, we compare the observed number of species to the posterior-predictive distribution.
+
+<<label = constPosteriorPredictiveNTaxa, echo = TRUE, include = TRUE, eval=FALSE>>=
+# Compute the 95% posterior-predictive interval of the
+# number of taxa.
+numTaxaPPDI <- quantile(numTaxaConstBD,prob=c(0.025,0.975))
+
+# Plot the posterior-predictive distribution with the
+# quantiles. Then, compare it to the observed number
+# of species, x.
+plot(density(numTaxaConstBD),main="Number of taxa",xlab="",
+    ylab="Posterior Predictive Density",lwd=2)
+
+abline(v=numTaxaPPDI,lty=2,col="gray",lwd=2)
+
+points(conifers$Nnode+1,0,pch="x")
+@
+\noindent
+We can plot the posterior-predictive distribution of the lineage-accumulation curves (\IE the LTT plots for the simulated trees), and compare this predictive distribution to the LTT plot for the observed tree.
+\vspace{-2mm}
+<<label = constPosteriorPredictiveLTT, echo = TRUE, include = TRUE, eval=FALSE>>=
+ltt.plot(treesConstBD[[1]],backward=FALSE,col="gray",log="y",
+         ylim=c(1,max(numTaxaConstBD)),main="LTT-plot")
+
+for (i in 2:min(100,length(treesConstBD))) ltt.lines(treesConstBD[[i]],
+                           backward=FALSE, col="gray")
+
+ltt.lines(conifers,backward=FALSE,lwd=3)
+@
+\noindent
+Additional to using species number as the summary statistic, we can also use the gamma statistic.
+To do so, we simply compute the value of the gamma statistic for the observed tree, and then compare it to the posterior-predictive distribution of the gamma statistic (\IE the distribution of $\gamma$-statistics computed from the simulated trees).
+\vspace{-3mm}
+<<label = constPosteriorPredictiveGamma, echo = TRUE, include = TRUE, eval=FALSE>>=
+
+# Compute the observed gamma statistic.
+observedGamma <- gammaStat(conifers)
+
+# Perform the posterior predictive test, and compute
+# the 95% posterior predictive interval.
+ppt <- tess.PosteriorPredictiveTest(treesConstBD,conifers,
+                                    gammaStat)
+gammaPPDI <- quantile(ppt[[1]],prob=c(0.025,0.975))
+
+# Compare the observed statistic to the posterior
+# predictive density.
+plot(density(ppt[[1]]),main="Gamma Statistic",xlab="",
+                       ylab="Posterior Predictive Density",lwd=2)
+abline(v=gammaPPDI,lty=2,col="gray",lwd=2)
+points(observedGamma,0,pch="x")
+@
+<<echo=FALSE, label=posteriorPredictiveTests, include=TRUE, fig.height=4, out.width="\\linewidth", fig.align="center", fig.cap="Assessing the absolute fit of the conifer tree to the constant-rate birth-death model using posterior-predictive simulation. (A) The posterior-predictive distribution for the number of species; the dashed gray lines indicate the 95\\% credible interval, and the `x' indicates the location of the observed species number. (B) LTT plots for the simulated trees (gray) and for the conifer study tree (black). (C) The posterior-predictive distribution for the gamma statistic; the dashed  gray lines indicate the 95\\% credible interval, and the `x' indicates the location of the value of the gamma statistic calculated for the conifer tree.">>=
+
+par(mfrow=c(1,3),mar=c(5,4,3,0.1),las=1)
+
+# Compute the 95% posterior predictive interval of the number of taxa.
+numTaxaPosteriorPredictiveInterval <- quantile(numTaxaConstBD,prob=c(0.025,0.975))
+
+# Plot the posterior predictive distribution with the quantiles.
+# Then, compare it to the observed number of species, x.
+plot(density(numTaxaConstBD),main=NA,xlab="",ylab="Posterior Predictive Density",lwd=2)
+abline(v=numTaxaPosteriorPredictiveInterval,lty=2,col="gray",lwd=2)
+points(conifers$Nnode+1,0,pch="x")
+mtext("A", line = 1)
+
+ltt.plot(treesConstBD[[1]],backward=FALSE,col="gray",log="y",ylim=c(1,max(numTaxaConstBD)),main=NA)
+for (i in 2:min(100,length(treesConstBD))) ltt.lines(treesConstBD[[i]],backward=FALSE,col="gray")
+ltt.lines(conifers,backward=FALSE,lwd=3)
+mtext("B", line = 1)
+
+# Compute the observed gamma statistic.
+observedGamma <- gammaStat(conifers)
+
+# Perform the posterior predictive test, and compute the 95% posterior predictive interval.
+ppt <- tess.PosteriorPredictiveTest(treesConstBD,conifers,gammaStat)
+gammaPosteriorPredictiveInterval <- quantile(ppt[[1]],prob=c(0.025,0.975))
+
+# Compare the observed statistic to the posterior predictive density.
+plot(density(ppt[[1]]),main=NA,xlab="",ylab="Posterior Predictive Density",lwd=2)
+abline(v=gammaPosteriorPredictiveInterval,lty=2,col="gray",lwd=2)
+points(observedGamma,0,pch="x")
+mtext("C", line = 1)
+@
+\vspace{-2.5mm}
+Encouragingly, the observed values for both summary statistics---the number of species and the gamma statistic---fall near the center of their respective posterior-predictive distributions (see Figure \ref{fig:posteriorPredictiveTests} A and C, respectively).
+This means that the model under consideration---the constant-rate birth-death model---can be used to simulate trees that look like our conifer study tree, indicating that it provides a good absolute fit to our dataset.
+Conversely, if we had found that the observed values for the summary statistics fell outside the $95\%$ credible intervals of the posterior-predictive distributions, we would conclude that the contant-rate birth-death model cannot be used to predict trees that look like our conifer stuy tree.
+
+We could further quantify the relative position of the observed summary statistic within the posterior-predictive distribution by calculatig the posterior-predictive p-value as follows:
+\vspace{-2.5mm}
+<< echo=TRUE, eval=TRUE >>=
+mean(ppt[[1]] >= observedGamma)
+@
+\noindent
+These posterior-predictive p-values can be used to assess the absolute fit of one or more models to a given dataset.
+
+\clearpage
+\subsection{Model selection with reversible-jump MCMC and CoMET}\label{sec:CoMET}
+In the preceding sections, we assessed the relative and absolute fit of birth-death process models using Bayes factors and posterior-predictive simulation.
+These methods are computationally intensive and so are only practical when the set of candidate branching-process models is quite small; however, the number of total birth-death models is vast.
+Consider, for example, the episodic birth-death process models: there is an infinite number of nested models that differ in the number of events, and for a specific number of events, there is an infite number of times at which those events could occur.
+Clearly, the vast space of possible branching-process models precludes their exhaustive pairwise comparison using Bayes factors.
+This issue may be addressed by means of reversible-jump MCMC (rjMCMC) approaches that treat the model as a random variable (\IE the number of mass-extinction events).
+Additionally, the rjMCMC approach in \CoMET integrates over the (model) uncertainty of the nuisance parameters: the number of diversification rate shifts is integrated over if you are interested only in the number of mass-extinction events.
+
+The \CoMET method performs rjMCMC simulation over all possible episodically varying birth-death processes with explicitly modeled mass-extinction events.
+Briefly, this method treats the number of specation-rate shifts, extinction-rate shifts, and mass-extinction events---as well as the parameters associated with these events---as random variables, and estimates their joint posterior distribution.
+% The parameters of the full model, along with their interpretation and default prior distributions, are listed in Table \ref{tab:paramtable}.
+To perform a full \CoMET analysis, we must therefore specify values for the following quantities: (1) the expected number of speciation-rate shifts, extinction-rate shifts, and mass-extinction events ($\lambda_\mathbb{B},\lambda_\mathbb{D},\lambda_\mathbb{M}$, respectively); (2) the hyperpriors describing the speciation and extinction rates ($\mu_\mathbb{B},\sigma_\mathbb{B}$ and $\mu_\mathbb{D},\sigma_\mathbb{D}$, respectively); and (3) the hyperpriors describing the mass-extinction survival probability ($\alpha, \beta$).
+The settings and accompanying arguments are summarized in Table \ref{tab:priortable}.
+% Note that the prior on the timing of each event is Uniform($0,T$), where $T$ is the height of the tree, and thus does not require we specify the prior density.
+Note that the method currently assumes that $\lambda_\mathbb{B} = \lambda_\mathbb{D}$, although the actual number, timing and magnitude of speciation- and extinction-rate shifts are independent of each other.
+For the full details of this method, and a more complete description of the model parameters, see \cite{May2015}.
+
+\begin{table}[!ht]
+  \centering
+   \caption{Settings for the \CoMET model. The left column lists the priors and hyperpriors used by the \CoMET model. The middle column lists the associated arguments for use with the \code{tess.analysis} command. The right column lists the interpretation of the prior or hyperprior.}
+  \label{tab:priortable}
+  \begin{tabular}{p{1cm} p{6cm} L{6cm}}
+  	\toprule
+		Prior & Argument & Interpretation\\
+		\midrule
+    $\lambda_\mathbb{B}$ & \code{numExpectedRateChanges} & Expected number of speciation-rate shifts \\
+    \rowcolor{gray!15} $\lambda_\mathbb{D}$ & \code{numExpectedRateChanges} & Expected number of extinction-rate shifts \\
+    $\lambda_\mathbb{M}$ & \code{numExpectedMassExtinctions} & Expected number of mass-extinction events \\
+    \rowcolor{gray!15} $\mu_\mathbb{B}$ & \code{speciationRatePriorMean} & Mean speciation rate \\
+    $\sigma_\mathbb{B}$ & \code{speciationRatePriorStDev} & Standard deviation of the speciation rate \\
+    \rowcolor{gray!15} $\mu_\mathbb{D}$ & \code{extinctionRatePriorMean} & Mean extinction rate \\
+    $\sigma_\mathbb{D}$ & \code{extinctionRatePriorStDev} & Standard deviation of the extinction rate \\
+    \rowcolor{gray!15} $\alpha$ & \code{pMassExtinctionPriorShape1} & Shape parameter of the expected survival probability \\
+    $\beta$ & \code{pMassExtinctionPriorShape2} & Shape parameter of the expected survival probability \\
+    \bottomrule
+	\end{tabular}
+\end{table}
+
+\subsubsection{Specifying hyperpiors \emph{a priori}}
+Before we can run a \CoMET analysis, we must specify prior distributions for each of the parameters in the model.
+We will begin with the most complex model in this section, and then show how to specify special cases of the full model in later sections.
+
+We will start by specifying the prior distributions for the expected number of speciation- and extinction-rate shifts, $\lambda_\mathbb{B} = \lambda_\mathbb{D}$, and mass-extinction events $\lambda_\mathbb{M}$.
+As it turns out, the prior expectation of the number of events does not impact our conclusions because we will use Bayes factors which cancel out the prior assumptions.
+Thus, the specific prior choices only tweak the performance of the method but should not result in qualitatively different conclusions.
+Accordingly, we specify $\lambda_\mathbb{M}$ to reflect the fossil record as follows:
+<<echo = TRUE>>=
+numExpectedMassExtinctions <- 2
+@
+\noindent
+Similarly, we specify the prior expectation on the number of rate-shift events:
+<<echo=TRUE>>=
+numExpectedRateChanges <- 2
+@
+\noindent
+Next, we consider the prior densities for the diversification-rate parameters themselves.
+Speciation and extinction rates must be greater than 0, so we will use lognormal prior densities to reflect this fact.
+We must therefore specify the mean and standard deviation hyperparameters of each lognormal distribution.
+We start by specifying the hyperparameters in real space, \IE the mean and standard deviation of the actual speciation and extinction rates.
+<<echo = TRUE >>=
+# Specify the mean and standard deviation of the lognormal
+# prior on the speciation rate in real space
+speciationPriorMu <- 0.2
+speciationPriorSigma <- 0.5
+
+# Specify the mean and standard deviation of the lognormal
+# prior on the extinction rate in real space
+extinctionPriorMu <- 0.15
+extinctionPriorSigma <- 0.5
+@
+\noindent
+We then transform the hyperparameters to reflect the mean and standard of the log-transformed speciation and extinction rates.
+These are the $\mu$ and $\sigma$ parameters of the lognormal priors on speciation and extinction rates.
+<<echo = TRUE >>=
+# Transform the priors on the speciation rate into log space.
+speciationRatePriorMean <- log((speciationPriorMu^2)
+                           /sqrt(speciationPriorSigma^2+
+                           speciationPriorMu^2))
+
+speciationRatePriorStDev <- sqrt( log(1+speciationPriorSigma^2
+                            /(speciationPriorMu^2)))
+
+# Transform the priors on the extinction rate into log space.
+extinctionRatePriorMean <- log((extinctionPriorMu^2)
+                           /sqrt(extinctionPriorSigma^2+
+                           extinctionPriorMu^2))
+
+extinctionRatePriorStDev <- sqrt( log(1+extinctionPriorSigma^2
+                            /(extinctionPriorMu^2)))
+@
+\noindent
+Finally, we need to specify the prior density on the survival probability of a mass-extinction event.
+This value reflects the probability that a lineage survives a particular mass-extinction event, and therefore must be between 0 (each lineage will always go extinct) and 1 (each lineage will always survive).
+A convenient prior density for this parameter is the beta distribution, which has two shape parameters, $\alpha$ and $\beta$.
+%We note that the ability to distinguish mass-extinction events from temporal variation in speciation and extinction rates depends critically on this density: high survival probabilities and relatively flat prior densities on the survival probability will greatly decrease our power to disentangle mass-extinction events from temporal variation in diversification rates.
+We use the definition of what constitutes to a mass extinction to inform our prior density on this parameter.
+
+We begin parameterizing this distribution by specifying the expected survival probability.
+The fossil record suggests that between 95\% of species diversity was lost during the a major mass-extinction events and 70\% during a minor mass-extinction event.
+Therefore, the expected survival probability should be quite low.
+In this example, we assume \emph{a priori} a survival probability of 5\%.
+<<echo=TRUE>>=
+expectedSurvivalProbability <- 0.05
+@
+\noindent
+Using the expected survival probability, we compute the $\alpha$ and $\beta$ parameters of the beta distribution.
+We set the value of $\beta$ to be large, which focuses the prior density more tightly around the expected survival probability.
+Then, we compute $\alpha$ based on the expected survival probability and the specified $\beta$ value.
+<<echo=TRUE>>=
+pMassExtinctionPriorShape2 <- 100
+pMassExtinctionPriorShape1 <- - pMassExtinctionPriorShape2 *
+                                expectedSurvivalProbability /
+                                (expectedSurvivalProbability - 1)
+@
+\noindent
+We can inspect this beta distribution to confirm that it accurately reflects our prior belief regarding the survival probability (Figure \ref{fig:priorSurvivalProbability}).
+<<echo = TRUE, label = priorSurvivalProbability, fig.cap="Our prior density on the survival probability of a mass-extinction event.",fig.height=3.5>>=
+# Plot the density function of our beta distribution.
+curve(dbeta(x,shape1=pMassExtinctionPriorShape1,
+            shape2=pMassExtinctionPriorShape2),n=1001,
+            xlab='survival probability',ylab='density',las=1)
+
+# Plot the 95% prior interval on the survival probability.
+abline(v = qbeta(c(0.025,0.975),shape1=pMassExtinctionPriorShape1,
+                 shape2=pMassExtinctionPriorShape2),lty=2)
+@
+\noindent
+This beta distribution seems to reflect our prior belief that the survival probability is expected to be $\sim 5\%$, but can range from about 1\% to about 10\%.
+
+Having specified prior distributions for all of the parameters of the \CoMET model, we can now perform an analysis.
+<<echo = TRUE, eval = FALSE >>=
+set.seed(12345)
+tess.analysis(conifers,
+              empiricalHyperPriors = FALSE,
+              initialSpeciationRate = speciationPriorMu,
+              speciationRatePriorMean = speciationRatePriorMean,
+              speciationRatePriorStDev = speciationRatePriorStDev,
+              initialExtinctionRate = extinctionPriorMu,
+              extinctionRatePriorMean = extinctionRatePriorMean,
+              extinctionRatePriorStDev = extinctionRatePriorStDev,
+              samplingProbability = samplingFraction,
+              numExpectedRateChanges = numExpectedRateChanges,
+              numExpectedMassExtinctions = numExpectedMassExtinctions,
+              pMassExtinctionPriorShape1 = pMassExtinctionPriorShape1,
+              pMassExtinctionPriorShape2 = pMassExtinctionPriorShape2,
+              MAX_ITERATIONS = 10000,
+              dir = "tess_analysis")
+@
+<<echo = FALSE, eval = TRUE >>=
+if ( file.exists("results/tess_analysis.rds") == FALSE ) {
+
+set.seed(12345)
+tess.analysis(conifers,
+              empiricalHyperPriors = FALSE,
+              initialSpeciationRate = speciationPriorMu,
+              speciationRatePriorMean = speciationRatePriorMean,
+              speciationRatePriorStDev = speciationRatePriorStDev,
+              initialExtinctionRate = extinctionPriorMu,
+              extinctionRatePriorMean = extinctionRatePriorMean,
+              extinctionRatePriorStDev = extinctionRatePriorStDev,
+              samplingProbability = samplingFraction,
+              numExpectedRateChanges = numExpectedRateChanges,
+              numExpectedMassExtinctions = numExpectedMassExtinctions,
+              pMassExtinctionPriorShape1 = pMassExtinctionPriorShape1,
+              pMassExtinctionPriorShape2 = pMassExtinctionPriorShape2,
+              MAX_ITERATIONS = 10000,
+              dir = "tess_analysis")
+              
+}
+@
+\noindent
+Now, we process the output using the function \code{tess.process.output}
+\vspace{-2mm}
+<<echo = TRUE, eval = FALSE >>=
+output <- tess.process.output("tess_analysis",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+
+@
+<<echo = FALSE, eval = TRUE >>=
+if ( file.exists("results/tess_analysis.rds") == FALSE ) {
+
+output <- tess.process.output("tess_analysis",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+
+saveRDS(output, "results/tess_analysis.rds")
+} else {
+output <- readRDS("results/tess_analysis.rds")
+}
+@
+\noindent
+and visualize the results using \code{tess.plot.output} (Figure \ref{fig:plotTessAnalysis}).
+<<echo = TRUE, eval = TRUE, label = plotTessAnalysis, fig.cap="Visualizing the results of a \\CoMET analysis when diversification hyperpriors are specified \\emph{a priori}.">>=
+
+layout.mat <- matrix(1:6,nrow=3,ncol=2,byrow=TRUE)
+layout(layout.mat)
+tess.plot.output(output,
+                 fig.types = c("speciation rates",
+                               "speciation shift times",
+                               "extinction rates",
+                               "extinction shift times",
+                               "mass extinction Bayes factors",
+                               "mass extinction times"),
+                 las=2)
+@
+\noindent
+There appears to be nearly decisive support for a mass-extinction event about 27 million years ago ($2 \ln \text{BF} \approx 10$), as well as strong support for a mass-extinction event about 173 million year ago ($2 \ln \text{BF} \approx 6$).
+Additionally, there is support for an extinction-rate shift near the present; however, we caution against interpreting these rate shifts based on a single analysis and recommend assessing the sensitivity of this conclusion to different priors on the expected number of diversification-rate shifts.
+
+\clearpage
+\subsubsection{Empirical hyperpiors}
+As mentioned above, it can be difficult to specify the prior distributions for the speciation- and extinction-rate parameters.
+\TESS implements an automatic empirical hyperprior procedure which performs an initial Bayesian MCMC analysis under a constant-rate birth-death process model to determine reasonable values for the hyperparameters of the diversification priors.
+To perform a hyperprior analysis, we simply have to set \code{empiricalHyperPriors = TRUE}.
+Additionally, we may omit the parameters of the lognormal distributions, since they will automatically be estimated from the data.
+<<echo = TRUE, eval = FALSE >>=
+set.seed(12345)
+tess.analysis(conifers,
+              empiricalHyperPriors = TRUE,
+              samplingProbability = samplingFraction,
+              numExpectedRateChanges = numExpectedRateChanges,
+              numExpectedMassExtinctions = numExpectedMassExtinctions,
+              pMassExtinctionPriorShape1 = pMassExtinctionPriorShape1,
+              pMassExtinctionPriorShape2 = pMassExtinctionPriorShape2,
+              MAX_ITERATIONS = 10000,
+              dir = "comet_hyperpriors")
+
+@
+<<echo = FALSE, eval = TRUE >>=
+if ( file.exists("results/comet_hyperpriors.rds") == FALSE ) {
+
+set.seed(12345)
+tess.analysis(conifers,
+              empiricalHyperPriors = TRUE,
+              samplingProbability = samplingFraction,
+              numExpectedRateChanges = numExpectedRateChanges,
+              numExpectedMassExtinctions = numExpectedMassExtinctions,
+              pMassExtinctionPriorShape1 = pMassExtinctionPriorShape1,
+              pMassExtinctionPriorShape2 = pMassExtinctionPriorShape2,
+              MAX_ITERATIONS = 10000,
+              dir = "comet_hyperpriors")
+
+}
+@
+\noindent
+As before, we process
+<<echo = TRUE, eval = FALSE>>=
+output <- tess.process.output("comet_hyperpriors",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+
+@
+<<echo = FALSE, eval = TRUE>>=
+if ( file.exists("results/comet_hyperpriors.rds") == FALSE ) {
+
+output <- tess.process.output("comet_hyperpriors",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+
+saveRDS(output, "results/comet_hyperpriors.rds")
+} else {
+output <- readRDS("results/comet_hyperpriors.rds")
+}
+@
+\noindent
+and visualize the output using \code{tess.process.output} and \code{tess.plot.output} (Figure \ref{fig:plotTessAnalysisEmpirical}).
+<<echo = TRUE, eval = TRUE, label = plotTessAnalysisEmpirical, fig.cap="Visualizing the results of a \\CoMET analysis with empirically estimated diversification hyperpriors.">>=
+
+layout.mat <- matrix(1:6,nrow=3,ncol=2,byrow=TRUE)
+layout(layout.mat)
+tess.plot.output(output,
+                 fig.types = c("speciation rates",
+                               "speciation shift times",
+                               "extinction rates",
+                               "extinction shift times",
+                               "mass extinction Bayes factors",
+                               "mass extinction times"),
+                 las=2)
+@
+\noindent
+Interestingly, these results are quite similar to those from our \emph{a priori} analysis (Figure \ref{fig:plotTessAnalysis}).
+
+\clearpage
+\subsubsection{Without diversification-rate shifts}
+Based on the results of the Bayes factor comparisons (Section \ref{sec:bayesFactors}) and posterior-predictive tests (Section \ref{sec:PPT})---which found support for a constant-rate birth-death process---we may also be interested in performing a \CoMET analysis without diversification-rate shifts (\IE where speciation and extinction rates are constant through time).
+To do so, we use the argument \code{estimateNumberRateChanges = FALSE}.
+<<echo = TRUE, eval = FALSE >>=
+set.seed(12345)
+tess.analysis(conifers,
+              empiricalHyperPriors = TRUE,
+              samplingProbability = samplingFraction,
+              estimateNumberRateChanges = FALSE,
+              numExpectedMassExtinctions = numExpectedMassExtinctions,
+              pMassExtinctionPriorShape1 = pMassExtinctionPriorShape1,
+              pMassExtinctionPriorShape2 = pMassExtinctionPriorShape2,
+              MAX_ITERATIONS = 10000,
+              dir = "comet_no_rateshifts")
+              
+output <- tess.process.output("comet_no_rateshifts",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+@
+<<echo = FALSE, eval = TRUE >>=
+if ( file.exists("results/comet_no_rateshifts.rds") == FALSE ) {
+
+set.seed(12345)
+tess.analysis(conifers,
+              empiricalHyperPriors = TRUE,
+              samplingProbability = samplingFraction,
+              estimateNumberRateChanges = FALSE,
+              numExpectedMassExtinctions = numExpectedMassExtinctions,
+              pMassExtinctionPriorShape1 = pMassExtinctionPriorShape1,
+              pMassExtinctionPriorShape2 = pMassExtinctionPriorShape2,
+              MAX_ITERATIONS = 10000,
+              dir = "comet_no_rateshifts")
+              
+output <- tess.process.output("comet_no_rateshifts",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+                
+saveRDS(output, "results/comet_no_rateshifts.rds")
+} else {
+output <- readRDS("results/comet_no_rateshifts.rds")
+
+}
+@
+\noindent
+We visualize the output as before.
+However, since there are no diversification-rate shifts, we only plot estimates related to mass-extinction events (Figure \ref{fig:plotTessAnalysisWithoutRateshifts}).
+<<echo = TRUE, eval = TRUE, label=plotTessAnalysisWithoutRateshifts, fig.cap = "Visualizing the results of a \\CoMET analysis with empirically estimated diversification hyperpriors \\emph{and without} diversification rate-shifts.">>=
+
+layout.mat <- matrix(1:2,nrow=2,ncol=1)
+layout(layout.mat)
+tess.plot.output(output,
+                 fig.types = c("mass extinction Bayes factors",
+                               "mass extinction times"),
+                 las=2)
+@
+
+\clearpage
+\subsubsection{Without mass-extinction events}
+Finally, we can also perform a \CoMET analysis where mass-extinction events are disallowed.
+This scenario is particularly interesting if you are interested in the diversification rates through time and are certain that there were no mass-extinction events.
+Nevertheless, the full \CoMET analyses might be preferred because it includes the case without mass extinction and the data should support this (if true).
+
+We do this with the argument \code{estimateNumberMassExtinctions = FALSE}.
+Because mass-extinction events are precluded, we can omit the corresponding parameters for survival probability, \code{pMassExtinctionPriorShape1} and \code{pMassExtinctionPriorShape2}.
+<<echo = TRUE, eval = FALSE >>=
+set.seed(12345)
+tess.analysis(conifers,
+              empiricalHyperPriors = TRUE,
+              samplingProbability = samplingFraction,
+              estimateNumberMassExtinctions = FALSE,
+              MAX_ITERATIONS = 10000,
+              dir = "comet_no_mass_extinctions")
+              
+output <- tess.process.output("comet_no_mass_extinctions",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+@
+<<echo = FALSE, eval = TRUE >>=
+if ( file.exists("results/comet_no_mass_extinctions.rds") == FALSE ) {
+
+set.seed(12345)
+tess.analysis(conifers,
+              empiricalHyperPriors = TRUE,
+              samplingProbability = samplingFraction,
+              estimateNumberMassExtinctions = FALSE,
+              MAX_ITERATIONS = 10000,
+              dir = "comet_no_mass_extinctions")
+              
+output <- tess.process.output("comet_no_mass_extinctions",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+
+
+saveRDS(output, "results/comet_no_mass_extinctions.rds")
+} else {
+output <- readRDS("results/comet_no_mass_extinctions.rds")
+}
+@
+\noindent
+We visualize the output as before, this time omitting estimates of the number and timing of mass-extinction events (Figure \ref{fig:plotTessAnalysisWithoutMassExtinctions}).
+<<echo = TRUE, eval = TRUE, label = plotTessAnalysisWithoutMassExtinctions, fig.cap="Visualizing the results of a \\CoMET analysis with empirically estimated diversification hyperpriors \\emph{and without} mass-extinction events.">>=
+layout.mat <- matrix(1:4,nrow=2,ncol=2,byrow=TRUE)
+layout(layout.mat)
+tess.plot.output(output,
+                 fig.types = c("speciation rates",
+                               "speciation shift times",
+                               "extinction rates",
+                               "extinction shift times"),
+                 las=2)
+@
+
+
+
+
+\clearpage
+\newpage
+\section{MCMC Diagnosis, auto-tuning and auto-stopping}\label{sec:mcmcDiagnosis}
+
+In any analysis we should be mindful about our ability to obtain reliable estimates, especially when complex models and stochastic algorithms are used.
+Bayesian inference is focussed on the joint posterior probability density of the model parameters, which must be approximated using numerical methods (MCMC simulation).
+It may be comforting to know that, in theory, an appropriately constructed and adequately run MCMC simulation is guaranteed to provide an arbitrarily precise description of the joint posterior probability density.
+In practice, however, even a given MCMC algorithm that provides reliable estimates in most cases will nevertheless fail in some cases and is not guaranteed to work for any given dataset.
+This raises an obvious question: ``When do we know that an MCMC simulation provides reliable estimates for a given empirical analyses''.
+Convergence can never be established with certainty, only non-convergence may be detected.
+We will illustrate how to assess convergence of MCMC simulations for two examples: 1) for analyses under a constant-rate birth-death process and 2) for analyses under the CoMET model.
+
+
+\subsection{MCMC diagnosis for a constant-rate birth-death model}
+In order to properly assess convergence, we need to perform at least two independent MCMC simulations.
+Otherwise, we run the risk in erroneously concluding that an MCMC has converged when it may have been stuck in a subregion of the joint posterior probability density.
+
+We will use the same likelihood functions an MCMC methods described in Section~\ref{sec:MCMC}.
+We will first run two short MCMC simulations.
+For the sake of this demonstration we will use a pre-burnin value of 0, a thinning of 1, and a chain length of 200 cycles to highlight that the runs have not converged.
+<< echo = TRUE, eval = FALSE >>=
+prior_delta <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+prior_tau <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+my_priors <- c("diversification"=prior_delta,
+                   "turnover"=prior_tau)
+my_likelihood <- function(params) {
+
+  speciation <- params[1] + params[2]
+  extinction <- params[2]
+
+  lnl <- tess.likelihood(times,
+                         lambda = speciation,
+                         mu = extinction,
+                         samplingProbability = 1.0,
+                         log = TRUE)
+
+  return (lnl)
+
+}
+
+samples_run_1 <- tess.mcmc(likelihoodFunction = my_likelihood,
+                            priors = my_priors,
+                            parameters = runif(2,0,10),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,1),
+                            iterations = 200,
+                            burnin = 0,
+                            thinning = 1,
+                            adaptive = TRUE,
+                            verbose = TRUE)
+
+samples_run_2 <- tess.mcmc(likelihoodFunction = my_likelihood,
+                            priors = my_priors,
+                            parameters = runif(2,0,10),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,1),
+                            iterations = 200,
+                            burnin = 0,
+                            thinning = 1,
+                            adaptive = TRUE,
+                            verbose = TRUE)
+@
+\noindent
+<< echo = FALSE, eval = TRUE >>=
+if ( file.exists("results/samples_run_1.rds") == FALSE ) {
+
+prior_delta <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+prior_tau <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+my_priors <- c("diversification"=prior_delta,
+                   "turnover"=prior_tau)
+my_likelihood <- function(params) {
+
+  speciation <- params[1] + params[2]
+  extinction <- params[2]
+
+  lnl <- tess.likelihood(times,
+                         lambda = speciation,
+                         mu = extinction,
+                         samplingProbability = 1.0,
+                         log = TRUE)
+
+  return (lnl)
+
+}
+
+samples_run_1 <- tess.mcmc(likelihoodFunction = my_likelihood,
+                            priors = my_priors,
+                            parameters = runif(2,0,10),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,1),
+                            iterations = 200,
+                            burnin = 0,
+                            thinning = 1,
+                            adaptive = TRUE,
+                            verbose = TRUE)
+
+samples_run_2 <- tess.mcmc(likelihoodFunction = my_likelihood,
+                            priors = my_priors,
+                            parameters = runif(2,0,10),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,1),
+                            iterations = 200,
+                            burnin = 0,
+                            thinning = 1,
+                            adaptive = TRUE,
+                            verbose = TRUE)
+
+saveRDS(samples_run_1, "results/samples_run_1.rds")
+saveRDS(samples_run_2, "results/samples_run_2.rds")
+} else {
+samples_run_1 <- readRDS("results/samples_run_1.rds")
+samples_run_2 <- readRDS("results/samples_run_2.rds")
+}
+@
+\noindent
+We assess convergence using three diagnostics: the effective sample size, the Geweke statistic, and the Gelman-Rubin statistic.
+
+First, we compute the effective sample size (ESS).
+Samples drawn from an MCMC simulation are correlated.
+Accordingly, each sample is not independent, and so provides less information.
+We can compute the number of effectively independent samples by computing the ESS.
+This is important because we want to draw statistical conclusions from the samples, such as the sample mean.
+Higher ESS values should provide more precise inferences from the posterior sample.
+As a rule of thumb, the ESS should be larger than 200.
+<<echo = TRUE>>=
+effectiveSize(samples_run_1)
+effectiveSize(samples_run_2)
+@
+\noindent
+Next, we compute the Geweke diagnostic, which assesses convergence by computing the probability that the samples collected during an early window of the MCMC simulation are drawn from the same distribution as samples collected from a later window.
+<<echo = TRUE>>=
+geweke.diag(samples_run_1)
+geweke.diag(samples_run_2)
+@
+\noindent
+Hence, we only need to test if the computed values is smaller than
+<<echo = TRUE>>=
+qnorm(0.05/2)
+@
+\noindent
+and larger than
+<<echo = TRUE>>=
+qnorm(1-0.05/2)
+@
+\noindent
+If this is the case, then we reject convergence.
+Note that we used a significance threshold of $\alpha=0.05$, but you might use some other threshold, such as $\alpha=0.01$.
+
+The final MCMC diagnostic---the Gelman-Rubin test---compares samples from two independent simulations.
+This test compares the variance of sampled parameter values within each simulation to that between two simulations.
+This test effectively assesses whether we can reject the null hypothesis that samples from the two independent MCMC simulations are drawn from the same distribution.
+<<echo = TRUE>>=
+gelman.diag(x=list(run1 = samples_run_1,run2 = samples_run_2),
+            confidence = 0.95, transform = FALSE,
+            autoburnin = FALSE, multivariate=TRUE)$mpsrf
+@
+\noindent
+If the two independent MCMC simulations have converged to the stationary distribution, the ratio of the within-sample variance to the between-sample variance (R) should be close to 1.0.
+
+In general it is unlikely that those very short MCMC runs have converged.
+You may observe this by the very low ESS values.
+Depending on the starting values and your random seed, they actually may or may not have converged; and thus we can not say anything definitely.
+As a rule-of-thumb, you should run your MCMC simulations a bit longer, especially for more complex models than the simple constant-rate birth-death process model.
+
+
+
+\subsection{MCMC diagnosis for the CoMET model}
+
+\subsubsection{Single-chain diagnostics}
+Proper MCMC diagnosis for a CoMET analysis requires examining the convergence and effective sample size of a large number of parameters, including the number of diversification-rate shifts, the number of mass-extinction events, and the interval-specific diversification-rate parameters.
+We will explore the single chain diagnostics on the hyperprior example.
+Thus, we read in again the output to be sure that we have it in memory.
+<<echo = TRUE, eval = FALSE >>=
+output <- tess.process.output("comet_hyperpriors",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+@
+<<echo = FALSE, eval = TRUE >>=
+if ( file.exists("results/comet_hyperpriors.rds") == FALSE ) {
+
+output <- tess.process.output("comet_hyperpriors",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+                
+saveRDS(output, "results/comet_hyperpriors.rds")
+} else {
+output <- readRDS("results/comet_hyperpriors.rds")
+}
+@
+First, we will assess the MCMC performance for the numerical parameters of the CoMET model (\IE the number of diversification-rate shifts and mass-extinction events).
+<<echo = TRUE, eval = TRUE >>=
+# Compute the effective sample size and Geweke diagnostic for
+# the number of speciation-rate shifts.
+effectiveSize(output$numSpeciationCategories)
+geweke.diag(output$numSpeciationCategories)
+
+# Compute the effective sample size and Geweke diagnostic for
+# the number of extinction-rate shifts.
+effectiveSize(output$numExtinctionCategories)
+geweke.diag(output$numExtinctionCategories)
+
+# Compute the effective sample size and Geweke diagnostic for
+# the number of mass-extinctionevents.
+effectiveSize(output$numMassExtinctions)
+geweke.diag(output$numMassExtinctions)
+@
+\noindent
+Next, we will use the function \code{tess.plot.singlechain.diagnostics} to examine the effective sample size and Geweke diagnostic for the interval-specific speciation- and extinction-rate parameters.
+
+<<echo = TRUE, label = tessAnalysisMCMCDiagnosis, eval = TRUE, fig.cap="Visualizing the single-chain MCMC diagnostics for a \\CoMET analysis with empirically estimated diversification hyperpriors. Blue bars/dots represent passed tests and red bars/dots mean failed tests (failed convergence).">>=
+layout.mat <- matrix(1:6,nrow=3,ncol=2,byrow=TRUE)
+layout(layout.mat)
+tess.plot.singlechain.diagnostics(output,
+                   parameters = c("speciation rates",
+                                  "extinction rates",
+                                  "mass extinction times"),
+                   las=2)
+@
+\noindent
+We can see from this single run that the ESS values for the interval-specific rate-parameter estimates are quite low.
+The Geweke statistics does not pick up any non-convergence, but this may be entirely due to the large uncertainty in the estimated mean (a low ESS means a large standard error of the mean).
+We therefore need to extend the length of this MCMC simulation to obtain adequate ESS values (we recommend a minimum ESS of 500) and achieve satisfactory Geweke statistics.
+
+\newpage
+\subsubsection{Multiple-chain diagnostics}
+To perform multiple-chain diagnostics, we must first obtain samples from multiple MCMC simulations.
+Accordingly, we will begin by repeating the above CoMET analysis with empirically estimated hyperpriors four times, each time with the same settings.
+<<echo = TRUE, eval = FALSE>>=
+set.seed(12345)
+posterior_directories <- paste("comet_posterior_",
+                               1:4,sep="")
+
+for(dir in posterior_directories) {
+  tess.analysis(conifers,
+                empiricalHyperPriors = TRUE,
+                samplingProbability = samplingFraction,
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions,
+                pMassExtinctionPriorShape1 = pMassExtinctionPriorShape1,
+                pMassExtinctionPriorShape2 = pMassExtinctionPriorShape2,
+                MAX_ITERATIONS = 10000,
+                dir = dir)
+}
+@
+<<echo = FALSE, results = "hide", eval = TRUE>>=
+if ( file.exists("results/comet_posterior_1.rds") == FALSE ) {
+
+set.seed(12345)
+posterior_directories <- paste("comet_posterior_",
+                               1:4,sep="")
+
+for(dir in posterior_directories) {
+  tess.analysis(conifers,
+                empiricalHyperPriors = TRUE,
+                samplingProbability = samplingFraction,
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions,
+                pMassExtinctionPriorShape1 = pMassExtinctionPriorShape1,
+                pMassExtinctionPriorShape2 = pMassExtinctionPriorShape2,
+                MAX_ITERATIONS = 10000,
+                dir = dir)
+                
+}
+
+output_1 <- tess.process.output("comet_posterior_1",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+
+output_2 <- tess.process.output("comet_posterior_2",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+
+output_3 <- tess.process.output("comet_posterior_3",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+
+output_4 <- tess.process.output("comet_posterior_4",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+
+
+
+saveRDS(output_1, "results/comet_posterior_1.rds")
+saveRDS(output_2, "results/comet_posterior_2.rds")
+saveRDS(output_3, "results/comet_posterior_3.rds")
+saveRDS(output_4, "results/comet_posterior_4.rds")
+
+} else {
+
+output_1 <- readRDS("results/comet_posterior_1.rds")
+output_2 <- readRDS("results/comet_posterior_2.rds")
+output_3 <- readRDS("results/comet_posterior_3.rds")
+output_4 <- readRDS("results/comet_posterior_4.rds")
+
+}
+@
+\noindent
+We use the function \code{tess.plot.multichain.diagnostics} to compute the Gelman-Rubin convergence diagnostic for the interval-specific parameter estimates.
+First, we have to process each of the CoMET outputs individually.
+<< echo = TRUE, eval = FALSE>>=
+output_1 <- tess.process.output("comet_posterior_1",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+
+output_2 <- tess.process.output("comet_posterior_2",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+
+output_3 <- tess.process.output("comet_posterior_3",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+
+output_4 <- tess.process.output("comet_posterior_4",
+                numExpectedRateChanges = numExpectedRateChanges,
+                numExpectedMassExtinctions = numExpectedMassExtinctions)
+@
+\noindent
+Next, we make a list of the MCMC outputs and use the Gelman-Rubin diagnostic on the parameters.
+For brevity, we analyze only a few of the parameters; you should check each parameter to make sure they have all converged to the same posterior distribution!
+<<echo = TRUE, eval = TRUE, fig.cap="Visualizing the multiple-chain MCMC diagnostics for a \\CoMET analysis with empirically estimated diversification hyperpriors. Blue dots represent passed tests and red dots mean failed tests (failed convergence).">>=
+output_list <- list(output_1,output_2,output_3,output_4)
+
+layout.mat <- matrix(1:3,nrow=3,ncol=1,byrow=TRUE)
+layout(layout.mat)
+tess.plot.multichain.diagnostics(output_list,
+                                 parameters = c("speciation rates",
+                                                "extinction rates",
+                                                "mass extinction times"),
+                                 las=2)
+@
+\noindent
+Generally speaking, those very short independent MCMC runs are unlikely to have converged to their posterior distributions.
+Depending on the starting values and your random seed, they may or may not have converged; and thus we can not say anything definitely.
+We recommend running the chains until the PSRF values have converged for all of the intervals.
+
+\subsection{Auto-tuning MCMC proposals}
+Convergence of an MCMC simulation and the ESS depend strongly on the efficiency of the MCMC proposals.
+In our MCMC algorithm, we use a simple sliding window proposal which is sufficient for these continuous parameters.
+The sliding window proposal draws a new parameter value $x'$ from a normal distribution with mean $x$ (the current parameter value)
+and standard deviation $\delta$ ($x' \sim \text{norm}(x,\delta)$).
+You can imagine that with large values of $\delta$ we are more likely to propose more different values from the current value
+than if $\delta$ is small.
+It is very difficult to know what good values for $\delta$ are.
+To demonstrate, we will first run an MCMC with a very small value of $\delta$.
+We will again use the constant rate birth-death process as an example.
+<<echo = TRUE >>=
+prior_delta <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+prior_tau <- function(x) { dexp(x,rate=10.0,log=TRUE) }
+my_priors <- c("diversification"=prior_delta,
+                   "turnover"=prior_tau)
+my_likelihood <- function(params) {
+
+  speciation <- params[1] + params[2]
+  extinction <- params[2]
+
+  lnl <- tess.likelihood(times,
+                         lambda = speciation,
+                         mu = extinction,
+                         samplingProbability = 1.0,
+                         log = TRUE)
+
+  return (lnl)
+
+}
+@
+\noindent
+Specifically, we choose $\delta_1=0.1$ for the proposal on the net-diversification rate and $\delta_2=0.02$ for the turn-over rate.
+<< echo = TRUE, eval= FALSE >>=
+samples_run_small <- tess.mcmc(likelihoodFunction = my_likelihood,
+                            priors = my_priors,
+                            parameters = runif(2,0,10),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(0.1,0.02),
+                            iterations = 1000,
+                            burnin = 200,
+                            thinning = 1,
+                            adaptive = FALSE,
+                            verbose = TRUE)
+
+@
+<< echo = FALSE, eval = TRUE >>=
+if ( file.exists("results/samples_run_small.rds") == FALSE ) {
+
+samples_run_small <- tess.mcmc(likelihoodFunction = my_likelihood,
+                            priors = my_priors,
+                            parameters = runif(2,0,10),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(0.1,0.02),
+                            iterations = 1000,
+                            burnin = 200,
+                            thinning = 1,
+                            adaptive = FALSE,
+                            verbose = TRUE)
+
+saveRDS(samples_run_small, "results/samples_run_small.rds")
+} else {
+samples_run_small <- readRDS("results/samples_run_small.rds")
+}
+@
+\noindent
+The particular behavior from small $\delta$ values is that proposals are frequently accepted but the parameter changes very small, leading to slow convergence and high between-sample correlations (auto-correlation).
+You can see this in the trace plots of the MCMC.
+<<label=mcmcNoTuningPlotSmall, include=TRUE, fig.cap="Trace plots (left) and marginal posterior probability densities (right) for the diversification rate (top) and turnover rate (bottom) from the MCMC simulation under the constant-rate birth-death process.", fig.pos='!ht'>>=
+plot(samples_run_small)
+@
+\noindent
+As a second demonstration we will use intermediate values (which are more approriate for this dataset).
+Specifically, we choose $\delta_1=1.0$ for the proposal on the net-diversification rate and $\delta_2=0.2$ for the turn-over rate.
+<< echo = TRUE, eval = FALSE >>=
+samples_run_good <- tess.mcmc(likelihoodFunction = my_likelihood,
+                            priors = my_priors,
+                            parameters = runif(2,0,10),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,0.2),
+                            iterations = 1000,
+                            burnin = 200,
+                            thinning = 1,
+                            adaptive = FALSE,
+                            verbose = TRUE)
+
+@
+<< echo = FALSE, eval = TRUE >>=
+if ( file.exists("results/samples_run_good.rds") == FALSE ) {
+
+samples_run_good <- tess.mcmc(likelihoodFunction = my_likelihood,
+                            priors = my_priors,
+                            parameters = runif(2,0,10),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,0.2),
+                            iterations = 1000,
+                            burnin = 200,
+                            thinning = 1,
+                            adaptive = FALSE,
+                            verbose = TRUE)
+
+saveRDS(samples_run_good, "results/samples_run_good.rds")
+} else {
+samples_run_good <- readRDS("results/samples_run_good.rds")
+}
+@
+\noindent
+Good MCMC simulations accept between 20\% to 50\% of the proposals on continuous parameters.
+If the chain is run long enough the trace plot will look like a \emph{fuzzy caterpillar}.
+<<label=mcmcNoTuningPlotGood, include=TRUE, fig.cap="Trace plots (left) and marginal posterior probability densities (right) for the diversification rate (top) and turnover rate (bottom) from the MCMC simulation under the constant-rate birth-death process.", fig.pos='!ht'>>=
+plot(samples_run_good)
+@
+\noindent
+As a third demonstration we will very large values for $\delta$.
+Specifically, we choose $\delta_1=1.0$ for the proposal on the net-diversification rate and $\delta_2=2.0$ for the turn-over rate.
+<< echo = TRUE, eval = FALSE >>=
+samples_run_large <- tess.mcmc(likelihoodFunction = my_likelihood,
+                            priors = my_priors,
+                            parameters = runif(2,0,10),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(10,2),
+                            iterations = 1000,
+                            burnin = 200,
+                            thinning = 1,
+                            adaptive = FALSE,
+                            verbose = TRUE)
+@
+<< echo = FALSE, eval = TRUE >>=
+if ( file.exists("results/samples_run_large.rds") == FALSE ) {
+
+samples_run_large <- tess.mcmc(likelihoodFunction = my_likelihood,
+                            priors = my_priors,
+                            parameters = runif(2,0,10),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(10,2),
+                            iterations = 1000,
+                            burnin = 200,
+                            thinning = 1,
+                            adaptive = FALSE,
+                            verbose = TRUE)
+
+saveRDS(samples_run_large, "results/samples_run_large.rds")
+} else {
+samples_run_large <- readRDS("results/samples_run_large.rds")
+}
+@
+\noindent
+Because the MCMC proposes values that are very different from the current values, very few proposals are accepted.
+That is, the MCMC moves very slowly from one parameter value to another, which leads to long periods where the MCMC appears to be stuck.
+<<label=mcmcNoTuningPlotLarge, include=TRUE, fig.cap="Trace plots (left) and marginal posterior probability densities (right) for the diversification rate (top) and turnover rate (bottom) from the MCMC simulation under the constant-rate birth-death process.", fig.pos='!ht'>>=
+plot(samples_run_large)
+@
+\noindent
+We showed that both large and small values of $\delta$ lead to poor mixing in the MCMC simulation.
+Unfortunately, there is no way to know which values of $\delta$ are good for the specific study tree ahead of time.
+Luckily, we can use methods like auto-tuning \citep{Haario1999} to overcome this problem.
+Auto-tuning the MCMC means that we adjust the tuning parameter ($\delta$) during the burnin phase.
+In \TESS, you need to specify \code{ADAPTIVE = TRUE}.
+Then, you must specify the number of generations to perform burnin with the \code{burnin} argument; additionally, you must choose the frequency at which auto-tuning is performed with the \code{CONVERGENCE\_FREQUENCY} argument.
+During the burnin phase, every \code{CONVERGENCE\_FREQUENCY} generations, $\delta$ values are updated so that proposals are accepted approximately 44\% of the time: proposals that are accepted too frequently have their $\delta$ values increased, wherease proposals that are accepted too infrequently have their $\delta$ values decreased.
+Once the burnin phase is over, the chain begins logging samples from the MCMC and stops adjusting the $\delta$ values.
+<< echo = TRUE, eval = FALSE >>=
+samples_run_auto_tuned <- tess.mcmc(likelihoodFunction = my_likelihood,
+                            priors = my_priors,
+                            parameters = runif(2,0,10),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,1),
+                            iterations = 1000,
+                            burnin = 200,
+                            thinning = 1,
+                            adaptive = TRUE,
+                            verbose = TRUE)
+@
+<< echo = FALSE, eval = TRUE >>=
+if ( file.exists("results/samples_run_auto_tuned.rds") == FALSE ) {
+
+samples_run_auto_tuned <- tess.mcmc(likelihoodFunction = my_likelihood,
+                            priors = my_priors,
+                            parameters = runif(2,0,10),
+                            logTransforms = c(TRUE,TRUE),
+                            delta = c(1,1),
+                            iterations = 1000,
+                            burnin = 200,
+                            thinning = 1,
+                            adaptive = TRUE,
+                            verbose = TRUE)
+                            
+saveRDS(samples_run_auto_tuned, "results/samples_run_auto_tuned.rds")
+} else {
+samples_run_auto_tuned <- readRDS("results/samples_run_auto_tuned.rds")
+}
+@
+\noindent
+At the end of the MCMC simulation, \TESS provides some information about the values of $\delta$.
+You can see that they were tuned roughly to the good values which we chose ``arbitrarily'' above.
+You can also see the acceptance rate which is somewhere between 20\% and 50\%.
+The trace plot also looks acceptable.
+<<label=mcmcTuningPlot, include=TRUE, fig.cap="Trace plots (left) and marginal posterior probability densities (right) for the diversification rate (top) and turnover rate (bottom) from the MCMC simulation under the constant-rate birth-death process.", fig.pos='!ht'>>=
+plot(samples_run_auto_tuned)
+@
+\noindent
+We recommend that you always use auto-tuning, and we include it as the default behavior of MCMC algorithms in \TESS (with auto-tuning every 1000 burnin generations).
+
+\subsection{Auto-stopping MCMC simulations}
+CoMET analyses are more complicated than the analyses which we showed in the previous section.
+Auto-tuning helps to improve efficiency, but since a CoMET analyses includes reversible-jump MCMC it intrinsically needs more iterations for convergence.
+Nowing how long to run the MCMC to acheive sufficient convergence is quite difficult.
+We have implemented automatic stopping functionality to ensure that MCMCs are run sufficiently long to acheive good convergence.
+Auto-stopping checks every $k$ iterations to determine if the MCMC simulation has failed to converge (as we described in the MCMC diagnosis section above).
+For example, we can specify that the minimum number of effective samples should be 500 (\code{MIN\_ESS = 500}) for each parameter; the MCMC will stop once this threshold has been reached.
+We also provide other hard stopping rules, for example, the maximum number of iterations and the maximum running time; these hard stopping rules are enforced even if the MCMC has not converged.
+This is particularly useful when the MCMC does not seem to work and would, potentially, never converge.
+
+In our small example we set the maximum number of iterations and the maximum time to large values so that they will not be reached.
+<<echo = TRUE, eval = FALSE >>=
+set.seed(12345)
+
+tess.analysis(conifers,
+              empiricalHyperPriors = TRUE,
+              samplingProbability = samplingFraction,
+              numExpectedRateChanges = numExpectedRateChanges,
+              numExpectedMassExtinctions = numExpectedMassExtinctions,
+              pMassExtinctionPriorShape1 = pMassExtinctionPriorShape1,
+              pMassExtinctionPriorShape2 = pMassExtinctionPriorShape2,
+              MAX_ITERATIONS = 100000000,
+              MAX_TIME = 24*60*60,
+              MIN_ESS = 500,
+              dir = "comet_auto_stop")
+              
+
+output_auto_stop <- tess.process.output("comet_auto_stop",
+          numExpectedRateChanges = numExpectedRateChanges,
+          numExpectedMassExtinctions = numExpectedMassExtinctions)
+@
+<<echo = FALSE, results = "hide", eval = TRUE >>=
+if ( file.exists("results/output_auto_stop.rds") == FALSE ) {
+
+set.seed(12345)
+
+tess.analysis(conifers,
+              empiricalHyperPriors = TRUE,
+              samplingProbability = samplingFraction,
+              numExpectedRateChanges = numExpectedRateChanges,
+              numExpectedMassExtinctions = numExpectedMassExtinctions,
+              pMassExtinctionPriorShape1 = pMassExtinctionPriorShape1,
+              pMassExtinctionPriorShape2 = pMassExtinctionPriorShape2,
+              MAX_ITERATIONS = 100000000,
+              MAX_TIME = 24*60*60,
+              MIN_ESS = 500,
+              dir = "comet_auto_stop")
+              
+              
+output_auto_stop <- tess.process.output("comet_auto_stop",
+          numExpectedRateChanges = numExpectedRateChanges,
+          numExpectedMassExtinctions = numExpectedMassExtinctions)
+              
+saveRDS(output_auto_stop, "results/output_auto_stop.rds")
+} else {
+output_auto_stop <- readRDS("results/output_auto_stop.rds")
+}
+@
+\noindent
+When we now process the output we see that the chain has converged nicely compared with the short run we showed before.
+<<echo = TRUE, eval = TRUE, label = cometAutoStopPlot >>=
+
+# Compute the effective sample size and Geweke diagnostic for
+# the number of speciation-rate shifts.
+effectiveSize(output_auto_stop$numSpeciationCategories)
+geweke.diag(output_auto_stop$numSpeciationCategories)
+
+# Compute the effective sample size and Geweke diagnostic for
+# the number of extinction-rate shifts.
+effectiveSize(output_auto_stop$numExtinctionCategories)
+geweke.diag(output_auto_stop$numExtinctionCategories)
+
+# Compute the effective sample size and Geweke diagnostic for
+# the number of mass-extinction events.
+effectiveSize(output_auto_stop$numMassExtinctions)
+geweke.diag(output_auto_stop$numMassExtinctions)
+
+layout.mat <- matrix(1:6,nrow=3,ncol=2,byrow=TRUE)
+layout(layout.mat)
+tess.plot.singlechain.diagnostics(output_auto_stop,
+                   parameters = c("speciation rates",
+                                  "extinction rates",
+                                  "mass extinction times"),
+                   las=2)
+@
+Automatic stopping is the default behavior for a \texttt{CoMET} analysis; by default, the MCMC will stop once it has acheived 500 effective samples from the posterior.
+
+
+\clearpage
+\bibliographystyle{apalike}
+\bibliography{literature}
+
+\end{document}
+
+
+
+

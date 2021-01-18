@@ -1,0 +1,1137 @@
+---
+title: '`r paste("Genepop version ", genepop::getVersion())`'
+author: "F. Rousset"
+date: '`r genepop:::.getDocDate()`'
+output:
+  bookdown::gitbook: default
+  bookdown::pdf_book:
+    keep_tex: yes
+  html_document: default
+  pdf_document: default
+documentclass: book
+fontsize: 12pt
+header-includes:
+- \usepackage{makeidx}
+- \usepackage[utf8]{luainputenc}
+- \makeindex
+- \newcommand{\Rst}{\ensuremath{R_\mathrm{ST}}}
+- \newcommand{\Fst}{\ensuremath{F_\mathrm{ST}}}
+- \newcommand{\Fis}{\ensuremath{F_\mathrm{IS}}}
+- \newcommand{\Fit}{\ensuremath{F_\mathrm{IT}}}
+- \newcommand{\Genepop}[1]{\textsc{Genepop}1}
+- \newcommand{\Migraine}{\textsc{Migraine}}
+- \newcommand{\optN}[2]{1}
+- \newcommand{\afaire}[1]{\textcolor{red}{\textbf{1}}}
+- \newcommand{\webpage}{\href{http://kimura.univ-montp2.fr/~rousset/Genepop.htm}{Genepop}}
+bibliography: genepop.bib
+biblio-style: plain
+---
+<!-- Manually run bookdown [using library(bookdown)] to produce the html files --> 
+<!-- (see inst/doc/README.txt for further info) -->
+<!-- the '%\...' is required for R CMD build to detect a vignette: --> 
+<!-- Here inactivated since we no longer build a vignette -->
+<!--  %\VignetteIndexEntry{Documentation for the Genepop executable}
+%\VignetteEngine{knitr::knitr}  -->
+
+Introduction
+============
+Purpose
+-------
+
+This is a documentation for the Genepop software, distributed both as stand-alone software and as an R package. Genepop implements a mixture of traditional methods and some more focused developments:
+
+- **It computes exact tests** for Hardy-Weinberg equilibrium, for population differentiation and
+    for genotypic disequilibrium among pairs of loci;
+
+- **It computes estimates** of $F$-statistics, null allele frequencies, allele size-based
+    statistics for microsatellites, etc., and of number of immigrants by Barton & Slatkin's 1986 private allele method;
+
+- **It performs analyses of isolation by distance** from pairwise comparisons of individuals or population samples,
+    including confidence intervals for "neighborhood size".
+
+A formal reference for the current version of Genepop is [Rousset (2008)](http://dx.doi.org/10.1111/j.1471-8286.2007.01931.x).
+Likelihood methods based on coalescent algorithms are being developed in a distinct software, Migraine  [@RoussetL07; @RoussetL12; @LebloisX14].
+
+Genepop also converts data from the Genepop input format to formats of some softwares that were around in Genepop’s youth [@RaymondR95]; there has been little need to update this option as many more recent softwares for population genetic analyses read input files in the Genepop format.
+
+The two Genepop distributions
+-----------------------------
+
+Genepop is now distributed both as an R package, and as stand-alone software. See the [Genepop distribution page](http://kimura.univ-montp2.fr/~rousset/Genepop.htm) for the latter. This documentation describes the use of the executable. The functionalities it describes are available in an R session, using R functions described only in the package documentation. 
+
+Changes since version 4.0
+-------------------------
+\index{Genepop@\Genepop, differences from previous versions}
+
+<!-- **Version `r genepop::getVersion()`** -->
+
+**Version 4.7.2**
+
+A new keyword `intra_all_types` for setting "popTypeSelection" allows one to perform a single spatial regression (but not Mantel tests) for all pairs of individuals or populations within types (e.g., individuals within patches, excluding pairwise statistics for pairs of individuals between patches).
+
+Yet another problem has been fixed for Mantel tests' handling of missing pairwise genetic information (specifically for pairs of "pop" -- most likely, individuals -- sharing no genotypic information at any locus). 
+
+**Version 4.7.1**
+
+Genepop is now also distributed as an R package. 
+It now uses the implementation of the Mersenne twister pseudo-random number generator found in recent C++ compilers. This has two implications. First, a recent compiler must be used, as described below. Second, test results of previous versions cannot be exactly replicated.   
+
+The format of a few file outputs has been modified (in particular the reporting of extreme values of some global tests). 
+
+**Version 4.6**
+
+A bootstrap analysis of mean differentiation has been introduced, in particular to allow comparison of the mean differentiation observed over a given range of geographical distances, in intra vs. inter-ecotypic analyses. It can be called by the setting `meanDifferentiationTest`.
+
+The Mantel test based on regression slope (not the one on ranks) was not handling appropriately cases where some pairwise data had to be excluded. This is corrected. Such cases concern in particular pairs of samples in the same location (e.g., pairs of individuals), when geographical distance is log-transformed, because the pairwise differentiation between such individuals cannot be used for the computation of the regression. The bootstrap analyses were already handling correctly this case.
+
+**Version 4.5**
+
+A new keyword `inter_all_types` for setting "popTypeSelection" allows one to perform spatial regressions (but not Mantel tests) between all pairs of individuals or populations belonging to different types (e.g., individuals belonging to different patches, excluding pairwise statistics for pairs of individuals within patches).
+
+**Version 4.4**
+
+Mantel tests are by default no longer based on rank correlation. The older rank tests can be performed using the new `MantelRankTest` setting. In addition, a `MaximalDistance` setting has been added, affecting the computation of spatial regressions.
+
+**Version 4.3**
+
+Two new "miscellaneous" conversion options have been added: option 8.5 converts population data to individual data (as 8.4) but keeps the individual names (hence the geographic location of each individual); and option 8.6 randomly samples haploid data at diploid loci.
+
+**Version 4.2**
+
+One can now perform all isolation-by-distance analyses with a user-provided distance matrix instead of the geographic distance matrix computed from the coordinates of the samples (`geoDistFile` setting).
+
+**Version 4.1**
+
+It is possible to test trends in gene diversity among samples.
+
+Analyses of isolation by distance have been strengthened in several ways. Variants of previously described estimators have been implemented for both haploid and diploid data. 0ne can select subsets of the data for analyses of isolation by distance within and between these subsets. Further, analysis of isolation by distance from several one-locus genetic distance matrices is now possible through the `MultiMigFile`
+option. In contrast to `IsolationFile`, this allows the construction of bootstrap confidence intervals. Finally, it is possible to test specific values of the slope of the spatial regression, using the `testPoint` setting.
+
+The input file reading procedure is better protected against nonstandard file formats (in particular those produced by some Microsoft software under Mac OS X).
+
+The new sub-option 8.4 has been added to convert population-based data to individual-based data (each individual in its own `Pop`).
+
+**Version 4.0**
+
+Version 4.0 was a complete rewrite of the fossil version 3.4, with the following changes:
+
+Use of the $G$ (log likelihood ratio) statistic has been generalized to all contingency tables (though previous probability tests implemented in Genepop are still available). Genepop now provides bootstrap confidence intervals for strength of isolation by distance between groups of individuals, an alternative estimator for analyses of "differentiation between individuals", and facilities to evaluate the performance of these methods. The genetic distance matrix produced by these options can also be exported in Phylip [@Phylip] format. The option for null allele estimation implements additional estimators with confidence intervals, and its output is better organized.
+
+Some **additional facilities** have been implemented for better ease of use. Earlier versions of Genepop required from the user some effort to deal with either 3-digits-coded \index{Allele coding!3-digits} alleles or with haploid data. Genepop is more practical, in that haploid \index{Haploid data} and diploid genotypes in both 2- or 3-digits allele codings are automatically recognized as such by the program and all these different types of data can be mixed in the same input file. The input format is otherwise unchanged so that **input files prepared for earlier versions of Genepop are still read by Genepop** (backward compatibility).
+
+In addition, Genepop’s behaviour can be controlled using an option file and by inline arguments in a console command line. This allows batch calls to Genepop and repetitive use of Genepop on simulated data. However, those familiar with the old Genepop menus can also use Genepop in an almost unchanged way.
+
+Previous Genepop distributions included two small utilities, hw.bat \index{HW program} and struc.bat, \index{Struc program} for testing of single data matrices using a fast ad hoc data input. These facilities are available in Genepop 4.0 through the `HWfile` \index{HWfile setting} and `StrucFile` options. \index{StrucFile setting} Previous Genepop distributions also included the Isolde \index{Isolde program} program for analysis of isolation by distance between groups of individuals, from one genetic distance and one geographic distance matrices. All such analyses can now be performed through the unique Genepop executable (other facilities that were unique to Isolde are now accessible through the `IsolationFile` setting).
+
+Other minor, and often trivial, differences with earlier versions of Genepop will be pointed out in footnotes.
+
+Installing Genepop and session examples
+====================================================
+
+Installation
+------------
+
+### R package 
+
+As any R package, it can be installed by `install.packages("genepop")` if on CRAN, and more generally by 
+`install.packages(`<archive file name>`,type="source",repos=NULL)`. See the R documentation for more information.
+
+### Stand-alone executable
+Under **Microsoft Windows**\index{Microsoft Windows!installation on}, one only needs to unzip/copy the executable on hard disk. Both 32- and 64-bit versions of the executables are distributed. Under **Linux/Mac OSX**\index{Linux}, \index{Linux!installation on} extract all c++ sources from the distributed `sources.tar.gz` (or from the `src/` subdirectory of the R package sources, **except** `RcppExports.cpp`), and compile with a compiler that supports the C++11 standards. For **Windows**, one can use `g++` version 4.9.3 (distributed with recent versions of the R tools) with an ad hoc flag: 
+
+`g++ -std=c++11 -o Genepop *.cpp -O3`
+
+(`O` in `-O3` is the letter O, not zero). 
+With more recent versions of `g++` (>=6.0) or `clang++`, no such flag is required:
+
+`g++ -o Genepop *.cpp -O3`.
+
+The data files do not need to be in the same directory as the executable[^1]; however, users might find that specifying path names under Windows is not as easy at it should.
+
+Examples and documentation files are included in the R package and are available on the [Genepop distribution page](http://kimura.univ-montp2.fr/~rousset/Genepop.htm).
+
+Linkdos\index{Linkdos program}, a program described by @GarnierD92, is distributed with (but is not part of) Genepop. It is originally a DOS program, but the source file distributed can be recompiled under Linux using the Free Pascal compiler (or at least ``could'', since this is no longer maintained/checked). 
+
+Example sessions
+----------------
+To reproduce the examples of this session one should copy in a personal directory the examples files found in the `extdata/` subdirectory of the packageor on the [Genepop distribution page](http://kimura.univ-montp2.fr/~rousset/Genepop.htm).
+
+### Example 1: basic session
+Open a console window in the directory where Genepop has
+been installed and just execute
+
+     Genepop
+
+If Genepop has never been run before, it will ask for an input file. Otherwise, the main menu should appear, in which case you should use the `C` option to load this input file. For this sample session, the file name to be given is `sample.txt`. Genepop will display some information about the file read, then display the main menu:
+
+    -------> Change Data ................... C
+
+
+    Testing :
+        Hardy-Weinberg exact tests (several options) ...................... 1
+        Exact tests for genotypic disequilibrium (several options) ........ 2
+        Exact tests for population differentiation (several options) ...... 3
+
+    Estimating:
+        Nm estimates (private allele method) .............................. 4
+        Allele frequencies, various Fis and gene diversities .............. 5
+        Fst & other correlations, isolation by distance (several options).. 6
+
+    Ecumenicism and various utilities:
+        Ecumenicism: file conversion (several options) .................... 7
+        Null alleles and miscellaneous input file utilities ............... 8
+
+    QUIT Genepop .......................................................... 9
+
+    Your choice? :
+
+Each option will be described later. Let us see some tests for heterozygote deficiency. Reply `1`, next `1`, next `y`(es). As indicated, the results of the analysis are stored in the file `sample.txt.D`.
+
+The next example illustrates a slightly more elaborate use of Genepop. 
+
+### Example 2: using the settings file
+Execute
+
+     Genepop settingsFile=SampleSettings.txt
+
+\index{SettingsFile setting}Do not add spaces in the arguments. Capitalisation matters for file names (here `SampleSettings.txt`) if it matters for the operating system (i.e. for Linux).
+
+You can see that the previous and additional analyses are performed, and that you just need to hit Return each time Genepop stops and waits for feedback. Finally, you are brought back to the main menu. Simple instructions for performing the analyses are contained in the `SampleSettings.txt` file, which you may edit. Section \@ref(sec-settings) will explain how to use this file. By default, Genepop seeks and eventually reads instructions in a `Genepop.txt` file. You can see that one such file is present and was thus read when performing Example 1.
+
+### Example 3: Batch processing
+
+Execute the same command as in the previous example but with one more statement:
+
+     Genepop settingsFile=SampleSettings.txt Mode=Batch
+
+\index{Mode setting} \index{Batch mode}Genepop should perform the same computations as in the previous example but it will not stop and wait for feedback, and will exit after completion of the computations. Note again that spaces are not allowed within each of the arguments `settingsFile=SampleSettings.txt` and `Mode=Batch`, nor more generally in arguments specified on the command line.
+
+The batch mode makes it easy to analyze multiple files. However, note that concurrent Genepop processes\index{Concurrent processes} should be run in distinct directories. Otherwise, the temporary files of each process might conflict with each other.
+
+The input file
+==============
+\index{Input format} As illustrated by the following examples, the input format requested by
+Genepop is:
+
+- **First line: anything** Use this line to store information about your data.
+- **Locus names** They may be given one per line, or on the same line but separated by commas.
+`Pop` sample indicator (Capitalization does not matter)[^2]. Each sample from a different geographical original is declared by a line with a `pop` statement.
+- **Information for first individual.** An example is:
+    `ind#001 fem  ,0101 0202 0000 0410`
+    Here `ind#001 fem` is an identifier for your personal use. You can use any character (except a comma!). You may leave it blank (at least one space) if you wish. The last identifier of every sub-population is used by Genepop as the sample name in output files. The comma between the identifier and the list of genotypes is required. `0101` indicates that this individual is homozygous for the `01` allele at the first locus. The same individual is homozygous for the `02` allele at the second locus (`0202`). Data are missing at the third locus (`0000`). At the fourth locus, the genotype is `0410`, which indicates the presence of alleles `04` and `10`.
+- **More individuals** Each individual information starts on a new line, but may extend over several lines (do not start a new line in the middle of a one-locus genotype!).
+- **More samples** each declared by a `pop` statement on a new line
+- **Blank lines** at the end of the file are removed by Genepop.
+
+An example of a short input file is given below:
+
+     Title line: "Grape populations in southern France"
+     ADH Locus 1
+     ADH #2
+     ADH three
+     ADH-4
+     ADH-5
+     mtDNA
+     Pop
+     Grange des Peres  ,  0201 003003 0102 0302 1011 01
+     Grange des Peres  ,  0202 003001 0102 0303 1111 01
+     Grange des Peres  ,  0102 004001 0202 0102 1010 01
+     Grange des Peres  ,  0103 002002 0101 0202 1011 01
+     Grange des Peres  ,  0203 002004 0101 0102 1010 01
+     POP
+     Tertre Roteboeuf ,      0102 002002 0201 0405 0807 01
+     Tertre Roteboeuf ,      0102 002001 0201 0405 0307 01
+     Tertre Roteboeuf ,      0201 002003 0101 0505 0402 01
+     Tertre Roteboeuf ,      0201 003003 0301 0303 0603 01
+     Tertre Roteboeuf ,      0101 002001 0301 0505 0807 01
+     pop
+     Bonneau 01   , 0101    002002 0304 0805 0304 01
+     Bonneau 02   , 0201    002002 0404 0505 0304 01
+     Bonneau 03   , 0101    002100 0304 0505 0101 01
+     Bonneau 04 , 0101    100100 0204 0805 0304 01
+     Bonneau 05   , 0101    100002 0104 0808 0304 01
+     Pop
+      ,            0000 002001 0202 0402 0007 01
+      ,            0200 002001 0202 0205 0707 01
+      ,            0010 002001 0101
+     0105 0807 01
+     last pop,      0101 002001 0101 0401 0807 02
+
+This example shows some useful features of the input file:
+
+-   There is no constraint on the number of blanks separating the various fields.
+
+-   The individual identifier has a free format.
+
+-   Alleles are numbered from 01 to 99 or 001 to 999 if needed. \index{Allele coding} In 3-digits coding, \index{Allele coding!3-digits} (say) homozygotes for the `90` allele are noted `090090`, not `9090` as in the 2-digits format. 2-digits and 3-digits coding of alleles can be intermixed (among loci, not within loci!).[^3]
+
+-   To designate alleles, consecutive numbers are not required.
+
+-   haploid and diploid data\index{Haploid data} can be intermixed.[^4] 6-digits genotypes are recognized as 3-digits diploid genotypes;\index{Allele coding!3-digits} 4-digits genotypes are recognized as 2-digits diploid genotypes;\index{Allele coding!2-digits} 2- and 3-digits genotypes are recognized as haploid genotypes.\index{Haploid data} The same coding should be used consistently within each locus. See the `EstimationPloidy` setting for more information about analyzing haploid data. For haplo-diploid data\index{Haplo-diploid genotypes} at a given locus, the haploid genotypes should be coded as diploid genotypes with one unknown allele; note however that the information from haploid genotypes at haplo-diploid loci will be used only for genic contingency table tests, and will be ignored in estimation of genetic structure.
+
+-   Genotypes can extend on more than one line (see penultimate individual)
+
+-   To group various samples, just remove each relevant `Pop` separator.
+
+It is possible to write all the locus names on one line, provided that a comma is used as separator. This could be useful to clearly label each column. Thus the above input file could have started as
+
+     Title line: "Grape populations in southern France"
+                          Loc1,Loc2,  ADH3,ADH4,ADH5,mtDNA
+     Pop
+     Grange des Peres  ,  0201 003003 0102 0302 1011 01
+     ...
+
+Note the absence of comma after the last locus name.
+
+There are however constraints to be obeyed
+
+-   Missing data\index{Missing data} should be indicated with `00` (or `000` for 3-digits coding) and not with blanks. The first locus in the last sample illustrates the various possibilities of missing data: no information (first individual coded `0000`) or partial information (only one allele is determined: allele `02` for the second individual coded `0200` and allele `10` for the third individual coded `0010`).
+
+-   The number of locus names should correspond to the number of genotypes in each individual. If you remove one or several loci from your input file, you should remove both their names and the corresponding genotypes.
+
+-   No empty line should be present in the data file.
+
+-   Genepop accepts input file names either with the extension `.txt`[^5] or without any extension.
+
+-   Genepop input files are ASCII text files.
+
+The last point implies that under **Windows**,\index{Microsoft Windows!file format issues} you should avoid using Microsoft Word to edit input files (and settings files as well). Rather use a text editor such as [Notepad++](http://notepad-plus-plus.org).[^6] It has also appeared that certain Microsoft products under **Mac OS X**\index{Mac OS X!file format issues} still produced files formatted according to the older Mac format. Genepop now catches and corrects this miserable feature.
+
+One can also find some conversion tools (e.g. from EXCEL) on the web.
+
+If the input file is correctly read, the name of the larger allele number is indicated for each locus. The number of distinct alleles for each locus is provided upon request. If alleles have been labeled with consecutive numbers from `01` onwards, then the name of the larger allele will correspond to the number of distinct alleles for each locus.
+
+There are some limits to the number of samples and individuals imposed by the compiler. These values, and a few other ones, are shown by running "`Genepop Maxima=`" (see the `Maxima` setting).\index{Sample size!limitations} However, these built-in maxima are so large[^7] as to be practically infinite even in the era of whole-genome sequencing. Computer memory, or user patience, are more likely limits.
+
+The settings file and command line arguments {#sec-settings}
+============================================
+The settings file\index{Settings file} allows finer control of Genepop and/or batch processing. Further control is possible by using optional arguments when launching Genepop through the operating system command line,\index{Command line} following the general syntax explained below for the settings file, e.g.
+
+     Genepop EstimationPloidy=Haploid DifferentiationTest=Proba
+
+Indeed, command line arguments are written in the file `cmdline.txt`, then this file is read much as the settings file.[^8]
+
+Henceforth, menu options are called *options* and batch file/command line options are called *settings*.
+
+Running `Genepop help` will display the help information, which so far is no more than a list of available settings, loosely grouped semantically.\index{help} A file showing all possible settings is the following:
+
+     // sample Genepop settings file, showing all options.
+     /*********** Syntax of this file:
+     lines without 'equal' symbol are ignored (hence this one is).
+     Lines beginning with a '/', /a '#' or a '%' are also ignored,
+     even if they contain '=' (hence this one is).
+     /*********** General options ***********
+     Mode=Ask
+     GenepopInputFile=sample.txt
+     Dememorisation=10000
+     BatchLength=5000
+     BatchNumber=100
+     //EstimationPloidy=Haploid
+     //RandomSeed=12345678
+     //MantelSeed=87654321
+     /***     allele sizes stuff
+     //AllelicDistance=Size
+     AlleleSizes=1:5,2:10,3:15,10:50
+     /*** selecting menu options
+     MenuOptions=8
+     /********** Option 1 (HW tests) ***********
+     HWtests=Enumeration
+     /           Emulating HW.BAT
+     //HWFile=HWtest
+     //HWfileOptions=4,3
+     /********** Option 2 ("linkage" disequilibrium) ***********
+     //          old Genepop behaviour
+     /GameticDiseqTest=Proba
+     /********** Option 3 (differentiation) ***********
+     //          old Genepop behaviour
+     /DifferentiationTest=Proba
+     /           Emulating STRUC.BAT
+     //strucFile=structest
+     /********** Option 4 (private alleles) ***********
+     //no specific setting, but may be affected
+     //by the estimationPloidy setting
+     /** Option 5 (basic information, Fis, gene diversities... )
+     //no specific setting, but may be affected
+     // by the AlleleSizes setting
+     /***** Option 6 (F-statistics, isolation by distance) *****
+     IsolationStatistic=e
+     GeographicScale=Linear
+     MinimalDistance=1
+     CIcoverage=0.9
+     testPoint=0.00123
+     //MantelRankTest=
+     /PopTypes= 1 2 1 2 3
+     /PopTypeSelection= all
+     //PhylipMatrix=
+     /           Emulating ISOLDE
+     //IsolationFile=Isoldetest
+     /           Extending ISOLDE to multiple matrices
+     //MultiMigFile=perlocusStuff
+     / Isolation by distance with user-provided geographic distances
+     //geoDistFile=someFile
+     /********** Option 7 (file conversions) ***********
+     //no specific setting
+     /********** Option 8 (Various utilities) ***********
+     NullAlleleMethod=ApparentNulls
+     CIcoverage=0.9
+     /******** Testing performance of some options *********
+     // Option 6.x: options as above plus
+     //Performance=aLinear
+     //GenepopRootFile=file
+     //JobMin=1
+     //JobMax=100
+     /********* Checking some limits of Genepop ***********
+     //Maxima=
+
+Each setting is specified following a *Keyword*`=`*value* syntax. Capitalisation is not important (it is here only to ease reading) *except* for file names if the operating system cares about it (as Linux
+does).
+
+By default, Genepop seeks settings in the file `Genepop.txt`, but one can specify another settings file through the command line, as was shown in the session examples:
+
+     Genepop settingsFile=SampleSettings.txt
+
+The `SettingsFile`\index{SettingsFile} setting must be the first argument on the command line.
+
+Settings specific to each menu option will be explained along with the description of each option. Settings affecting several menu options are the following:
+
+`GenepopInputFile`\index{GenepopInputFile} (or simply `InputFile` \index{InputFile setting})
+
+which is the name of the input file in Genepop format
+
+`Dememorisation`\index{Dememorisation setting}, `BatchLength`\index{BatchLength setting} and `BatchNumber`\index{BatchNumber setting}
+
+ \index{Markov chain algorithms!parameters}which are Markov Chain parameters, which meaning is explained in Section \@ref(algorithms-for-exact-tests):
+
+**the dememorisation number** The default is 10000;[^9] values below 100 are not allowed.
+
+**the number of batches** The default is 20 for sub-options 1.4 and 1.5 (multisample HW tests), and 100 otherwise; values below 10 are not allowed.
+
+**the number of iterations per batch** The default is 5000;[^10] values below 400 are not allowed.
+
+The maximum allowed value of these parameters will depend on the C++ compiler (it is its maximum `size_t`, that is at least 65535, and typically much more on recent compilers). See the setting `Maxima` if you really need more information about this value.
+
+`EstimationPloidy`\index{EstimationPloidy}\index{Haploid data}
+
+In multilocus estimates only diploid data are taken into account, unless the setting `EstimationPloidy=Haploid` is given, in which case only haploid data are taken into account. This setting applies to options 4 (private allele method), 5.2 and 5.3 (for multilocus estimates of gene diversities), and 6 ($F$-statistics and isolation by distance).
+
+`Mode`\index{Mode setting}
+
+Genepop has three modes: `Mode=Ask` will ask for some feedback even in cases where the answer has been prespecified (e.g. through some setting; this may be useful when one wishes to change some settings in the course of a session). For example it will ask for confirmation of the MC parameters. `Mode=Batch` will not wait for feedback: execution of Genepop should complete without any user intervention. The third mode, `Mode=Default` (which in most cases does not need to be explicitly specified) will ask for unspecified settings but not request confirmation of prespecified ones, and will also pause and wait for feedback when some notable information is displayed.
+
+`MenuOptions`\index{MenuOptions setting}
+
+This tells Genepop to run the analyses as given through the menus: `MenuOptions=1.1` will run option 1 sub-option 1 (test for heterozygote deficit), `MenuOptions=1.1,2.2` will run option 1.1 then 2.2, and so on.
+
+`AllelicDistance=Size`\index{AllelicDistance setting} (or `=AlleleSize`)
+
+This tells Genepop to use allele size-based statistics\index{Allele size-based statistics} (where meaningful). Allele sizes are allele names unless specified by the next setting:
+
+`AlleleSizes`\index{AlleleSizes setting}
+
+In the above example, the first such line `AlleleSizes=1:5,2:10,3:15,10:50` says that at the first locus, allele 1 has size 5, allele 2 has size 10... 0 cannot be given a size since it means missing information. Any unlisted allele retain its name as its size. The second line specifies allele size at the second locus. The third line `AlleleSizes=` implies that at the third locus, all alleles retain their name as their size (don’t forget the ‘`=`’). It is needed only so that the next line `AlleleSizes=1:5,2:10,3:15,10:50` refers to the fourth locus. As there are four `AlleleSizes` declarations, alleles retain their name as their size for any locus beyond the fourth one.
+
+`RandomSeed`\index{RandomSeed setting} and `MantelSeed`\index{MantelSeed setting}
+\index{Pseudo-random numbers} 
+One may change the seed of the pseudo-random number generator by the setting `RandomSeed=`*value*, except for the Mantel test for which the seed is given by the setting `MantelSeed=`*value*. The default value for both seeds is 67144630.
+
+`Maxima`\index{Maxima setting}
+
+With this setting, Genepop will only display some maximal values, including the maximum `int` and `long int` values for the compiler (the Markov chain dememorization and batch length are `long int` and the number of batches is `int`).
+
+All menu options
+================
+
+Option 1: Hardy-Weinberg (HW) exact tests
+-----------------------------------------
+The following menu appears:
+
+    Hardy Weinberg tests:
+
+    HW test for each locus in each population:
+       H1 = Heterozygote deficiency.......1
+       H1 = Heterozygote excess...........2
+       Probability test...................3
+
+    Global test:
+       H1 = Heterozygote deficiency.......4
+       H1 = Heterozygote excess...........5
+
+    Main menu.............................6
+
+```{r child = 'opt11-13.md'}
+```
+
+```{r child = 'opt14-15.md'}
+```
+
+### Analyzing a single genotypic matrix
+\index{Input format!for single HW test}
+It is possible to perform a single HW test independently of the Genepop input file. This option is not presented in the Genepop menu. You should have an input file with a genotypic matrix (which can be taken from the output file of option 5 and edited), and use the `HWfile`\index{HWfile setting} setting\index{HW program}.[^13] When Genepop is launched in this way, the following menu will appear:
+
+     HW test for each locus in each population:
+        H1 = Heterozygote deficiency .................1
+        H1 = Heterozygote excess .....................2
+        Probability test .............................3
+
+     Allele frequencies, expected genotypes, Fis .... 4
+     Quit ........................................... 5
+
+All HW tests corresponding to options 1.1–3 of "regular" Genepop are available through options 1–3, and basic information similar to that given by regular option 5.1 is available through the present option 4. Results are stored at the end of your input file. The exact format of the input file is:
+
+**First line:** anything. Use this line to store information about your data.
+
+**Second line:** The number of alleles $n$.
+
+**Line three through** $n+2$**:** the genotypic matrix (see example).
+
+**Beyond line** $n+2$ **:** anything (this is not read by the program).
+
+An example with four alleles is:
+
+     Human Monoamine Oxidase (MOAO) Data
+     4
+     2
+     12 24
+     30 34 54
+     22 21 20 10
+
+If this file is named `MOAO`, you can analyze it by setting `HWfile=MOAO` in the settings; you can also set `HWfileOptions=1`\index{HWfileOptions setting} to run option 1 without making your way through the menus. All this can be done through the console command line. For example
+
+    Genepop HWFile=MOAO HWfileOptions=1,2,3,4
+
+will perform all four analyses available through the above menu. General settings `Dememorisation`, `BatchLength`, `BatchNumber`, and `Mode` all affect these analyses in the same way as they affect analyses of regular input files.
+
+### Code checks
+\index{Code checks}
+Code for HW tests has a now venerable history of testing. Early versions of Genepop were compared with the Exactp step in Biosys [@SwoffordS89] for two allele cases, and with data published in @LouisD87 and @GuoT92 for more alleles. The sample files `LouisD87.txt` and `GuoT92.txt` contain two such test samples, in single-matrix format.
+
+Option 2: Tests and tables for linkage disequilibrium
+-----------------------------------------------------
+The following menu appears:[^14]
+
+    Pairwise associations (haploid and genotypic disequilibrium):
+          Test for each pair of loci in each population ......... 1
+          Only create genotypic contingency tables .............. 2
+
+    Menu  ....................................................... 3
+
+```{r child = 'opt21.md'}
+```
+
+```{r child = 'opt22.md'}
+```
+
+### Code checks
+See code checks for Option 3.
+
+Option 3: population differentiation
+------------------------------------
+The following menu appears:
+
+     Testing population differentiation :
+
+          Genic differentiation:
+               for all populations ........................ 1
+               for all pairs of populations ............... 2
+
+          Genotypic differentiation:
+               for all populations ........................ 3
+               for all pairs of populations ............... 4
+
+          Main menu  ...................................... 5
+
+All tests are based on Markov chain algorithms. The Markov chain parameters are controlled exactly as in option 1.
+
+```{r child = 'opt31-32.md'}
+```
+
+```{r child = 'opt33-34.md'}
+```
+
+### Gene diversity as a test statistic
+\index{Differentiation!gene diversity}
+
+     DifferentiationTest=GeneDiv
+     GeneDivRanks=2,1,3,3,3
+
+\index{DifferentiationTest setting}
+\index{GeneDivRanks setting}
+`DifferentiationTest=GeneDiv` makes Genepop use gene diversity as test statistic in tests of genetic differentiation (option 3). The test will look for a decrease in gene diversity from populations ranked first (value `1` in `GeneDivRanks`) to populations ranked last. This should work for both genic and genotypic tables, and for pairwise comparisons as well as for all populations, i.e. for all sub-options 3.1 to 3.4. The test statistic is
+ $$\sum_{\textrm{all subsamples $i$}}\sum_{j>i} (Q_j-Q_i)(R_j-R_i)$$
+where $Q_i$ is gene identity in subsample $i$ and $R_i$ is the `GeneDivRanks` value for this subsample.
+
+\index{Haploid data}
+
+This option also works on input files in contingency table format (`strucfile` setting). In that case each *row* of the table is interpreted as a new population.
+
+### Analyzing a single contingency table
+\index{Input format!for single contingency table}
+It is possible to analyse any contingency table independently of the Genepop input file. You should have an input file with a contingency table, and use the `strucFile`\index{StrucFile setting} setting\index{Struc program}.[^18] This option is not presented in the Genepop menu. Both the $G$ and probability tests are available and performed as in option 3.1. Results are stored at the end of your input file. An example of input file is:
+
+     Dull example
+     6 5
+     1   2  5 10 11
+     2   0  8 11 15
+     0   0  1  5  6
+     10 15 20 51 55
+     0   0  0  2  1
+     4   5  6 11 10
+
+If this file is named `structest`, you can analyze it by writing `StrucFile=structest` in the settings file, or by the console command line
+
+    Genepop StrucFile=structest
+
+The exact format of the input file is:
+
+**First line:** anything. Use this line to store information about your data.
+
+**Second line:** The numbers of rows ($n$) and columns.
+
+**Line three through** $n+2$ **:** the contingency table (see example).
+
+**Beyond line** $n+2$ **:** anything (this is not read by the program).
+
+The default is to perform a $G$ test, but as in options 3.1 and 3.2 you can revert to Fisher’s exact test by the setting `DifferentiationTest=Proba`.
+
+### Code checks
+\index{Code checks}
+Code for contingency tables also has a venerable history of testing. Early versions of Genepop were tested by comparison with published data [e.g. @MehtaP83] or by hand calculations. The example file `MehtaP83.txt` contains one such test sample.
+
+Option 4: private alleles
+-------------------------
+```{r child = 'opt41.md'}
+```
+
+Option 5: Basic information, $F_\mathrm{IS}$, and gene diversities
+-------------------------------------------------------------------------------
+The following menu appears:
+
+          Allele and genotype frequencies per locus and per sample .. 1
+
+          Gene diversities & Fis :
+                                      Using allele identity ......... 2
+                                      Using allele size ............. 3
+
+          Main menu ................................................. 4
+
+
+```{r child = 'opt51.md'}
+```
+
+```{r child = 'opt52.md'}
+```
+
+```{r child = 'opt53.md'}
+```
+
+
+Option 6: Fst and other correlations, isolation by distance
+-----------------------------------------------------------
+The following menu appears:
+
+     Estimating spatial structure:
+
+     The information considered is :
+          --> Allele identity (F-statistics)
+                    For all populations ............ 1
+                    For all population pairs ....... 2
+          --> Allele size (Rho-statistics)
+                    For all populations ............ 3
+                    For all population pairs ....... 4
+
+     Isolation by distance
+                    between individuals ............ 5
+                    between groups.................. 6
+
+        Main menu  ................................. 7
+
+Table: (#tab:isolstats) Genetic distance statistics available in options 6.5 and 6.6
+
+|Data ploidy  |pop = individual?       |`isolationStatistic` setting | Estimator used                                                     |
+|------------ |------------------------|-----------------------------|--------------------------------------------------------------------|
+|Diploid      |Yes (option 6.5)        |`=a`|$\hat{a}$               |                                                                      |
+|Diploid      |Yes (option 6.5)        |`=e`|$\hat{e}$               |                                                                      |
+|Diploid      |No (option 6.6)         |none (default)               |$F_\mathrm{ST}$/(1-$F_\mathrm{ST}$)                                   |
+|Diploid      |No (option 6.6)         |`=singleGeneDiv`             |$F/(1-F)$ variant with denominator common to all pairs                |
+|Haploid      |Yes (option 6.5)        |none (default)               |$\hat{a}$-like statistic with stand-in for within-deme gene diversity |
+|Haploid      |No (option 6.6)         |none (default)               |$F_\mathrm{ST}$/(1-$F_\mathrm{ST}$)                                   |
+|Haploid      |No (option 6.6)         |`=singleGeneDiv`             |$F/(1-F)$ variant with denominator common to all pairs                |
+
+Suboptions 5 and 6 provide a variety of analyses of isolation by distance patterns, including bootstrap confidence intervals of the slope of spatial regression (or equivalently, for "neighborhood" size estimates). Starting with version 4.1, it is even possible to test given values of the slope, through the `testPoint` setting; and additional estimators (merely minor variation on a common logic) have been implemented, in particular for haploid data. Table \@ref(tab:isolstats) summarizes the choice of methods, each of which will now be detailed.
+
+
+```{r child = 'opt61-64.md'}
+```
+
+```{r child = 'opt65.md'}
+```
+
+```{r child = 'opt66.md'}
+```
+
+### Former sub-option 5 of Genepop: analysis of isolation by distance from a genetic distance matrix
+
+That option (using the Isolde program)\index{Isolde program} allowed one to perform the analyses of sub-options 5 and 6 from a file with two semi-matrices, one for genetic "distances" $F_{\mathrm{ST}}$ or whatever), the other for Euclidian distances. These analyses are now available through the `IsolationFile`\index{IsolationFile setting} setting. Most choices within options 6.5 and 6.6 are available through this option, and missing data are handled[^19] (see example below). However, it is not possible to compute nonparametric confidence intervals for the regression slope since per-locus information is not provided (remarkably, some software pretends to compute nonparametric intervals in this case). This option may serve as a general purpose program for Mantel tests. Of course, some settings (minimal geographic distance, the $F/(1-F)$ transformation, and the interpretation of one one-tailed $P$ value as a test of isolation by distance) make sense in the narrower inference context of options 6.5 and 6.6.
+
+The option is called by `IsolationFile=`*input file name* where the input file follows the format\index{Input format!for Mantel test} of the *yourdata*`.MIG` file written by options 6.5 and 6.6, which may be used as models. An example is
+
+     Lousy data                   <------anything (comments)
+     8 (an example)                      <---# of samples (comments ignored)
+     Fst estimates:                              <---anything (comments)
+      0.003
+      0.18 0.107
+      0.19 0.068  0.011
+      0.20 0.664  0.665 0.009
+      0.21 0.098    -   0.673  0.675
+      0.22 0.048  0.682  0.683  0.017  0.001
+      0.23 0.715  0.721  0.666  0.666  0.037 0.006
+     distances:                          <---anything (comments)
+      158.0
+      158.0 1215.0
+      158.1 1213.0 2300.0
+      158.2 2300.0    2.0 1057.0
+      158.3 1055.0 2525.0 2525.0 1000.0
+      158.4 1057.0 1055.0 2525.0 2525.0 1000.0
+       - 3582.0 3582.0 3582.0 3582.0    1.0 2.222
+     Anything after the second half matrix       <----as it says
+     is ignored
+
+The order of elements in the half-matrices is again
+
+           1     2      3
+     2     x
+     3     x     x
+     4     x     x     x
+
+Again as in options 6.5 and 6.6, both missing genetic and geographic information (‘`-`’) are handled.
+
+Output is written at the end of the input file, and as in options 6.5 and 6.6, $(x,y)$ data points are also written in the file *yourdata*`.GRA`.
+
+`Genepop IsolationFile=`*input file name* `MantelRankTest=` will further replicate the rank test of the old Isolde program.
+
+### User-provided geographic distance matrices
+The setting `geoDistFile=`*file name*\index{geoDistFile setting}[^20] can be used to provide a geographic distance matrix. Its format is that of other geographic distances matrices, with one required line of comment:
+
+     Geographic distances:                 <---anything (comments)
+      21
+      31 32
+      41 42 43
+      ...
+
+The number of samples does not need to be given.
+
+### Analysis of isolation by distance from multiple genetic distance matrices
+
+If another program has generated $F_{\mathrm{ST}}$ or $F_{\mathrm{ST}}$/(1 - $F_{\mathrm{ST}}$) matrices for a number of loci, the computation of bootstrap confidence intervals is possible. Analysis of such data sets is allowed by the `MultiMigFile=`*input file name* setting.\index{MultiMigFile setting} The format of the input file is the same as for a single genetic matrix, except that it contains multiple matrices and that the number of genetic matrices must be given (third line of input):
+
+     More lousy data
+     8
+     16 loci (for example)                 <---# of samples (comments ignored)
+     locus 1:                              <---anything (comments)
+    ...                                    <-half matrix (not shown here)
+     locus 2:                              <---anything (comments)
+    ...
+    ...                                    <-more loci and half matrices (not shown here)
+    ...
+     locus 16:                             <---anything (comments)
+    ...
+     Geographic distances:                 <---anything (comments)
+      158.0
+      158.0 1215.0
+      158.1 1213.0 2300.0
+      158.2 2300.0    2.0 1057.0
+      158.3 1055.0 2525.0 2525.0 1000.0
+      158.4 1057.0 1055.0 2525.0 2525.0 1000.0
+       - 3582.0 3582.0 3582.0 3582.0    1.0 2.222
+     Anything after the second half matrix       <----as it says
+     is ignored
+
+The main use of this option is to allow analyses based on genetic distances not considered in Genepop. If the same estimates are input as would be computed by Genepop, the results should be similar to those from options 6.5 and 6.6, but not identical in general, because Genepop’s bootstrap estimates are computed as ratio of weighted average numerators and denominators of genetic estimates, while `MultiMigFile` can only use weighted averages of the ratios, i.e. of the input genetic values.
+
+### Analysis of mean differentiation
+\index{MeanDifferentiationTest setting}
+It is possible to perform a bootstrap analysis of the mean pairwise differentiation, through all menu options that lead to bootstrap analyses of isolation by distance, when additionally using the setting `MeanDifferentiationTest=TRUE`. It takes into account selection of data by both `PopTypes` and range of geographical distances.
+
+Data selection for analyses of isolation by distance
+----------------------------------------------------
+### Selecting a subset of samples
+\index{PopTypes setting}
+\index{PopTypeSelection setting}
+The settings `PopTypes` and `PopTypeSelection` have been developed to facilitate comparison of differentiation patterns within and among different ecotypes or host races.\index{Population type selection} They are used as follows:
+
+     PopTypes= 1 1 2 1 2 1 1 2 3 4
+     PopTypeSelection=only 1
+     // PopTypeSelection=inter 1 2
+     // PopTypeSelection=all
+
+`PopTypes` allows to distinguish different types of samples (e.g. different ecotypes) by integer indices. The number of indices must match the number of samples in the data file.
+
+`PopTypeSelection` allows performing analyses (genetic distance regressions, confidence intervals, Mantel tests) only on pairs of populations belonging to the types specified. That is, the genetic differentiation statistic among excluded pairs is not used in any of these analyses. The different choices are shown above: `all` excludes no pairs (this is the default value); `inter` $a$ $b$ will exclude all pairs that do not involve both types $a$ and $b$ (only two types can be specified); and `only` $a$ will exclude all pairs that involve a type different from $a$ (only one type can be specified). For the latter two choices, permutations are made only among samples from a given type. `inter_all_types` excludes all pairs within types; no Mantel test is performed in that case. `intra_all_types` keeps all pairs within types, and performs a single regression for all types; again, no Mantel test is performed in that case.
+
+You have to perform the "`only`" and "`inter`" analyses in distinct Genepop runs if you wish to compare their results. @Rousset99g explains how inferences can be made from such comparisons. Note that in this perspective, some comparison of the intercept may be useful and that Genepop also provides confidence intervals on the intercept at zero distance [or log(distance)].
+
+*The inter-type Mantel test may be misleading*.\index{Mantel test!intertype} The null hypothesis implied by the permutation procedure is that there is no isolation by distance among populations within each type, rather than the often more relevant hypothesis that spatial processes within each type of populations are independent from each other. For this reason, a more appropriate test of the latter hypothesis is whether the bootstrap confidence interval for the inter-types regression slope includes zero or not.
+
+Option 7: File conversions
+--------------------------
+
+This option allows the conversion of the Genepop input file toward other formats required by some other programs (the "ecumenical" function of Genepop). Given the limited interest in some of these conversions, little effort has been made to update them. In particular, data including haploid loci\index{Haploid data} or in three-digits format may not be converted into valid input for the other programs.
+
+The following menu appears:
+
+     File conversion (diploid data, 2-digits coding only):
+
+          GENEPOP --> FSTAT (F statistics) ........................ 1
+          GENEPOP --> BIOSYS (letter code) ........................ 2
+          GENEPOP --> BIOSYS (number code) ........................ 3
+          GENEPOP --> LINKDOS (D statistics) ...................... 4
+
+          Main menu  .............................................. 5
+
+
+```{r child = 'opt71.md'}
+```
+
+```{r child = 'opt72-73.md'}
+```
+
+```{r child = 'opt74.md'}
+```
+
+Option 8: Null alleles and some input file utilities
+----------------------------------------------------
+
+The following menu appears[^21]
+
+     Miscellaneous :
+        Null allele: estimates of allele frequencies .......... 1
+        Diploidisation of haploid data ........................ 2
+        Relabeling alleles .................................... 3
+        Conversion to individual data with population names ... 4
+        Conversion to individual data with individual names ... 5
+        Random sampling of haploid genotypes from diploid ones  6
+
+        Main Menu   ........................................... 7
+
+
+```{r child = 'opt81.md'}
+```
+
+```{r child = 'opt82.md'}
+```
+
+```{r child = 'opt83.md'}
+```
+
+```{r child = 'opt84-85.md'}
+```
+
+```{r child = 'opt86.md'}
+```
+
+Evaluating the performance of inferences for Isolation by distance
+==================================================================
+
+Genepop can analyze multiple files, using the settings settings
+
+     GenepopRootFile=file                   <-- or GenepopRootFileName...
+     JobMin=1
+     JobMax=100
+
+ \index{GenepopRootFile setting}
+ \index{JobMin}
+ \index{JobMax}
+This will perform analysis of data in files `file`1 to `file`100. Default values of these three settings are `GP`, 1, and 1. Users need to assemble results from the multiple output files. A more integrated output is provided for analyses of isolation by distance. For the regression estimators of $D\sigma^2$ (menu options 6.5 and 6.6), the `result.CI` file will contain a table of point estimates, bootstrap confidence intervals, and (if requested using the `testPoint` setting) the bootstrap P-value for a given tested neighborhood value. including the performance of the bootstrap confidence intervals.
+
+The `Performance=`*value* setting\index{Performance setting} provides a convenient (if somewhat ad hoc) shortcut for selecting the following analyses:
+
+|analysis            |*value*                         |
+|------------------- |--------------------------------|
+|$\hat{a}$, 1-dim.   |`aLinear` or equivalently `a1D` |
+|$\hat{e}$, 2-dim.   |`aPlanar` or `a2D`              |
+|$\hat{a}$, 1-dim.   |`eLinear` or `e1D`              |
+|$\hat{e}$, 2-dim.   |`ePlanar` or `e2D`              |
+|$F/(1-F)$, 1-dim.   |`FLinear` or `F2D`              |
+|$F/(1-F)$, 2-dim.   |`FPlanar` or `F2D`              |
+
+
+`Performance` sets Genepop in batch mode.\index{Batch mode} Then, the `GenepopRootFile`, `JobMin`, and `JobMax` values must be given in the settings file. Alternatively, these values can be given interactively if the `Ask` or `Default` mode \index{Mode
+setting} has been specified *after* the `Performance` setting, in which case Genepop will carry all further computations in `Default` mode.
+
+Methods
+=======
+
+This section is only intended as a quick reference guide. The primary literature should be consulted for further information about the methods implemented in Genepop.
+
+Null alleles
+------------
+\index{Null alleles}
+When apparent null homozygotes are observed, one may wonder whether these are truly null homozygotes, or whether some technical failure independent of genotype has occurred. Maximum likelihood estimates of null allele frequency, or of this frequency jointly with the failure rate, can be obtained by the EM algorithm [@DempsterLR77; @HartlC2e; @KalinowskiT06], which is one of the methods implemented in Genepop (menu option 8.1).
+
+Also implemented is a simpler estimator defined by @Brookfield96 for the case where apparent null homozygotes are true null homozygotes. He also described this as a maximum likelihood estimator, but there are some (often small) differences with the ML estimates derived by the EM algorithm as implemented in this and previous versions of Genepop, which may to be due to the fact that Brookfield wrote a likelihood formula for the number of apparent homozygotes and heterozygotes, while the EM implementation is based on a likelihood formula where apparent homozygotes and heterozygotes for different alleles are distinguished.
+
+For the case where one is unsure whether apparent null homozygotes are true null homozygotes, @ChakrabortyADB92 described a method to estimate the null allele frequency from the other data, excluding any apparent null homozygote. The estimator is not implemented in Genepop because, beyond its relatively low efficiency, its behavior is sometimes puzzling (for example, where there is no obvious heterozygote in a sample, the estimated null allele frequency is always 1, whatever the number of alleles obviously present and even if only non-null genotypes are present). Actually, even if apparent null homozygotes are not true null homozygotes, their number bring some information, and it is more logical to estimate the null allele frequency jointly with the nonspecific genotyping failure rate by maximum likelihood [@KalinowskiT06]. This analysis is possible when at least three alleles are obviously present.
+
+Exact tests
+-----------
+
+The probability of a sample of genotypes depends on allele frequencies at one or more loci. In the tests of Hardy Weinberg equilibrium, population differentiation and pairwise independence between loci ("linkage equilibrium") implemented in Genepop, one is not interested in the allele frequencies themselves and, given they are unknown, the aim is to derive valid conclusions whatever their values. In these different cases, this can be achieved by considering only the probability of samples conditional\index{Exact tests!conditional tests} on observed allelic (e.g. for HW tests) or genotypic counts (e.g. for tests of population differentiation not assuming HW equilibrium). Because exact probabilities are computed, these conditional tests are also known as exact tests. See @CoxH74 and @Lehmann94test for the underlying theory; a much more elementary introduction to the tests implemented in Genepop is @RoussetR97.
+
+Algorithms for exact tests
+--------------------------
+
+Conditional tests require in principle the complete enumeration of all possible samples satisfying the given condition. In many cases this is not practical, and the $P$-value may be computed by simple permutation algorithms\index{Exact tests!permutation algorithms} or by more elaborate Markov chain algorithms, in particular the Metropolis-Hastings algorithm [@Hastings70].\index{Exact tests!Metropolis-Hastings algorithm} The latter algorithm explores the universe of samples satisfying the given condition in a "random walk" fashion. For HW testing @GuoT92 found a Metropolis-Hastings algorithm to be efficient compared to permutations. A slight modification of their algorithm is implemented in Genepop. Guo and Thompson also considered tests for contingency tables (Technical report No. 187, Department of Statistics, University of Washington, Seattle, USA, 1989) and again a slightly modified algorithm is implemented in Genepop [@RaymondR95evol]. A run of the Markov chain (MC) algorithms starts with a dememorization step; if this step is long enough, the state of the chain at the end of the dememorization is independent of the initial state. Then, further simulation of the MC is divided in batches. In each batch a P-value estimate is derived by counting the proportion of time the MC spends visiting sample configurations more extreme (according to the given test statistic) than the observed sample. If the batches are long enough, the P-value estimates from successive batches are essentially independent from each other and a standard error for the P-value can be derived from the variance of per-batch P-values [@Hastings70]. As could be expected, the longer the runs, the lower the standard error.
+
+Accuracy of P values estimated by the Markov chain algorithms
+-------------------------------------------------------------
+\index{Markov chain algorithms!accuracy}
+For most data sets the MC "mixes well" so that the default values of the dememorization length and batch length implemented in Genepop appear quite sufficient [in many other applications of MC algorithms, things are not so simple; e.g. @BrooksG98]. Nevertheless, inaccurate P-values can be detected when the standard error is large, or else if the number of switches (the number of times the sample configuration changes in the MC run)\index{Markov chain algorithms!switches} is low (this may occur when the P-value estimate is close to 0 or 1). Therefore, it is wise to increase the number of batches if the standard error is too large, in particular if it is of the order of $P$ (the P-value) for small $P$ or of the order of $1-P$ for large $P$, or else if the number of switches is low ($<1000$).
+
+Test statistics
+---------------
+
+The Markov chain algorithms were first implemented for probability tests, i.e. tests where the rejection zone is defined out of the least likely samples under the null hypothesis.\index{Exact tests!probability test} Such tests also had Fisher’s preference [e.g. @Fisher35]; in particular the probability test for independence in contingency tables is known as Fisher’s exact test.\index{Exact tests!Fisher's} However, probability tests are not necessarily the most powerful. Depending on the alternative hypothesis of importance, other test statistics are often preferable [see again @CoxH74 or @Lehmann94test for textbook accounts]. Efficient tests for detecting heterozygote excesses and deficits [@RoussetR95] were introduced in Genepop from the start (see option 1), and log likelihood ratio ($G$) tests were introduced with the implementation of the genotypic tests for population differentiation [@GoudetRMR96]. The allelic weighting implicit in the $G$ statistic is indeed optimal for detecting differentiation under an island model [@Rousset07w] and use of the $G$ statistic has been generalized to all contingency table tests in Genepop 4.0, though probability tests performed in earlier versions of Genepop are still available.
+
+Global tests are performed either using methods tuned to specific alternative hypotheses (for heterozygote excess or deficiency) or using Fisher’s combination of probabilities technique. While the latter has been criticized [@Whitlock05], the recommended alternative can fail spectacularly on discrete data.\index{Combination of different tests}
+
+Estimating $F$-statistics and related quantities
+------------------------------------------------
+
+The definition of $F$-statistics\index{F-statistics@$F$-statistics!definition} used here is
+
+$$\begin{aligned}
+ {F_\mathrm{IS}}\equiv &\frac{Q_1-Q_2}{1-Q_2}\\
+ {F_\mathrm{ST}}\equiv &\frac{Q_2-Q_3}{1-Q_3}\\
+ {F_\mathrm{IT}}\equiv &\frac{Q_1-Q_3}{1-Q_3}
+ \end{aligned}$$
+
+where the $Q$ are probabilities of identity in state, $Q_1$ among genes (gametes) within individuals, $Q_2$ among genes in different individuals within groups (populations), and $Q_3$ among groups (populations). Such formulas appear in @CockerhamW87; see @Rousset02h for an account of most implications of such definitions, except estimation.
+
+The commonly held idea that it is more difficult to estimate $F$-statistics when there are more alleles is generally incorrect; actually many inferences may be more accurate when more alleles are present [e.g. @LebloisER03, at least as long as gene diversity is less than 0.8]. The issue is not to estimate the frequencies of all alleles, but only to estimate the above ratios.\index{F-statistics@$F$-statistics!estimation formulas} Any expression of the form $(Q_i-Q_j)/(1-Q_j)$ can be estimated as $(\hat{Q}_i-\hat{Q}_j)/(1-\hat{Q}_j)$ where any $\hat{Q}_k$ is the observed frequency of identical pairs of genes in the sample, among pairs satisfying the condition designated by the $k$ index. This is only slightly different [see @Rousset07w] from what the following estimators achieve.
+
+### ANOVA estimators: single- and multilocus definitions {#Fmulti}
+
+Well-known work by Cockerham [e.g. @Cockerham73; @WeirC84] has used the formalism of analysis of variance (ANOVA) to define estimators of $F$-statistics. These estimators may be expressed in terms of the mean sums of squares $MSG$, $MSI$, $MSP$ (for Gametes, Individuals, and Populations) computed by an analysis of variance [see e.g. @WeirbkII]. Equivalently, they can be expressed in terms of "components of variances" $\hat{\sigma}^2_G$, $\hat{\sigma}^2_I$, $\hat{\sigma}^2_P$ which are unbiased estimates of the corresponding parametric "components of variances" $\sigma^2_G$, $\sigma^2_I$, $\sigma^2_P$ in an ANOVA model. The snag is, in general (and in some notable applications), these parametric "components of variance" are not variances but rather differences between variances and can be negative. The $\sigma^2$ notation is misleading in this respect; this is a lasting source of confusion, explained in @Rousset07w. Of course, the $\hat{\sigma}^2$ estimators can be negative even if the $\sigma^2$ parameters are positive, but this is a distinct issue.
+
+The mean squares can themselves be interpreted in terms of observed
+frequencies $\hat{Q}$ of identical pairs of genes in the sample. For
+balanced samples, the relationships are simple:
+
+$1-\hat{Q}_1=MSG\equiv \hat{\sigma}^2_G$,
+$\hat{Q}_1-\hat{Q}_2=(MSI-MSG)/2\equiv \hat{\sigma}^2_I$ and
+$\hat{Q}_2-\hat{Q}_3=(MSP-MSI)/(2n)\equiv \hat{\sigma}^2_P$ where $n$ is group size. Hence the single-group (single-population) $F_\mathrm{IS}$ estimator is
+
+$$\label{}
+    \frac{\hat{Q}_1-\hat{Q}_2}{1-\hat{Q}_2}=
+    \frac{MSI-MSG}{MSI+MSG}=
+    \frac{\hat{\sigma}^2_I}{\hat{\sigma}^2_I+\hat{\sigma}^2_G}.$$
+
+For unbalanced groups ("populations" of unequal size), estimates over several groups are complex weighted averages of observed frequencies of identical pairs of genes within groups, not detailed here [see @Rousset07w]. However, ANOVA expressions still satisfy $MSG\equiv \hat{\sigma}^2_G$ and $(MSI-MSG)/2\equiv \hat{\sigma}^2_I$, and $(MSP-MSI)/(2n_c)\equiv \hat{\sigma}^2_P$ where $n_c$ is a function of the size of each group ($n_c\equiv [S_1-S_2/S_1]/(n-1)$, where $S_1$ is the total sample size, $S_2$ is the sum of squared group sizes, and $n$ is the number of non-empty groups). Then
+
+$$\begin{gathered}
+    \hat{F}_{\mathrm{IS}}=    \frac{MSI-MSG}{MSI+MSG}=
+    \frac{\hat{\sigma}^2_I}{\hat{\sigma}^2_I+\hat{\sigma}^2_G}, \\
+        \hat{F}_{\mathrm{ST}}=    \frac{MSP-MSI}{MSP+(n_c-1)MSI+n_cMSG}=
+    \frac{\hat{\sigma}^2_P}{\hat{\sigma}^2_P+\hat{\sigma}^2_I+\hat{\sigma}^2_G}, \\
+        \hat{F}_{\mathrm{IT}}=    \frac{MSP+(n_c-1)MSI-n_cMSG}{MSP+(n_c-1)MSI+n_cMSG}=
+    \frac{\hat{\sigma}^2_P+\hat{\sigma}^2_I}{\hat{\sigma}^2_P+\hat{\sigma}^2_I+\hat{\sigma}^2_G}.\end{gathered}$$
+
+With several loci, such an analysis is performed for each locus $i$ and the multilocus estimate is the ratio of a weighted sum of the above locus-specific numerators over locus-specific denominators. However, there is no single consistent way to compute the weighted sums. @WeirC84’s multilocus estimators are defined in terms of intermediate statistics $a$, $b$, and $c$ for each locus, which appear to be the $\hat{\sigma}^2$’s. The numerator of the multilocus estimator of $F_\mathrm{ST}$ is thus $\sum_{\textrm{loci }i}a_i=\sum_{i}[(MSP-MSI)/(2n_c)]_i$. On the other hand [@WeirbkII’s] multilocus estimators are defined from distinct intermediate statistics $S_1$, $S_2$, and $S_3$ for each locus, where for locus $i$, $S_{1i}=[(MSP-MSI)]_i/(2\bar{n})$ for an average sample size across loci $\bar{n}$, and the numerator of the multilocus estimate is $\sum_{\textrm{loci }i}S_i=\sum_{i}[a n_c]_i/\bar{n}$. Hence the 1984 and 1996 estimators slightly differ.
+
+However, both give the same weight to the estimates of the $Q$’s for a locus typed at 5 individuals in each subpopulation as for a locus typed at 50 individuals in each subpopulation. Genepop follows another logic. The multilocus estimator of $F_\mathrm{ST}$ has numerator $\sum_i [n_c(MSP-MSI)]_i$, which will give 10 time more weight to the $Q$ estimates for the more intensively typed locus. ‘Explicit’ formulas for the estimators are:
+
+$$\begin{gathered}
+    \hat{F}_{\mathrm{IS}}=    \frac{\sum_i [n_c(MSI-MSG)]_i}{\sum_i [n_c(MSI+MSG)]_i}=
+    \frac{\sum_i [n_c\hat{\sigma}^2_I]_i}{\sum_i [n_c\hat{\sigma}^2_I+n_c\hat{\sigma}^2_G]_i}, \\
+        \hat{F}_{\mathrm{ST}}=    \frac{\sum_i [MSP-MSI]_i}{\sum_i [MSP+(n_c-1)MSI+n_cMSG]_i}=
+    \frac{\sum_i [n_c\hat{\sigma}^2_P]_i}{\sum_i [n_c\hat{\sigma}^2_P+n_c\hat{\sigma}^2_I+n_c\hat{\sigma}^2_G]_i}, \\
+        \hat{F}_{\mathrm{IT}}=    \frac{\sum_i [MSP+(n_c-1)MSI-n_cMSG]_i}{\sum_i [MSP+(n_c-1)MSI+n_cMSG]_i}=
+    \frac{\sum_i [n_c\hat{\sigma}^2_P+n_c\hat{\sigma}^2_I]_i}{\sum_i [n_c\hat{\sigma}^2_P+n_c\hat{\sigma}^2_I+n_c\hat{\sigma}^2_G]_i}.\end{gathered}$$
+
+Data from the example file `Fmulti.txt` (3 samples, 3 loci) illustrate the difference between results obtained by the different methods:
+
+|Estimate                             |$F_\mathrm{IS}$  |$F_\mathrm{ST}$ |$F_\mathrm{IT}$ |
+|-------------------------------------|-----------------|----------------|----------------|
+|locus 1                              |-0.0483          |0.5712          |0.5505          |
+|locus 2                              |-0.1161          |0.8560          |0.8393          |
+|locus 3                              |0.0051           |-0.0023         |0.0028          |
+|Multilocus (1984 a,b,c method)       |-0.0286          |0.5606          |0.5480          |
+|Multilocus (1996 S1,S2,S3 method)    |-0.0286          |0.5633          |0.5508          |
+|Multilocus (Genepop v3.3 and later)  |-0.0275          |0.5436          |0.5310          |
+
+
+
+Most of the time the different estimators yield close values; I expect the Genepop method to provide better $F_\mathrm{ST}$ estimates under weak differentiation.
+
+### Microsatellite allele sizes, $R_\mathrm{ST}$, and $\rho_\mathrm{ST}$ {#rho-stats}
+\index{Allele size-based statistics!Rst@$\Rst$}\index{Rst@$\Rst$|see{Allele size-based statistics}}
+Following @Slatkin95, statistics based on allele size have been widely used. The parameters $\rho_\mathrm{IS}$, $\rho_\mathrm{ST}$ and $\rho_\mathrm{IT}$ and their estimators\index{Allele size-based statistics!rhost@$\rho_{\mathrm{ST}}$}\index{rhost@$\rho_{\mathrm{ST}}$} are defined by replacing any $1-Q_k$ by the expected square difference in allele size between the genes compared [@Rousset96] in all formulas above, and any $1-\hat{Q}_k$ by the observed mean square difference [more formulas are given in @MichalakisE96]. Then the estimators become plain ANOVA estimators of intraclass correlation for allele size; if there are only two alleles, $\hat{\rho}_{\mathrm{ST}}=\hat{F}_{\mathrm{ST}}$, but Slatkin’s $R_{\mathrm{ST}}\neq\hat{F}_{\mathrm{ST}}$.
+
+### Robertson and Hill’s estimator of $F_\mathrm{IS}$
+
+This estimator, reported in options 1 and 5, was designed to have lower variance than the ANOVA estimator and no small-sample bias when $F_\mathrm{IS}$ is low, assuming that deviations from Hardy-Weinberg proportions are characterized by the same $F_\mathrm{IS}$ for all pairs of alleles  [@RobertsonH84].\index{\Fis!@Robertson \&\ Hill's estimator of \Fis} The score test computed in heterozygote excess and deficiency sub-options of option 1 is equivalent to this estimator for testing purposes.
+
+Bootstraps
+----------
+\index{Confidence intervals!bootstrap}
+Option 6 constructs approximate bootstrap confidence (ABC) intervals [@DiCiccioE96], assuming that each locus is an independent realization of genealogical and mutation processes. The bootstrap is a general methodology with different incarnations. The ABC methods were chosen because they balance moderate computation needs with good accuracy compared to alternatives. Bootstrap methods are approximate, and simulation tests of their performance (a too rare deed in statistical population genetics) for the present application are reported in @LebloisER03 and @WattsX07.
+
+The ABC method is also applied over individuals in option 8 to compute
+confidence intervals for null allele frequency estimates.
+
+Mantel test
+-----------
+\index{Mantel test}
+The principle of the Mantel permutation procedure is to permute samples between geographical locations, so it generates a distribution conditional on having $n$ given sets of genotypic data in $n$ different samples. The permutations provide the distribution of any statistic under the null hypothesis of independence between the two variables (here, genotype counts and geographic location).
+
+@Mantel67 considered a particular statistics and approximations for its distribution. Instead, Genepop uses no such approximation. Isolation by distance will generate positive correlations between geographic distance and genetic distance estimates, and this is best tested using one-tailed P-values. The program provides both one-tailed P-values. The probability of observing the sample correlation is the sum of these two P-values minus 1.
+
+### Misuse 1: tests of correlation at different distance
+
+Genetic processes of isolation by distance generate asymptotically decreasing variation in genetic differentiation with increasing geographic distances, and there is some temptation to use the Mantel test to test for the presence of correlation at specific distances. However, Genepop prevents this as this is logically unsound, and the more quantitative methods it provides are better suited to address variation of patterns with distance.
+
+As soon as a process generates data with an expected non-zero correlation at some distance, it contradicts the null hypothesis under which the Mantel test is an exact test. Thus it may not make sense to use a Mantel test for testing correlation at some distance if there is correlation at another distance.
+
+One can still wonder whether a permutation-based test could have some approximate validity for testing absence of correlation at some distance. However, the bootstrap procedure already addresses this case. Alternative procedures would require further definition on an ad-hoc basis to be operational (e.g., the idea of eliminating *samples* that form *pairs* below or above a given distance may not unambiguously define a *sample* selection procedure that will retain power) and would be likely to generate some confusion.
+
+For these reasons, in the present implementation the Mantel tests are always based on all pairs, ignoring all selection of data according to distance.
+
+### Misuse 2: partial Mantel tests
+
+Partial Mantel tests\index{Mantel test!partial} have been used to test for effects of a variable Y on a response variable Z, while supposedly removing spatial autocorrelation effects on Z. Both standard theory of exact tests [as used by @RaufasteR01] and simulation [@OdenS92; @RaufasteR01; @Rousset02e; @GuillotR13] show that the permutation procedure of the Mantel test is not appropriate for the partial Mantel test when the Y variable itself presents spatial correlations. Asymptotic arguments have also been proposed to support the use of such permutation tests [e.g. @Anderson01] but they fail in the same conditions. As shown by @RaufasteR01, the problem is inherent to the permutation procedure, not to a specific test statistic. Unfortunately, some papers maintain confusion about these different aspects of "partial Mantel tests". @LegendreF10 argued how miserable the papers by @RaufasteR01 and @Rousset02e were, and claimed that some versions of the tests should be preferred because they used pivotal statistics (without evidence that the statistics were indeed pivotal, a property that depends on the statistical model). @GuillotR13 reviewed old and more recent literature demonstrating issues with the partial Mantel test, provided new simulations showing that the different tests discussed by @LegendreF10 failed, and criticized their verbal arguments. Despite this, @LegendreFB15 criticized this more recent paper again for ignoring the old literature, and repeated the same kind of verbal explanations that have previously failed.
+
+Code maintenance, credits, contact, etc.
+=================================================
+
+Code maintenance
+----------------
+Distribution of Genepop as an R package means that the code is portable to the major operating systems supported by R. New version are checked using a variety of tools available in the R environment (including valgrind and so-called sanitizers). Tests against more or less standard examples from the literature are also applied. These tests can be found in the `tests/testthat` directory of the distributed archive. 
+
+Credits for the current version
+-------------------------------
+
+The R package and the R markdown version of the documentation were originally developed by Jimmy Lopez (Labex Cemeb) and Khalid Belkhir (Institut des Sciences de l'Évolution) from the C++ sources and LaTeX documentation of the Genepop executable version 4.6, and further modified by F. Rousset.
+
+Previous history
+----------------
+
+Version 4.0 of Genepop was a C++ rewrite of Genepop 3.4 [@RaymondR95] by F.R., using draft C translations of many Genepop modules by O. Guillaume, N. Benhamou and A. André, and some draft C++ classes by R. Leblois.
+
+Beyond M. Raymond and F.R., credit for previous Genepop code is as follows. The complete enumeration procedure for HW tests was derived from Fortran code provided by E. J. Louis (Inst. Mol. Med., Oxford, UK). Some of the procedures for isolation by distance "between individuals" were first written by R. Leblois with help from S. Piry (INRA-CBGP, Montpellier). P. David, É. Imbert and S. Samadi wrote some early code in 1993.
+
+B. Anderson, M.A. Beaumont, A. Becher, T.J.C. Beebee, S. Bellman, L. Bernatchez, D. Bourguet, J. Britton-Davidian, E. Bucheli, J. Carlier, G. Carmody, R. Castilho, F. Catzeflis, C. Chevillon, J. Clayton, J. Dallas, P. David, P. Dias, B. Dodd, R. Eritja, A. Estoup, A.-B. Failloux, E. Fjerdingstad, R.C. Fleischer, A.J. Gharrett, S. T. Glenn, S.(?) Goodman, J. Goudet, L. Henke, D. Innes, P. Jarne, L. Jermiin, J. Kelso, N. Khromov-Borissov, J. Lagnel, M. Lascoux, L.S. Magnussen, J. Mallet, D., (?) McDonald, C. Moran, F. Nicholas, I. Olivieri, M. van Oppen, N. Pasteur, R. Paxton, F. Renaud, H. Rosa, L., P. W. Shaw, Shapiro, J. Shykoff, D. Sicard, J. Slate, M. Slatkin, M. Small, T. Staedler, F. Thomas, F. Viard, P. Waldmann, K. J. Wetherall, (?) Winker, Z. Xu, made suggestions or tests on the various states of Genepop until version 3.4.
+
+T. Antão, E. Archer, R.I. Bailey, J.S.F. Barker, D. Bourguet, T. Devitt, É. Imbert, R. Leblois, T. de Meeüs, P. Morin, S. Ponsard, V. Ravigné, E. Taschen, and Y. Zimmermann have pointed issues or have stimulated additional developments of more recent versions.
+
+Contact
+-------
+\index{Bug reports}
+If you think you have found a bug, you can contact me. Requests which do not meet the following requirements are likely to meet poor response. Please provide a minimal input file illustrating the suspected problem, whenever relevant. Please use the latest version of Genepop taken from a web page I maintain. **Note that I do not maintain the "Genepop on the web" port of Genepop: any question related to this port should be addressed to Eleanor Morgan.** Please specify the version of Genepop you are using. Please do not ask whether Genepop is commercial software. Please read this documentation.
+
+I may answer queries about methods implemented in Genepop, and the more so when they are specific to Genepop. But in most cases there are published references describing the methods, cited in this documentation. Please read this documentation.
+
+### Bug fixes since release of Genepop version 3.4 in May 2003 until first release of Genepop 4.0:
+\index{Bugs}\index{Bugs}
+The sign of the lower confidence interval bound for regression slope in Isolde did not appear on output file when it was negative.
+
+For computation of allele size-based statistics (Option 6.2 and 6.4) with the option "allele name *=* allele size", the allele ‘99’ was interpreted as having size zero.
+
+See the distribution page for more recent bug fixes.
+
+Copyright
+=========
+
+  All contents of the R package are covered by its license, the GPL-compatible CeCill 2.1 license (see <https://cecill.info/licences/Licence_CeCILL_V2.1-en.html>). 
+
+ \index{Bootstrap|see{Confidence intervals}}
+ \index{Genepop@\Genepop, differences from previous versions|see{also footnotes throughout this document}}
+  \index{F-statistics@$F$-statistics|see{also \Fis}}
+ \index{Population differentiation|see{Differentiation}}
+ \index{Selecting subset of samples|see{Population type selection}}
+ \index{Input file|see{GenepopInputFile}}
+ \index{Heterozygosities|see{Gene diversities}}
+ \index{Maximum sample size|see{Maxima}}
+ \index{Exact tests|see{also Differentiation; Linkage disequilibrium; Hardy-Wein\-berg tests; Mantel test}}
+ \index{Data selection!by ploidy, see estimationPloidy}
+ \index{Data selection!subset of samples, see popTypeSelection}
+ \index{Hardy-Wein\-berg tests|optN{Option 1}}
+ \index{Hardy-Wein\-berg tests!multisample score test|optN{Options 1.4 \&\ 1.5}}
+ \index{Linkage disequilibrium|optN{Option 2}}
+ \index{Differentiation|optN{Option 3}}
+ \index{Private allele method|optN{Option 4}}
+ \index{Gene diversities|optN{Options 5.2 \&\ 5.3}}
+ \index{Fis@\Fis!per sample per locus|optN{Options 5.1 \&\ 5.2}}
+ \index{Fis@\Fis!multisample per locus|optN{Options 5.2 \&\ 6.1}}
+ \index{Fis@\Fis!per sample multilocus|optN{Option 5.2}}
+ \index{rhois@$\rho_{\mathrm{IS}}$!per sample per locus|optN{Option 5.3}}
+ \index{rhois@$\rho_{\mathrm{IS}}$!multisample per locus|optN{Option 5.3 \&\ 6.3}}
+ \index{rhois@$\rho_{\mathrm{IS}}$!per sample multilocus|optN{Option 5.3}}
+ \index{Fis@\Fis!multisample multilocus|optN{Option 6.1}}
+ \index{F-statistics@$F$-statistics!Fst@\Fst|optN{Options 6.1 \&\ 6.2}}
+ \index{rhois@$\rho_{\mathrm{IS}}$!multisample multilocus|optN{Option 6.3}}
+ \index{rhost@$\rho_{\mathrm{ST}}$|optN{Options 6.3 \&\ 6.4}}
+ \index{Allele size-based statistics|optN{Options 6.3 \&\ 6.4}}
+ \index{Mantel test|optN{Options 6.5 \&\ 6.6}}
+ \index{Isolation by distance!between individuals|optN{Option 6.5}}
+ \index{Isolation by distance!between groups|optN{Option 6.6}}
+ \index{File conversions|optN{Option 7}}
+ \index{Null alleles|optN{Option 8.1}}
+ \index{Relabeling alleles|optN{Option 8.3}}
+ \index{Individual data from population data|optN{Option 8.4}}
+
+\printindex
+
+Bibliography
+=========
+
+[^1]: ...in contrast to earlier versions of Genepop.
+
+[^2]: Earlier versions of Genepop only accepted `Pop`, `POP` and `pop`...
+
+[^3]: New to Genepop 4.0
+
+[^4]: Also new to Genepop 4.0
+
+[^5]: New to Genepop 4.0
+
+[^6]: Other text editors including the Windows basic text editor may not show all end-of-line characters correctly.
+
+[^7]: in constrast to earlier versions of Genepop
+
+[^8]: Long command lines: under some old versions of Windows, the command line had a fairly limited maximum length, so it should have been used with moderation. This should no longer be a problem with recent versions of Windows, but who knows with Microsoft... one may try to find more information about command-line string limitation on `support.microsoft.com`.
+
+[^9]: increased from Genepop 3.4’s default
+
+[^10]: increased from Genepop 3.4’s default
+
+[^11]: New to Genepop 4.0.
+
+[^12]: Again new to Genepop 4.0.
+
+[^13]: In earlier versions of Genepop, this analysis was done through the HW.BAT batch file.
+
+[^14]: The distinct option 2.3 of Genepop 3.4 is no longer necessary as option 2.1 of Genepop 4.0 more gracefully handles haploid data.
+
+[^15]: This was not the case in earlier versions of Genepop
+
+[^16]: Up to version 3.4, Genepop only computed Fisher’s exact test in these sub-options.
+
+[^17]: slightly modified in comparison to earlier versions of Genepop
+
+[^18]: In previous versions of Genepop, this analysis was done by the Struc program called through the `Struc.BAT` batch file.
+
+[^19]: more extensively than in earlier versions of Genepop.
+
+[^20]: New to Genepop 4.2
+
+[^21]: Former sub-option 3 (erasing all temporary files) has been discarded.
+
+[^22]: The last two methods are new to Genepop 4.0.
+
+[^23]: This is a notable difference from Genepop 3.4, where the allele with the highest number in each population was taken as the null allele in this population. Consequently, null allele estimation is now meaningful even if no null homozygote is observed in a given population. The output format has also been improved, compared to earlier versions of Genepop, with a more logical ordering of results (samples within loci) and a final locus by population table of estimated null allele frequencies.
+
+[^24]: No longer truncated to 8 letters as it was in earlier versions of Genepop
+
+[^25]: New to Genepop 4.3
+
+[^26]: New to Genepop 4.3

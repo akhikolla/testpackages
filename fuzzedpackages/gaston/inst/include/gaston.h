@@ -1,0 +1,23 @@
+#ifndef GASTON
+#define GASTON
+#include "gaston/matrix4.h"
+#include "gaston/ai-reml-1k-covar.h"
+#include "gaston/ai-reml-1k.h"
+#include "gaston/ai-reml-logit-1k-covar.h"
+#include "gaston/ai-reml-logit-1k.h"
+#include "gaston/ai-reml-logit-nk-covar.h"
+#include "gaston/ai-reml-logit-nk.h"
+#include "gaston/ai-reml-nk-covar.h"
+#include "gaston/ai-reml-nk.h"
+#include "gaston/any.h"
+#include "gaston/diago2_full.h"
+#include "gaston/diago2_full_nocovar.h"
+#include "gaston/diago2.h"
+#include "gaston/diago2_nocovar.h"
+#include "gaston/lmm_diago_min_max_h2.h"
+#include "gaston/logit_model.h"
+#include "gaston/m4_kinship_type.h"
+#include "gaston/matrix-varia.h"
+#include "gaston/optimize_2.h"
+#include "gaston/snp_hash.h"
+#endif
